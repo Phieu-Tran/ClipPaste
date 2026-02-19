@@ -5,11 +5,8 @@ import {
   Plus,
   FolderOpen,
   Settings as SettingsIcon,
-  BrainCircuit,
   Folder as FolderIcon,
   MoreHorizontal,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTheme } from '../hooks/useTheme';
@@ -29,75 +26,15 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type Tab = 'general' | 'ai' | 'folders';
+type Tab = 'general' | 'folders';
 
-function PromptEditor({
-  label,
-  value,
-  titleValue,
-  placeholder,
-  onSave,
-  onSaveTitle,
-}: {
-  label: string;
-  value: string;
-  titleValue?: string;
-  placeholder: string;
-  onSave: (val: string) => void;
-  onSaveTitle?: (val: string) => void;
-}) {
-  const [localValue, setLocalValue] = useState(value);
-  const [localTitle, setLocalTitle] = useState(titleValue || label);
 
-  // Sync with prop if it changes externally
-  useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
-
-  useEffect(() => {
-    setLocalTitle(titleValue || label);
-  }, [titleValue, label]);
-
-  return (
-    <div className="space-y-2 rounded-lg border border-border/40 bg-accent/5 p-3">
-      <div className="flex items-center justify-between gap-4">
-        <input
-          type="text"
-          value={localTitle}
-          onChange={(e) => setLocalTitle(e.target.value)}
-          onBlur={() => {
-            if (onSaveTitle && localTitle !== (titleValue || label)) {
-              onSaveTitle(localTitle);
-            }
-          }}
-          className="bg-transparent text-xs font-semibold text-foreground/70 outline-none transition-colors focus:text-primary"
-          title="Click to rename action"
-        />
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Action Name
-        </span>
-      </div>
-      <textarea
-        value={localValue}
-        onChange={(e) => setLocalValue(e.target.value)}
-        onBlur={() => {
-          if (localValue !== value) {
-            onSave(localValue);
-          }
-        }}
-        placeholder={placeholder}
-        className="min-h-[60px] w-full resize-none rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground transition-all focus:outline-none focus:ring-1 focus:ring-primary/30"
-      />
-    </div>
-  );
-}
 
 export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [_historySize, setHistorySize] = useState<number>(0);
   const [isRecordingMode, setIsRecordingMode] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
 
   // Folder Management State
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -246,11 +183,13 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       isOpen: true,
       title: 'Clear History',
       message:
-        'Are you sure you want to clear your ENTIRE clipboard history? This cannot be undone.',
+        'Are you sure you want to clear your clipboard history? This will only remove items that are not in folders. Items saved in folders will be preserved.',
       action: async () => {
         try {
           await invoke('clear_all_clips');
-          setHistorySize(0);
+          // Refresh the history size after clearing
+          const newSize = await invoke<number>('get_clipboard_history_size');
+          setHistorySize(newSize);
           toast.success('Clipboard history cleared successfully.');
         } catch (error) {
           console.error('Failed to clear history:', error);
@@ -399,18 +338,6 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
               >
                 <SettingsIcon size={16} />
                 General
-              </button>
-              <button
-                onClick={() => setActiveTab('ai')}
-                className={clsx(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  activeTab === 'ai'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                )}
-              >
-                <BrainCircuit size={16} />
-                AI Processing
               </button>
               <button
                 onClick={() => setActiveTab('folders')}
@@ -668,137 +595,6 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                 </>
               )}
 
-              {/* --- AI PROCESSING TAB --- */}
-              {activeTab === 'ai' && (
-                <>
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-medium text-muted-foreground">AI Configuration</h3>
-
-                    <div className="space-y-3">
-                      <label className="block">
-                        <span className="text-sm font-medium">Provider</span>
-                      </label>
-                      <select
-                        value={settings.ai_provider || 'openai'}
-                        onChange={(e) => {
-                          const newProvider = e.target.value;
-                          const updates: Partial<Settings> = { ai_provider: newProvider };
-
-                          // Auto-fill Base URL based on provider
-                          if (newProvider === 'openai') {
-                            updates.ai_base_url = 'https://api.openai.com/v1';
-                          } else if (newProvider === 'deepseek') {
-                            updates.ai_base_url = 'https://api.deepseek.com';
-                          }
-
-                          updateSettings(updates);
-                        }}
-                        className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      >
-                        <option value="openai">OpenAI</option>
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="custom">Custom (OpenAI Compatible)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="block">
-                        <span className="text-sm font-medium">API Key</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showApiKey ? 'text' : 'password'}
-                          value={settings.ai_api_key || ''}
-                          onChange={(e) => updateSetting('ai_api_key', e.target.value)}
-                          placeholder="sk-..."
-                          className="w-full rounded-lg border border-border bg-input py-2 pl-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="block">
-                        <span className="text-sm font-medium">Model</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={settings.ai_model || 'gpt-3.5-turbo'}
-                        onChange={(e) => updateSetting('ai_model', e.target.value)}
-                        placeholder="gpt-4o, deepseek-chat, etc."
-                        className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="block">
-                        <span className="text-sm font-medium">Base URL (Optional)</span>
-                        <p className="text-xs text-muted-foreground">
-                          For local models or custom endpoints
-                        </p>
-                      </label>
-                      <input
-                        type="text"
-                        value={settings.ai_base_url || ''}
-                        onChange={(e) => updateSetting('ai_base_url', e.target.value)}
-                        placeholder="https://api.openai.com/v1"
-                        className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      />
-                    </div>
-                  </section>
-
-                  <section className="space-y-4 border-t border-border/50 pt-4">
-                    <h3 className="text-sm font-medium text-muted-foreground">Custom Prompts</h3>
-                    <p className="text-xs italic text-muted-foreground">
-                      Leave blank to use default prompts.
-                    </p>
-
-                    <div className="space-y-4">
-                      <PromptEditor
-                        label="Summarize"
-                        value={settings.ai_prompt_summarize || ''}
-                        titleValue={settings.ai_title_summarize}
-                        onSave={(val) => updateSetting('ai_prompt_summarize', val)}
-                        onSaveTitle={(val) => updateSetting('ai_title_summarize', val)}
-                        placeholder="Default: You are a helpful assistant. Summarize the following text concisely."
-                      />
-
-                      <PromptEditor
-                        label="Translate"
-                        value={settings.ai_prompt_translate || ''}
-                        titleValue={settings.ai_title_translate}
-                        onSave={(val) => updateSetting('ai_prompt_translate', val)}
-                        onSaveTitle={(val) => updateSetting('ai_title_translate', val)}
-                        placeholder="Default: You are a helpful assistant. Translate the following text to English (or specify your target language)."
-                      />
-
-                      <PromptEditor
-                        label="Explain Code"
-                        value={settings.ai_prompt_explain_code || ''}
-                        titleValue={settings.ai_title_explain_code}
-                        onSave={(val) => updateSetting('ai_prompt_explain_code', val)}
-                        onSaveTitle={(val) => updateSetting('ai_title_explain_code', val)}
-                        placeholder="Default: You are a helpful assistant. Explain what the following code does."
-                      />
-
-                      <PromptEditor
-                        label="Fix Grammar"
-                        value={settings.ai_prompt_fix_grammar || ''}
-                        titleValue={settings.ai_title_fix_grammar}
-                        onSave={(val) => updateSetting('ai_prompt_fix_grammar', val)}
-                        onSaveTitle={(val) => updateSetting('ai_title_fix_grammar', val)}
-                        placeholder="Default: You are a helpful assistant. Fix the grammar and improve the style..."
-                      />
-                    </div>
-                  </section>
-                </>
-              )}
 
               {/* --- FOLDERS TAB --- */}
               {activeTab === 'folders' && (
@@ -903,10 +699,10 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         {/* Footer */}
         <div className="flex flex-col items-center gap-1 border-t border-border bg-background px-4 py-3 text-center">
           <button
-            onClick={() => openUrl('https://github.com/XueshiQiao/PastePaw').catch(console.error)}
+            onClick={() => openUrl('https://github.com/Phieu-Tran/ClipPaste').catch(console.error)}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            PastePaw {appVersion || '...'}
+            ClipPaste {appVersion || '...'}
           </button>
           <div className="flex gap-2 text-xs text-muted-foreground">
             <span>© 2025</span>

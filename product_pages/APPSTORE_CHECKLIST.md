@@ -1,4 +1,4 @@
-# Mac App Store Submission Checklist for PastePaw
+# Mac App Store Submission Checklist for ClipPaste
 
 This checklist will guide you through the complete App Store submission process.
 
@@ -13,12 +13,12 @@ This checklist will guide you through the complete App Store submission process.
 
 ### To Enable GitHub Pages:
 
-1. Go to: https://github.com/XueshiQiao/PastePaw/settings/pages
+1. Go to: https://github.com/Phieu-Tran/ClipPaste/settings/pages
 2. Under "Source", select: **Deploy from a branch**
 3. Branch: **main**, Folder: **/docs/product_pages**
 4. Click **Save**
 5. Wait 2-3 minutes for deployment
-6. Verify site is live at: https://xueshiqiao.github.io/PastePaw/
+6. Verify site is live at: https://Phieu-Tran.github.io/ClipPaste/
 
 ## 📋 Required URLs for App Store Connect
 
@@ -26,9 +26,9 @@ Once GitHub Pages is enabled, use these URLs in App Store Connect:
 
 | Field | URL |
 |-------|-----|
-| **Support URL** | `https://xueshiqiao.github.io/PastePaw/support.html` |
-| **Marketing URL** | `https://xueshiqiao.github.io/PastePaw/` |
-| **Privacy Policy URL** | `https://xueshiqiao.github.io/PastePaw/privacy.html` |
+| **Support URL** | `https://Phieu-Tran.github.io/ClipPaste/support.html` |
+| **Marketing URL** | `https://Phieu-Tran.github.io/ClipPaste/` |
+| **Privacy Policy URL** | `https://Phieu-Tran.github.io/ClipPaste/privacy.html` |
 
 ## 🔧 Technical Requirements
 
@@ -72,7 +72,7 @@ Once GitHub Pages is enabled, use these URLs in App Store Connect:
 
 - [ ] Create app listing in App Store Connect
 - [ ] Fill in app information:
-  - [ ] App name: **PastePaw**
+  - [ ] App name: **ClipPaste**
   - [ ] Subtitle: *A beautiful clipboard history manager*
   - [ ] Category: **Utilities**
   - [ ] Support URL: (see URLs table above)
@@ -94,7 +94,7 @@ Once GitHub Pages is enabled, use these URLs in App Store Connect:
   - Data Types Collected: **None** (all data stored locally)
   - Third-party Analytics: **No** (if not using analytics)
 - [ ] Explain Accessibility permission usage:
-  - "PastePaw requests Accessibility permission to enable the optional auto-paste feature, which simulates keyboard input (Cmd+V) to paste clipboard content into other applications. This permission is optional and not required to use the app."
+  - "ClipPaste requests Accessibility permission to enable the optional auto-paste feature, which simulates keyboard input (Cmd+V) to paste clipboard content into other applications. This permission is optional and not required to use the app."
 
 ### 8. App Review Information
 
@@ -140,7 +140,7 @@ Test these features in the sandboxed App Store build:
 
 ## 📞 Support Resources
 
-- **GitHub Pages Site**: https://xueshiqiao.github.io/PastePaw/
+- **GitHub Pages Site**: https://Phieu-Tran.github.io/ClipPaste/
 - **Documentation**: See `docs/appstore_submit.md` and `docs/submit_to_appstore.md`
 - **Apple Developer**: https://developer.apple.com/
 - **App Store Connect**: https://appstoreconnect.apple.com/

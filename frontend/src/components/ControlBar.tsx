@@ -1,3 +1,4 @@
+import React from 'react';
 import { FolderItem } from '../types';
 import { Search, Plus, MoreHorizontal, X } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -22,24 +23,27 @@ interface ControlBarProps {
   theme?: 'light' | 'dark';
 }
 
-export function ControlBar({
-  folders,
-  selectedFolder,
-  onSelectFolder,
-  onSearchClick,
-  onAddClick,
-  onMoreClick,
-  showSearch,
-  searchQuery,
-  onSearchChange,
-  isDragging,
-  dragTargetFolderId,
-  onDragHover,
-  onDragLeave,
-  totalClipCount,
-  onFolderContextMenu,
-  theme = 'dark',
-}: ControlBarProps) {
+export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(function ControlBar(
+  {
+    folders,
+    selectedFolder,
+    onSelectFolder,
+    onSearchClick,
+    onAddClick,
+    onMoreClick,
+    showSearch,
+    searchQuery,
+    onSearchChange,
+    isDragging,
+    dragTargetFolderId,
+    onDragHover,
+    onDragLeave,
+    totalClipCount,
+    onFolderContextMenu,
+    theme = 'dark',
+  },
+  ref
+) {
   const allCategories = [
     { id: null, name: 'All', count: totalClipCount },
     ...folders.map((f) => ({ ...f, count: f.item_count })),
@@ -236,6 +240,7 @@ export function ControlBar({
           <div className="animate-in fade-in slide-in-from-left-2 flex w-full items-center gap-2 rounded-full border border-border bg-input px-3 py-1.5 duration-300">
             <Search size={18} className="text-blue-400" />
             <input
+              ref={ref}
               autoFocus
               type="text"
               value={searchQuery}
@@ -355,4 +360,6 @@ export function ControlBar({
       </div>
     </div>
   );
-}
+});
+
+export default ControlBar;

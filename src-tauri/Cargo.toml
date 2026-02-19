@@ -1,8 +1,8 @@
 [package]
-name = "PastePaw"
+name = "clipboard"
 version = "1.1.6"
 description = "A beautiful clipboard history manager for Windows"
-authors = ["XueshiQiao"]
+authors = ["Phieu-Tran"]
 license = "GPL-3.0"
 edition = "2021"
 
@@ -34,8 +34,8 @@ tauri-plugin-process = "2"
 tauri-plugin-aptabase = "1"
 tauri-plugin-opener = "2"
 log = "0.4.29"
-window-vibrancy = { git = "https://github.com/XueshiQiao/window-vibrancy.git" }
-reqwest = { version = "0.13.1", features = ["json"] }
+window-vibrancy = { git = "https://github.com/Phieu-Tran/window-vibrancy.git" }
+
 dark-light = "2.0.0"
 tauri-plugin-clipboard-x = "2.0.1"
 

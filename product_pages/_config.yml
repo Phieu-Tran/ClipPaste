@@ -1,10 +1,10 @@
 # Jekyll configuration for GitHub Pages
 # This file is optional but helps with GitHub Pages setup
 
-title: PastePaw
+title: ClipPaste
 description: A beautiful clipboard history manager for macOS
-url: "https://xueshiqiao.github.io"
-baseurl: "/PastePaw"
+url: "https://Phieu-Tran.github.io"
+baseurl: "/ClipPaste"
 
 # Theme
 theme: null

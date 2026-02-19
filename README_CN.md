@@ -1,8 +1,8 @@
 <h1 align="center">
     <picture>
-      <img src="https://raw.githubusercontent.com/XueshiQiao/PastePaw/refs/heads/main/src-tauri/icons/64x64.png" alt="Claude-Mem" width="32">
+      <img src="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/src-tauri/icons/64x64.png" alt="Claude-Mem" width="32">
     </picture>
-    PastePaw - Clipboard History Manager
+    ClipPaste - Clipboard History Manager
 </h1>
 
 
@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/XueshiQiao/PastePaw/actions/workflows/release.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/XueshiQiao/PastePaw/release.yml?branch=main&style=flat" alt="CI status"></a>
-  <a href="https://github.com/XueshiQiao/PastePaw/releases"><img src="https://img.shields.io/github/v/release/XueshiQiao/PastePaw?include_prereleases&style=flat" alt="GitHub release"></a>
+  <a href="https://github.com/Phieu-Tran/ClipPaste/actions/workflows/release.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/Phieu-Tran/ClipPaste/release.yml?branch=main&style=flat" alt="CI status"></a>
+  <a href="https://github.com/Phieu-Tran/ClipPaste/releases"><img src="https://img.shields.io/github/v/release/Phieu-Tran/ClipPaste?include_prereleases&style=flat" alt="GitHub release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL3.0-blue.svg?style=flat" alt="MIT License"></a>
 </p>
 
@@ -32,8 +32,6 @@
 - 🚫 **应用屏蔽 (排除列表)** - 自动忽略来自特定敏感应用（如密码管理器）的内容，保护隐私。
 - 🔄 **无限滚动** - 无缝浏览无限的历史记录，无需翻页。
 - 🛡️ **智能过滤** - 采用智能防抖逻辑，自动忽略来自其他剪贴板工具（如翻译软件、输入法）的“幽灵复制”。
-- 🤖 **AI 智能助手** - 内置 AI 功能，支持一键总结、翻译、解释代码以及修复语法错误。
-- ⚙️ **高度可自定义 AI** - 支持在设置中完全自定义 AI 功能的名称以及系统提示词 (Prompt)，打造专属您的 AI 工作流。
 
 ## 应用截图
 
@@ -58,31 +56,17 @@
 - `Arrow Up/Down` - 上下导航列表
 ## 应用屏蔽 (排除列表)
 
-PastePaw 允许您将特定应用程序排除在记录范围之外。这对于保护密码管理器或银行应用等涉及敏感信息的场景非常有用。
+ClipPaste 允许您将特定应用程序排除在记录范围之外。这对于保护密码管理器或银行应用等涉及敏感信息的场景非常有用。
 
 **逻辑与行为机制：**
 
 - **如何管理：** 进入“设置” -> “应用屏蔽”。您可以浏览选择 `.exe` 文件，或直接输入进程名称。
-- **隐私保护：** 当发生复制操作时，PastePaw 会第一时间检查源应用程序是否在您的忽略列表中。
+- **隐私保护：** 当发生复制操作时，ClipPaste 会第一时间检查源应用程序是否在您的忽略列表中。
 - **双重匹配机制：** 系统会同时检查以下两项，满足任一条件即忽略：
     1.  **进程名称** (例如 `notepad.exe`) - 匹配任何位置运行的该名称程序。
     2.  **完整路径** (例如 `C:\Windows\System32\notepad.exe`) - 仅匹配特定安装路径下的该程序。
 - **不区分大小写：** 匹配过程不区分大小写，确保在 Windows 环境下检测的可靠性。
 
-## AI 智能助手
-
-PastePaw 集成了方便的 AI 能力，帮助您更高效地处理剪贴板内容。
-(需要您自行提供 AI 提供商的 API Key)
-
-- **功能操作：** 右键点击任何剪贴项即可呼出 AI 功能：
-    - **内容总结：** 快速提取长文本的核心内容。
-    - **翻译：** 将内容翻译为您的目标语言。
-    - **解释代码：** 瞬间理解复杂的代码片段。
-    - **语法修复：** 润色您的写作，进行专业的语法检查。
-- **完全自定义：**
-    - **自定义名称：** 您可以在设置中重命名 AI 功能（例如，将“翻译”改为“翻译成日语”）。
-    - **自定义提示词：** 修改默认的系统提示词 (System Prompt)，精确控制 AI 的行为和输出风格。
-    - **多模型支持：** 支持 OpenAI、DeepSeek 以及其他兼容 OpenAI 接口的自定义 API 服务。
 
 ## 技术栈
 
@@ -123,7 +107,7 @@ pnpm tauri build
 ## 项目结构
 
 ```
-PastePaw/
+ClipPaste/
 ├── src-tauri/           # Rust 后端代码
 │   ├── src/
 │   │   ├── main.rs      # 应用入口
@@ -261,4 +245,4 @@ sequenceDiagram
 
 如果对你有帮助，给我家小公主买杯喝的吧，谢谢<br/>
 欢迎在备注中加上你 GitHub 名字<br/>
-<a href="https://raw.githubusercontent.com/XueshiQiao/PastePaw/refs/heads/main/docs/sponsor_code_wechat.jpg" ><img src="https://raw.githubusercontent.com/XueshiQiao/PastePaw/refs/heads/main/docs/sponsor_code_wechat.jpg" alt="赞赏" style="width: 400px;"></a>
+<a href="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/docs/sponsor_code_wechat.jpg" ><img src="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/docs/sponsor_code_wechat.jpg" alt="赞赏" style="width: 400px;"></a>

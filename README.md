@@ -1,8 +1,8 @@
 <h1 align="center">
     <picture>
-      <img src="https://raw.githubusercontent.com/XueshiQiao/PastePaw/refs/heads/main/src-tauri/icons/64x64.png" alt="Claude-Mem" width="32">
-    </picture>
-    PastePaw - Clipboard History Manager
+            <img src="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/src-tauri/icons/64x64.png" alt="Claude-Mem" width="32">
+        </picture>
+        ClipPaste - Clipboard History Manager
 </h1>
 
 
@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/XueshiQiao/PastePaw/actions/workflows/release.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/XueshiQiao/PastePaw/release.yml?branch=main&style=flat" alt="CI status"></a>
-  <a href="https://github.com/XueshiQiao/PastePaw/releases"><img src="https://img.shields.io/github/v/release/XueshiQiao/PastePaw?include_prereleases&style=flat" alt="GitHub release"></a>
+    <a href="https://github.com/Phieu-Tran/ClipPaste/actions/workflows/release.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/Phieu-Tran/ClipPaste/release.yml?branch=main&style=flat" alt="CI status"></a>
+    <a href="https://github.com/Phieu-Tran/ClipPaste/releases"><img src="https://img.shields.io/github/v/release/Phieu-Tran/ClipPaste?include_prereleases&style=flat" alt="GitHub release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL3.0-blue.svg?style=flat" alt="MIT License"></a>
 </p>
 
@@ -32,8 +32,6 @@ A beautiful clipboard history manager for Windows, built with Rust + Tauri + Rea
 - ⌨️ **Customizable Hotkey** - Set your preferred shortcut to open the history
 - 🔄 **Infinite Scroll** - Seamlessly browse through unlimited history
 - 🛡️ **Smart Filtering** - Intelligent debounce logic to ignore "Ghost Copies" from other clipboard tools
-- 🤖 **AI Powered** - Built-in AI to summarize, translate, explain code, and fix grammar
-- ⚙️ **Customizable AI** - Fully customize AI action names and system prompts to suit your workflow
 
 ## Screenshots
 
@@ -58,31 +56,18 @@ A beautiful clipboard history manager for Windows, built with Rust + Tauri + Rea
 
 ## Application Exceptions (Ignored Apps)
 
-PastePaw allows you to exclude specific applications from being recorded in the clipboard history. This is useful for privacy-sensitive applications like password managers or banking apps.
+ClipPaste allows you to exclude specific applications from being recorded in the clipboard history. This is useful for privacy-sensitive applications like password managers or banking apps.
 
 (You need to provide the API Key for the AI provider)
 
 **Logic & Behavior:**
 - **How to manage:** Go to Settings -> Ignored Applications. You can browse for an executable (`.exe`) or strictly type its name.
-- **Privacy Protection:** When content is copied, PastePaw checks the source application against your ignore list.
+- **Privacy Protection:** When content is copied, ClipPaste checks the source application against your ignore list.
 - **Robust Matching:** The system checks against **both**:
     1.  **Executable Name** (e.g., `notepad.exe`) - Matches any instance of this app regardless of location.
     2.  **Full File Path** (e.g., `C:\Windows\System32\notepad.exe`) - Matches only the specific installed instance.
 - **Case Insensitive:** Matching is case-insensitive to ensure reliable detection on Windows.
 
-## AI Features
-
-PastePaw integrates powerful AI capabilities to help you process your clipboard content more efficiently.
-
-- **Actions:** Right-click any clip to access AI actions:
-    - **Summarize:** Get a concise summary of long texts.
-    - **Translate:** Translate content to your preferred language.
-    - **Explain Code:** Understand complex code snippets instantly.
-    - **Fix Grammar:** Polishing your writing with professional grammar checks.
-- **Full Customization:**
-    - **Custom Names:** Rename AI actions in Settings (e.g., change "Translate" to "To Spanish").
-    - **Custom Prompts:** Override default system prompts to tailor the AI's behavior and output style.
-    - **Provider Support:** Support for OpenAI, DeepSeek, and other OpenAI-compatible APIs.
 
 ## Tech Stack
 
@@ -123,7 +108,7 @@ pnpm tauri build
 ## Project Structure
 
 ```
-PastePaw/
+ClipPaste/
 ├── src-tauri/           # Rust backend
 │   ├── src/
 │   │   ├── main.rs      # App entry point

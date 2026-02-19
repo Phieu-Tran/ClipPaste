@@ -14,7 +14,7 @@ git push origin main
 
 ### Step 2: Enable GitHub Pages
 
-1. Go to your repository on GitHub: https://github.com/XueshiQiao/PastePaw
+1. Go to your repository on GitHub: https://github.com/Phieu-Tran/ClipPaste
 2. Click **Settings** (top navigation)
 3. Click **Pages** (left sidebar)
 4. Under **Source**:
@@ -27,16 +27,16 @@ git push origin main
 
 - GitHub will build and deploy your site (takes 2-3 minutes)
 - You'll see a green checkmark when it's ready
-- Your site will be live at: **https://xueshiqiao.github.io/PastePaw/**
+- Your site will be live at: **https://Phieu-Tran.github.io/ClipPaste/**
 
 ### Step 4: Verify the pages
 
 Visit these URLs to make sure everything is working:
 
-- ✅ Landing page: https://xueshiqiao.github.io/PastePaw/
-- ✅ Privacy policy: https://xueshiqiao.github.io/PastePaw/privacy.html
-- ✅ Support page: https://xueshiqiao.github.io/PastePaw/support.html
-- ✅ Terms of service: https://xueshiqiao.github.io/PastePaw/terms.html
+- ✅ Landing page: https://Phieu-Tran.github.io/ClipPaste/
+- ✅ Privacy policy: https://Phieu-Tran.github.io/ClipPaste/privacy.html
+- ✅ Support page: https://Phieu-Tran.github.io/ClipPaste/support.html
+- ✅ Terms of service: https://Phieu-Tran.github.io/ClipPaste/terms.html
 
 ---
 
@@ -48,14 +48,14 @@ Once GitHub Pages is enabled, use these URLs when filling out your App Store Con
 
 | Field in App Store Connect | URL to Use |
 |---------------------------|------------|
-| **Support URL** | `https://xueshiqiao.github.io/PastePaw/support.html` |
-| **Marketing URL** (optional) | `https://xueshiqiao.github.io/PastePaw/` |
-| **Privacy Policy URL** | `https://xueshiqiao.github.io/PastePaw/privacy.html` |
+| **Support URL** | `https://Phieu-Tran.github.io/ClipPaste/support.html` |
+| **Marketing URL** (optional) | `https://Phieu-Tran.github.io/ClipPaste/` |
+| **Privacy Policy URL** | `https://Phieu-Tran.github.io/ClipPaste/privacy.html` |
 
 ### Where to enter these URLs
 
 1. Log in to [App Store Connect](https://appstoreconnect.apple.com/)
-2. Select your app (PastePaw)
+2. Select your app (ClipPaste)
 3. Go to **App Information** section
 4. Scroll to **General Information**
 5. Enter the URLs in the corresponding fields

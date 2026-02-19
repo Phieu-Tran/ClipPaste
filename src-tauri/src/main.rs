@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use PastePaw::run_app;
+use clipboard::run_app;
 
 fn main() {
     run_app();

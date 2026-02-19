@@ -23,7 +23,7 @@ mod database;
 mod models;
 mod commands;
 mod constants;
-mod ai;
+
 
 use models::get_runtime;
 use database::Database;
@@ -38,8 +38,37 @@ pub fn run_app() {
 
     let data_dir = get_data_dir();
     fs::create_dir_all(&data_dir).ok();
-    let db_path = data_dir.join("paste_paw.db");
-    let db_path_str = db_path.to_str().unwrap_or("paste_paw.db").to_string();
+
+    // Migrate existing DB from old ClipPaste location if present.
+    let old_data_dir = match dirs::data_dir() {
+        Some(path) => path.join("ClipPaste"),
+        None => std::env::current_dir().unwrap_or(std::path::PathBuf::from(".")).join("ClipPaste"),
+    };
+    let old_db_path = old_data_dir.join("paste_paw.db");
+
+    let db_path = data_dir.join("clipboard.db");
+    if old_db_path.exists() && !db_path.exists() {
+        if let Some(parent) = db_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        match fs::rename(&old_db_path, &db_path) {
+            Ok(_) => log::info!("Migrated DB from {:?} to {:?}", old_db_path, db_path),
+            Err(e) => {
+                // fallback: try copy + remove
+                match fs::copy(&old_db_path, &db_path) {
+                    Ok(_) => {
+                        let _ = fs::remove_file(&old_db_path);
+                        log::info!("Copied old DB {:?} to {:?}", old_db_path, db_path);
+                    }
+                    Err(copy_err) => {
+                        log::error!("Failed to migrate DB: rename error: {:?}, copy error: {:?}", e, copy_err);
+                    }
+                }
+            }
+        }
+    }
+
+    let db_path_str = db_path.to_str().unwrap_or("clipboard.db").to_string();
 
     let rt = get_runtime().expect("Failed to get global tokio runtime");
     let _guard = rt.enter();
@@ -177,7 +206,7 @@ pub fn run_app() {
             }
         })
         .setup(move |app| {
-            log::info!("PastePaw starting...");
+            log::info!("Clipboard starting...");
             let _ = app.track_event("startup", None);
             log::info!("Database path: {}", db_path_str);
             if let Ok(log_dir) = app.path().app_log_dir() {
@@ -187,7 +216,7 @@ pub fn run_app() {
             let db_for_clipboard = db_arc.clone();
 
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show PastePaw", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show Clipboard", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             let icon_data = include_bytes!("../icons/tray.png");
@@ -199,7 +228,7 @@ pub fn run_app() {
             let _tray = TrayIconBuilder::new()
                 .icon(icon)
                 .menu(&menu)
-                .tooltip("PastePaw")
+                .tooltip("Clipboard")
                 .on_menu_event(move |app, event| {
                     if event.id.as_ref() == "quit" {
                         app.exit(0);
@@ -318,7 +347,6 @@ pub fn run_app() {
             commands::pick_file,
             commands::get_layout_config,
             commands::test_log,
-            commands::ai_process_clip,
             commands::focus_window
         ])
         .run(tauri::generate_context!())
@@ -505,8 +533,8 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 fn get_data_dir() -> std::path::PathBuf {
     let current_dir = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     match dirs::data_dir() {
-        Some(path) => path.join("PastePaw"),
-        None => current_dir.join("PastePaw"),
+        Some(path) => path.join("Clipboard"),
+        None => current_dir.join("Clipboard"),
     }
 }
 

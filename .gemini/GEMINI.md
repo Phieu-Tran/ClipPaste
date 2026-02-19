@@ -1,6 +1,6 @@
 # Project Introduction
 
-PastePaw is a beautiful, high-performance clipboard history manager for Windows. It is built using a modern tech stack: **Rust (Tauri 2.x)** for the backend and **React 18 + TypeScript** for the frontend.
+ClipPaste is a beautiful, high-performance clipboard history manager for Windows. It is built using a modern tech stack: **Rust (Tauri 2.x)** for the backend and **React 18 + TypeScript** for the frontend.
 
 ### Key Features:
 - **Local & Private:** All data is stored locally in a SQLite database.

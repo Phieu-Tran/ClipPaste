@@ -9,7 +9,6 @@ import { ControlBar } from './components/ControlBar';
 import { DragPreview } from './components/DragPreview';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderModal } from './components/FolderModal';
-import { AiResultDialog } from './components/AiResultDialog';
 import { useKeyboard } from './hooks/useKeyboard';
 import { useTheme } from './hooks/useTheme';
 import { Toaster, toast } from 'sonner';
@@ -35,7 +34,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
-  const [settings, setSettings] = useState<Settings | null>(null);
 
   // Simulated Drag State
   const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
@@ -54,6 +52,8 @@ function App() {
     pendingDrag: null as { clipId: string; startX: number; startY: number } | null,
   });
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const effectiveTheme = useTheme(theme);
 
   const appWindow = getCurrentWindow();
@@ -64,19 +64,26 @@ function App() {
     invoke<Settings>('get_settings')
       .then((s) => {
         setTheme(s.theme);
-        setSettings(s);
       })
       .catch(console.error);
 
     // Listen for setting changes from the settings window
     const unlisten = listen<Settings>('settings-changed', (event) => {
       setTheme(event.payload.theme);
-      setSettings(event.payload);
     });
 
     return () => {
       unlisten.then((f) => f());
     };
+  }, []);
+
+  // Auto-show search bar when window opens
+  useEffect(() => {
+    setShowSearch(true);
+    // Focus search input after a short delay to ensure it's rendered
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
   }, []);
 
   const openSettings = useCallback(async () => {
@@ -316,6 +323,25 @@ function App() {
     onClose: () => appWindow.hide(),
     onSearch: () => setShowSearch(true),
     onDelete: () => handleDelete(selectedClipId),
+    onNavigateUp: () => {
+      const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
+      if (currentIndex > 0) {
+        setSelectedClipId(clips[currentIndex - 1].id);
+      }
+    },
+    onNavigateDown: () => {
+      const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
+      if (currentIndex === -1 && clips.length > 0) {
+        setSelectedClipId(clips[0].id);
+      } else if (currentIndex < clips.length - 1) {
+        setSelectedClipId(clips[currentIndex + 1].id);
+      }
+    },
+    onPaste: () => {
+      if (selectedClipId) {
+        handlePaste(selectedClipId);
+      }
+    },
   });
 
   const handleDelete = async (clipId: string | null) => {
@@ -455,29 +481,7 @@ function App() {
   const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename'>('create');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
 
-  // AI Result State
-  const [aiResult, setAiResult] = useState({
-    isOpen: false,
-    title: '',
-    content: '',
-  });
 
-  const handleAiAction = async (clipId: string, action: string, title: string) => {
-    try {
-      const toastId = toast.loading('Processing with AI...');
-      const result = await invoke<string>('ai_process_clip', { clipId, action });
-      toast.dismiss(toastId);
-      setAiResult({
-        isOpen: true,
-        title,
-        content: result,
-      });
-    } catch (error) {
-      toast.dismiss();
-      console.error('AI Processing Failed:', error);
-      toast.error(`AI Error: ${error}`);
-    }
-  };
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, type: 'card' | 'folder', itemId: string) => {
@@ -568,25 +572,13 @@ function App() {
               options={
                 contextMenu.type === 'card'
                   ? [
+                      ...folders.map((folder) => ({
+                        label: `Move to "${folder.name}"`,
+                        onClick: () => handleMoveClip(contextMenu.itemId, folder.id),
+                      })),
                       {
-                        label: `${settings?.ai_title_summarize || 'Summarize'} (AI)`,
-                        onClick: () =>
-                          handleAiAction(contextMenu.itemId, 'summarize', 'AI Summary'),
-                      },
-                      {
-                        label: `${settings?.ai_title_translate || 'Translate'} (AI)`,
-                        onClick: () =>
-                          handleAiAction(contextMenu.itemId, 'translate', 'AI Translation'),
-                      },
-                      {
-                        label: `${settings?.ai_title_explain_code || 'Explain Code'} (AI)`,
-                        onClick: () =>
-                          handleAiAction(contextMenu.itemId, 'explain_code', 'Code Explanation'),
-                      },
-                      {
-                        label: `${settings?.ai_title_fix_grammar || 'Fix Grammar'} (AI)`,
-                        onClick: () =>
-                          handleAiAction(contextMenu.itemId, 'fix_grammar', 'Grammar Check'),
+                        label: 'Remove from folder',
+                        onClick: () => handleMoveClip(contextMenu.itemId, null),
                       },
                       {
                         label: 'Delete',
@@ -616,6 +608,7 @@ function App() {
           )}
 
           <ControlBar
+            ref={searchInputRef}
             folders={folders}
             selectedFolder={selectedFolder}
             onSelectFolder={setSelectedFolder}
@@ -675,12 +668,6 @@ function App() {
               onSubmit={handleCreateOrRenameFolder}
             />
 
-            <AiResultDialog
-              isOpen={aiResult.isOpen}
-              title={aiResult.title}
-              content={aiResult.content}
-              onClose={() => setAiResult((prev) => ({ ...prev, isOpen: false }))}
-            />
           </main>
           <Toaster richColors position="bottom-center" theme={effectiveTheme} />
         </div>

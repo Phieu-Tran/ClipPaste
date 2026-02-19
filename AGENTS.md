@@ -1,11 +1,11 @@
-# PastePaw Development Guide
+# ClipPaste Development Guide
 
 A beautiful clipboard history manager for Windows, built with Rust + Tauri + React + TypeScript.
 
 ## Project Structure
 
 ```
-PastePaw/
+ClipPaste/
 ├── src-tauri/           # Rust backend
 │   ├── src/
 │   │   ├── main.rs      # App entry point
