@@ -13,7 +13,6 @@ interface ControlBarProps {
   showSearch: boolean;
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  onMoveClip: (clipId: string, folderId: string | null) => void;
   isDragging: boolean;
   dragTargetFolderId: string | null;
   onDragHover: (folderId: string | null) => void;

@@ -351,7 +351,8 @@ pub fn run_app() {
             commands::get_data_directory,
             commands::set_data_directory,
             commands::pick_folder,
-            commands::reorder_folders
+            commands::reorder_folders,
+            commands::paste_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,10 +4,10 @@ interface KeyboardOptions {
   onClose?: () => void;
   onSearch?: () => void;
   onDelete?: () => void;
-  onPin?: () => void;
   onNavigateUp?: () => void;
   onNavigateDown?: () => void;
   onPaste?: () => void;
+  onEdit?: () => void;
 }
 
 export function useKeyboard(options: KeyboardOptions) {
@@ -28,11 +28,6 @@ export function useKeyboard(options: KeyboardOptions) {
         options.onDelete();
       }
 
-      if (e.key === 'p' && !e.metaKey && !e.ctrlKey && options.onPin) {
-        e.preventDefault();
-        options.onPin();
-      }
-
       if (e.key === 'ArrowUp' && options.onNavigateUp) {
         e.preventDefault();
         options.onNavigateUp();
@@ -46,6 +41,11 @@ export function useKeyboard(options: KeyboardOptions) {
       if (e.key === 'Enter' && options.onPaste) {
         e.preventDefault();
         options.onPaste();
+      }
+
+      if (e.key === 'e' && !e.metaKey && !e.ctrlKey && options.onEdit) {
+        e.preventDefault();
+        options.onEdit();
       }
     };
 

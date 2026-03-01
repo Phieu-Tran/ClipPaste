@@ -10,7 +10,6 @@ interface ClipListProps {
   onSelectClip: (clipId: string) => void;
   onPaste: (clipId: string) => void;
   onCopy: (clipId: string) => void;
-  onDelete: (clipId: string) => void;
   onLoadMore: () => void;
   resetScrollKey?: number;
   onDragStart: (clipId: string, startX: number, startY: number) => void;
@@ -58,7 +57,6 @@ export function ClipList({
 
     // If scrolled within 300px of the end
     if (scrollLeft + clientWidth >= scrollWidth - 300) {
-      console.log('Scroll to end detected (native), loading more...');
       onLoadMore();
     }
   };

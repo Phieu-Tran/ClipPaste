@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_x::{write_text, stop_listening, start_listening};
+use sha2::{Digest, Sha256};
 
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use std::str::FromStr;
@@ -141,7 +142,7 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                 crate::clipboard::set_ignore_hash(content_hash.clone());
                 crate::clipboard::set_last_stable_hash(content_hash.clone());
 
-                println!("DEBUG: Frontend handled image. Skipping backend write.");
+                log::debug!("Frontend handled image. Skipping backend write.");
 
             } else {
                 let content_str = String::from_utf8_lossy(&clip.content).to_string();
@@ -212,6 +213,67 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
         }
         None => Err("Clip not found".to_string()),
     }
+}
+
+#[tauri::command]
+pub async fn paste_text(content: String, app: AppHandle, window: tauri::WebviewWindow, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+    let pool = &db.pool;
+    let _guard = crate::clipboard::CLIPBOARD_SYNC.lock().await;
+
+    // Compute hash so the monitor ignores this self-write
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let content_hash = format!("{:x}", hasher.finalize());
+
+    crate::clipboard::set_ignore_hash(content_hash.clone());
+    crate::clipboard::set_last_stable_hash(content_hash);
+
+    if let Err(e) = stop_listening().await {
+        log::error!("Failed to stop listener: {}", e);
+    }
+
+    let mut last_err = String::new();
+    for i in 0..5 {
+        match write_text(content.clone()).await {
+            Ok(_) => { last_err.clear(); break; }
+            Err(e) => {
+                last_err = e.to_string();
+                log::warn!("paste_text clipboard write attempt {} failed: {}. Retrying...", i + 1, last_err);
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+    }
+
+    if let Err(e) = start_listening(app.clone()).await {
+        log::error!("Failed to restart listener: {}", e);
+    }
+
+    if !last_err.is_empty() {
+        return Err(format!("Failed to set clipboard text: {}", last_err));
+    }
+
+    let _ = window.emit("clipboard-write", &content);
+
+    let auto_paste = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'auto_paste'"#)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None)
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true);
+
+    if auto_paste {
+        crate::animate_window_hide(&window, Some(Box::new(move || {
+            #[cfg(target_os = "windows")]
+            {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                crate::clipboard::send_paste_input();
+            }
+        })));
+    } else {
+        crate::animate_window_hide(&window, None);
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -423,7 +485,6 @@ pub async fn get_folders(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<Fold
         }
     }).collect();
 
-    //println!("folder items: {:#?}", items);
 
     Ok(items)
 }
@@ -445,54 +506,27 @@ pub async fn get_settings(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
         "ignore_ghost_clips": false
     });
 
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'mica_effect'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
+    if let Ok(rows) = sqlx::query_as::<_, (String, String)>(r#"SELECT key, value FROM settings"#)
+        .fetch_all(pool).await
     {
-        settings["mica_effect"] = serde_json::json!(value);
-    }
-
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'ignore_ghost_clips'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
-    {
-        if let Ok(b) = value.parse::<bool>() {
-            settings["ignore_ghost_clips"] = serde_json::json!(b);
+        for (key, value) in rows {
+            match key.as_str() {
+                "mica_effect" | "theme" | "hotkey" => {
+                    settings[&key] = serde_json::json!(value);
+                }
+                "ignore_ghost_clips" | "auto_paste" => {
+                    if let Ok(b) = value.parse::<bool>() {
+                        settings[&key] = serde_json::json!(b);
+                    }
+                }
+                "max_items" | "auto_delete_days" => {
+                    if let Ok(num) = value.parse::<i64>() {
+                        settings[&key] = serde_json::json!(num);
+                    }
+                }
+                _ => {}
+            }
         }
-    }
-
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'auto_paste'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
-    {
-        if let Ok(b) = value.parse::<bool>() {
-            settings["auto_paste"] = serde_json::json!(b);
-        }
-    }
-
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'max_items'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
-    {
-        if let Ok(num) = value.parse::<i64>() {
-            settings["max_items"] = serde_json::json!(num);
-        }
-    }
-
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'auto_delete_days'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
-    {
-        if let Ok(num) = value.parse::<i64>() {
-            settings["auto_delete_days"] = serde_json::json!(num);
-        }
-    }
-
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'theme'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
-    {
-        settings["theme"] = serde_json::json!(value);
-    }
-
-    if let Ok(Some(value)) = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'hotkey'"#)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())
-    {
-        settings["hotkey"] = serde_json::json!(value);
     }
 
 

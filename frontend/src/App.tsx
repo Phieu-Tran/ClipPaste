@@ -9,6 +9,7 @@ import { ControlBar } from './components/ControlBar';
 import { DragPreview } from './components/DragPreview';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderModal } from './components/FolderModal';
+import { EditClipModal } from './components/EditClipModal';
 import { useKeyboard } from './hooks/useKeyboard';
 import { useTheme } from './hooks/useTheme';
 import { Toaster, toast } from 'sonner';
@@ -350,23 +351,24 @@ function App() {
   }, [refreshCurrentFolder, loadFolders, refreshTotalCount]);
 
   useKeyboard({
-    onClose: () => appWindow.hide(),
+    onClose: () => { if (!editingClip) appWindow.hide(); },
     onSearch: () => {
+      if (editingClip) return;
       setShowSearch(true);
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
     },
-    onDelete: () => handleDelete(selectedClipId),
+    onDelete: () => { if (!editingClip) handleDelete(selectedClipId); },
     onNavigateUp: () => {
-      if (isLoading) return;
+      if (editingClip || isLoading) return;
       const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex > 0) {
         setSelectedClipId(clips[currentIndex - 1].id);
       }
     },
     onNavigateDown: () => {
-      if (isLoading) return;
+      if (editingClip || isLoading) return;
       const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex === -1 && clips.length > 0) {
         setSelectedClipId(clips[0].id);
@@ -375,8 +377,13 @@ function App() {
       }
     },
     onPaste: () => {
-      if (selectedClipId) {
+      if (selectedClipId && !editingClip) {
         handlePaste(selectedClipId);
+      }
+    },
+    onEdit: () => {
+      if (selectedClipId && !editingClip) {
+        handleEditBeforePaste(selectedClipId);
       }
     },
   });
@@ -409,7 +416,6 @@ function App() {
            // clip.content is Base64 for images (from get_clips in commands.rs)
            const blob = base64ToBlob(clip.content, 'image/png');
            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-           console.log("Frontend clipboard write success");
         } catch (e) {
            console.error("Frontend clipboard write failed", e);
         }
@@ -428,42 +434,9 @@ function App() {
       if (clip && clip.clip_type === 'image') {
         const blob = base64ToBlob(clip.content, 'image/png');
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        // For copy, we might not need to call backend 'paste_clip' if we just want to copy?
-        // But 'paste_clip' also updates 'last_pasted' timestamp and moves it to top.
-        // The original code called 'paste_clip'. Let's keep consistency but maybe backend copy logic differs?
-        // Actually handleCopy calls 'paste_clip' in original code, which is weird if it simulates Ctrl+V?
-        // 'handleCopy' usually just puts it on clipboard.
-        // If 'paste_clip' simulates input, then 'handleCopy' executing 'paste_clip' would PASTE it.
-        // Let's look at the original code:
-        // await invoke('paste_clip', { id: clipId });
-        // toast.success('Copied to clipboard');
-        // This implies 'paste_clip' MIGHT NOT always paste? Or the user logic was flawed?
-        // Wait, if it's "Copy", we shouldn't simulate Ctrl+V.
-        // Let's assuming for now we just want to write to clipboard.
-
-        // If we write to clipboard here, we might still want to update DB timestamp.
-        // But let's follow the existing pattern: invoke 'paste_clip' but we know we modify it to NOT write image.
-        // Wait, if backend 'paste_clip' performs Ctrl+V, then 'handleCopy' doing 'paste_clip' is wrong?
-        // Let's assume the user just wants to put it on clipboard.
       }
 
-      // We still invoke paste_clip because it probably handles DB updates.
-      // However, if paste_clip simulates Ctrl+V, that would be bad for "Copy".
-      // Let's assume the backend 'paste_clip' logic is "Put to clipboard AND Paste".
-      // Use 'copy_clip_to_clipboard' if it exists?
-      // Checking grep results... no 'copy_clip' found.
-      // It seems 'handleCopy' uses 'paste_clip' which is PROBABLY WRONG if it pastes.
-      // But I will stick to the plan: Frontend writes image.
-
-      // If the backend 'paste_clip' does Paste Input, then 'handleCopy' is actually "Paste" in the current app?
-      // Or maybe 'paste_clip' determines intention? No.
-
-      // Let's just implement the Write Image part.
-      // If it's an image, we write it.
-
       await invoke('paste_clip', { id: clipId });
-      // Note: If 'paste_clip' does Ctrl+V, then this "Copy" button actually Pastes.
-      // Refactoring that is out of scope unless necessary.
 
       toast.success('Copied to clipboard');
     } catch (error) {
@@ -522,7 +495,8 @@ function App() {
   const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename'>('create');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
 
-
+  // Edit clip before paste
+  const [editingClip, setEditingClip] = useState<AppClipboardItem | null>(null);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, type: 'card' | 'folder', itemId: string) => {
@@ -539,6 +513,23 @@ function App() {
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu(null);
+  }, []);
+
+  const handleEditBeforePaste = useCallback((clipId: string) => {
+    const clip = clipsRef.current.find((c) => c.id === clipId);
+    if (clip && clip.clip_type !== 'image') {
+      setEditingClip(clip);
+    }
+  }, []);
+
+  const handlePasteEdited = useCallback(async (editedText: string) => {
+    setEditingClip(null);
+    try {
+      await invoke('paste_text', { content: editedText });
+    } catch (error) {
+      console.error('Failed to paste edited text:', error);
+      toast.error('Failed to paste');
+    }
   }, []);
 
   // Updated Create Folder to handle Rename
@@ -622,6 +613,9 @@ function App() {
               options={
                 contextMenu.type === 'card'
                   ? [
+                      ...(clips.find((c) => c.id === contextMenu.itemId)?.clip_type !== 'image'
+                        ? [{ label: 'Chỉnh sửa trước khi paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) }]
+                        : []),
                       ...folders.map((folder) => ({
                         label: `Move to "${folder.name}"`,
                         onClick: () => handleMoveClip(contextMenu.itemId, folder.id),
@@ -657,6 +651,12 @@ function App() {
             />
           )}
 
+          <EditClipModal
+            clip={editingClip}
+            onPaste={handlePasteEdited}
+            onClose={() => setEditingClip(null)}
+          />
+
           <ControlBar
             ref={searchInputRef}
             folders={folders}
@@ -677,7 +677,6 @@ function App() {
               setShowAddFolderModal(true);
             }}
             onMoreClick={openSettings}
-            onMoveClip={handleMoveClip} // Legacy, but kept for interface
             // Simulated Drag Props
             isDragging={!!draggingClipId}
             dragTargetFolderId={dragTargetFolderId}
@@ -700,7 +699,6 @@ function App() {
               onSelectClip={setSelectedClipId}
               onPaste={handlePaste}
               onCopy={handleCopy}
-              onDelete={handleDelete}
               onLoadMore={loadMore}
               resetScrollKey={windowFocusCount}
               // Simulated Drag Props
