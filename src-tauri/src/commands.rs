@@ -817,24 +817,52 @@ pub async fn pick_file() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn pick_folder() -> Result<String, String> {
-    use std::process::Command;
+pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        let ps_script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Select folder to store ClipPaste data'; $null = $d.ShowDialog(); $d.SelectedPath";
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", ps_script])
-            .output()
-            .map_err(|e| e.to_string())?;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize,
+            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+        };
+        use windows::Win32::UI::Shell::{
+            FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH, FOS_PICKFOLDERS,
+        };
 
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if path.is_empty() {
-                return Err("No folder selected".to_string());
+        let hwnd = app
+            .get_webview_window("main")
+            .and_then(|w| w.hwnd().ok())
+            .map(|h| HWND(h.0 as _))
+            .unwrap_or(HWND(std::ptr::null_mut()));
+
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+            let dialog: IFileOpenDialog =
+                CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                    .map_err(|e| format!("Failed to create dialog: {}", e))?;
+
+            let options = dialog.GetOptions().map_err(|e| e.to_string())?;
+            dialog
+                .SetOptions(options | FOS_PICKFOLDERS)
+                .map_err(|e| e.to_string())?;
+
+            match dialog.Show(Some(hwnd)) {
+                Ok(_) => {
+                    let result = dialog.GetResult().map_err(|e| e.to_string())?;
+                    let pwstr = result
+                        .GetDisplayName(SIGDN_FILESYSPATH)
+                        .map_err(|e| e.to_string())?;
+                    let path = pwstr.to_string().map_err(|e| e.to_string())?;
+                    CoTaskMemFree(Some(pwstr.0 as _));
+                    CoUninitialize();
+                    Ok(path)
+                }
+                Err(_) => {
+                    CoUninitialize();
+                    Err("No folder selected".to_string())
+                }
             }
-            Ok(path)
-        } else {
-            Err("Failed to open folder picker".to_string())
         }
     }
     #[cfg(not(target_os = "windows"))]

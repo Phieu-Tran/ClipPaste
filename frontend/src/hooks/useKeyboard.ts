@@ -28,6 +28,12 @@ export function useKeyboard(options: KeyboardOptions) {
         options.onDelete();
       }
 
+      const target = e.target as HTMLElement;
+      const isTyping =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
+
       if (e.key === 'ArrowUp' && options.onNavigateUp) {
         e.preventDefault();
         options.onNavigateUp();
@@ -43,7 +49,7 @@ export function useKeyboard(options: KeyboardOptions) {
         options.onPaste();
       }
 
-      if (e.key === 'e' && !e.metaKey && !e.ctrlKey && options.onEdit) {
+      if (e.key === 'e' && !e.metaKey && !e.ctrlKey && !isTyping && options.onEdit) {
         e.preventDefault();
         options.onEdit();
       }
