@@ -47,7 +47,7 @@
             "icons/icon.ico",
             "icons/icon.icns"
         ],
-        "createUpdaterArtifacts": "v2"
+        "createUpdaterArtifacts": true
     },
     "plugins": {
         "updater": {
