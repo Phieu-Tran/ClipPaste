@@ -132,7 +132,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
                  clip_type = "text";
                  clip_preview = text.chars().take(200).collect::<String>();
                  found_content = true;
-                log::debug!("CLIPBOARD: Found text: {}", clip_preview);
+                log::debug!("CLIPBOARD: Found text ({} chars)", clip_preview.len());
              }
         }
     }
@@ -157,14 +157,14 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
         let mut lock = IGNORE_HASH.lock();
         if let Some(ignore_hash) = lock.take() {
             if ignore_hash == clip_hash {
-                log::info!("CLIPBOARD: Detected self-paste for hash {}, proceeding to update timestamp", ignore_hash);
+                log::info!("CLIPBOARD: Detected self-paste, proceeding to update timestamp");
             }
         }
     }
 
     // capture source app info
     let (source_app, source_icon, exe_name, full_path, is_explicit_owner) = get_clipboard_owner_app_info();
-    log::info!("CLIPBOARD: Source app: {:?}, exe_name: {:?}, full_path: {:?}, explicit: {}", source_app, exe_name, full_path, is_explicit_owner);
+    log::info!("CLIPBOARD: Source app: {:?}, explicit: {}", source_app, is_explicit_owner);
 
     // Check ignore_ghost_clips setting
     let pool = &db.pool;
@@ -206,10 +206,14 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
 
     if let Some(existing_id) = existing_uuid {
         // Bump created_at so re-copied clip moves back to top of the list
-        let _ = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, is_deleted = 0 WHERE uuid = ?"#)
+        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, is_deleted = 0 WHERE uuid = ?"#)
             .bind(&existing_id)
             .execute(pool)
-            .await;
+            .await
+        {
+            log::error!("CLIPBOARD: Failed to update existing clip: {}", e);
+            return;
+        }
 
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": existing_id,
@@ -222,7 +226,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
     } else {
         let clip_uuid = Uuid::new_v4().to_string();
 
-        let _ = sqlx::query(r#"
+        if let Err(e) = sqlx::query(r#"
             INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, created_at, last_accessed)
             VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#)
@@ -235,7 +239,11 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
         .bind(&source_icon)
         .bind(if clip_type == "image" { Some(metadata) } else { None })
         .execute(pool)
-        .await;
+        .await
+        {
+            log::error!("CLIPBOARD: Failed to insert new clip: {}", e);
+            return;
+        }
 
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": clip_uuid,

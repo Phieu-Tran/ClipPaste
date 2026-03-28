@@ -1,10 +1,9 @@
 <h1 align="center">
     <picture>
-            <img src="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/src-tauri/icons/64x64.png" alt="Claude-Mem" width="32">
+            <img src="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/src-tauri/icons/64x64.png" alt="ClipPaste" width="32">
         </picture>
         ClipPaste - Clipboard History Manager
 </h1>
-
 
 <p align="center">
     <a href="README.md">English</a>
@@ -13,68 +12,83 @@
 <p align="center">
     <a href="https://github.com/Phieu-Tran/ClipPaste/actions/workflows/release.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/Phieu-Tran/ClipPaste/release.yml?branch=main&style=flat" alt="CI status"></a>
     <a href="https://github.com/Phieu-Tran/ClipPaste/releases"><img src="https://img.shields.io/github/v/release/Phieu-Tran/ClipPaste?include_prereleases&style=flat" alt="GitHub release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL3.0-blue.svg?style=flat" alt="MIT License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL3.0-blue.svg?style=flat" alt="GPL-3.0 License"></a>
 </p>
 
 A beautiful clipboard history manager for Windows, built with Rust + Tauri + React + TypeScript.
 
 ## Features
 
-- 🔒 **Private** - IMPORTANT! All data stored locally
-- 🎨 **Beautiful UI** - Modern dark/light theme with immediate switching
-- ⚡ **Fast & Lightweight** - Built with Rust for performance
-- 📋 **Clipboard History** - Automatically saves everything you copy
-- 🖥️ **Support multiple Displays** - Show on the active display
-- 🔍 **Search** - Quickly find previously copied content
-- 📁 **Folders** - Organize clips into custom folders
-- 🚫 **Application Exceptions** - Ignore content from specific sensitive apps (e.g., Password Managers)
+- 🔒 **Private** - All data stored locally, never leaves your machine
+- 🎨 **Beautiful UI** - Modern dark/light/system theme with Windows Mica / Mica Alt / Clear effects
+- ⚡ **Fast & Lightweight** - Built with Rust for native performance
+- 📋 **Clipboard History** - Automatically saves text, images, and more
+- 📌 **Pin/Unpin** - Pin important clips to the top of the list
+- ✏️ **Edit Before Paste** - Modify text content before pasting
+- 📁 **Folders** - Organize clips into color-coded custom folders with drag & drop
+- 👀 **Folder Hover Preview** - Hover over a folder tab to instantly preview its clips without switching
+- 🖥️ **Multi-Monitor Support** - Window appears on the active display
+- 🔍 **Search** - Full-text search across all clips and folders
+- 🚫 **Application Exceptions** - Ignore content from sensitive apps (e.g., password managers)
 - ⌨️ **Customizable Hotkey** - Set your preferred shortcut to open the history
 - 🔄 **Infinite Scroll** - Seamlessly browse through unlimited history
 - 🛡️ **Smart Filtering** - Intelligent debounce logic to ignore "Ghost Copies" from other clipboard tools
+- 🗂️ **Folder Protection** - Items saved in folders are protected from bulk clear operations
+- 📂 **Custom Data Directory** - Choose where to store your clipboard database
 
 ## Screenshots
 
 ### Light theme
-![docs/paste_paw_dark.png](docs/paste_paw_light.png)
+![Light theme](docs/paste_paw_light.png)
 ### Dark theme
-![docs/paste_paw_dark.png](docs/paste_paw_dark.png)
+![Dark theme](docs/paste_paw_dark.png)
+
+## Installation
+
+### Download
+
+Download the latest installer from [GitHub Releases](https://github.com/Phieu-Tran/ClipPaste/releases).
 
 ## Keyboard Shortcuts
 
 ### Global
-- **Toggle Window**: `Ctrl+Shift+V` (Default, Customizable in Settings)
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+V` | Toggle window (customizable in Settings) |
 
 ### In-App
-
-- `Ctrl + F` - Focus search
-- `Escape` - Close window / Clear search
-- `Enter` - Paste selected item
-- `Delete` - Delete selected item
-- `P` - Pin/Unpin selected item
-- `Arrow Up/Down` - Navigate items
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+F` | Focus search bar |
+| `Escape` | Close window / Clear search |
+| `Enter` | Paste selected clip |
+| `Ctrl+Delete` | Delete selected clip |
+| `P` | Pin/Unpin selected clip |
+| `E` | Edit before paste (text only) |
+| `Arrow Up/Down` | Navigate between clips |
 
 ## Application Exceptions (Ignored Apps)
 
 ClipPaste allows you to exclude specific applications from being recorded in the clipboard history. This is useful for privacy-sensitive applications like password managers or banking apps.
 
-(You need to provide the API Key for the AI provider)
-
 **Logic & Behavior:**
-- **How to manage:** Go to Settings -> Ignored Applications. You can browse for an executable (`.exe`) or strictly type its name.
+- **How to manage:** Go to Settings -> Ignored Applications. You can browse for an executable (`.exe`) or type its name.
 - **Privacy Protection:** When content is copied, ClipPaste checks the source application against your ignore list.
 - **Robust Matching:** The system checks against **both**:
     1.  **Executable Name** (e.g., `notepad.exe`) - Matches any instance of this app regardless of location.
     2.  **Full File Path** (e.g., `C:\Windows\System32\notepad.exe`) - Matches only the specific installed instance.
 - **Case Insensitive:** Matching is case-insensitive to ensure reliable detection on Windows.
 
-
 ## Tech Stack
 
-- **Backend**: Rust + Tauri 2.x
-- **Frontend**: React 18 + TypeScript
-- **Database**: SQLite
-- **Styling**: Tailwind CSS
-- **Package Manager**: pnpm
+| Layer | Technology |
+|-------|-----------|
+| Framework | Tauri v2 |
+| Frontend | React 18 + TypeScript + Vite |
+| Styling | TailwindCSS v3 |
+| Backend | Rust (Tokio async runtime) |
+| Database | SQLite via sqlx |
+| Package Manager | pnpm |
 
 ## Getting Started
 
@@ -84,14 +98,11 @@ ClipPaste allows you to exclude specific applications from being recorded in the
 - Rust 1.70+
 - pnpm
 
-### Installation
+### Development
 
 ```bash
 # Install dependencies
 pnpm install
-
-# Install Tauri CLI
-cargo install tauri-cli
 
 # Run development build
 pnpm tauri dev
@@ -108,21 +119,25 @@ pnpm tauri build
 
 ```
 ClipPaste/
-├── src-tauri/           # Rust backend
+├── src-tauri/              # Rust backend
 │   ├── src/
-│   │   ├── main.rs      # App entry point
-│   │   ├── lib.rs       # Core logic
-│   │   ├── clipboard.rs # Clipboard monitoring
-│   │   ├── database.rs  # SQLite operations
-│   │   ├── commands.rs  # Tauri IPC commands
-│   │   └── models.rs    # Data models
-│   └── Cargo.toml
-├── frontend/            # React frontend
+│   │   ├── main.rs         # App entry point
+│   │   ├── lib.rs          # Core logic, window animation, tray, hotkey
+│   │   ├── clipboard.rs    # Clipboard monitoring & processing
+│   │   ├── database.rs     # SQLite pool + migrations
+│   │   ├── commands.rs     # All Tauri IPC commands
+│   │   ├── models.rs       # Rust structs (Clip, Folder, etc.)
+│   │   └── constants.rs    # Window height, margins
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── frontend/               # React frontend
 │   ├── src/
-│   │   ├── components/  # UI components
-│   │   ├── hooks/       # React hooks
-│   │   ├── types/       # TypeScript types
-│   │   └── App.tsx
+│   │   ├── App.tsx         # Root component, manages all state
+│   │   ├── components/     # UI components (ClipList, ClipCard, ControlBar, etc.)
+│   │   ├── hooks/          # useKeyboard, useTheme
+│   │   ├── types/          # TypeScript types
+│   │   ├── constants.ts    # Layout constants
+│   │   └── windows/        # Settings window
 │   └── package.json
 └── README.md
 ```
@@ -137,10 +152,10 @@ Tauri v2 enforces a strict case mapping between JavaScript/TypeScript and Rust:
 - **Rust/Backend:** Use `snake_case` for function arguments in `#[tauri::command]` (e.g., `filter_id`).
 
 **Example:**
-*   **Frontend:** `invoke('get_clips', { filterId: 'pinned' })`
+*   **Frontend:** `invoke('get_clips', { filterId: '1' })`
 *   **Backend:** `pub fn get_clips(filter_id: Option<String>)`
 
-Failure to follow this convention (e.g., passing `snake_case` from the frontend) will result in arguments being passed as `null` or `None` to the backend.
+Failure to follow this convention will result in arguments being passed as `null` or `None` to the backend.
 
 ### Window Behavior & Multi-Monitor Support
 
@@ -165,14 +180,13 @@ The application uses a centralized layout system to ensure the native window and
 
 #### How to change Card Height
 The card height is dynamic and fills the available window space. To change it:
-1.  Update `WINDOW_HEIGHT` in **both** `constants.rs` and `constants.ts` to the same value.
+1.  Update `WINDOW_HEIGHT` in **both** `constants.rs` and `constants.ts`.
 2.  Restart the application (required for Rust changes).
 
 #### How to change Vertical Spacing (Safe Zones)
-To add more or less space at the top/bottom of the cards (e.g., to prevent clipping during hover):
+To add more or less space at the top/bottom of the cards:
 1.  Modify `CARD_VERTICAL_PADDING` in `frontend/src/constants.ts`.
 2.  Increasing this value makes cards **shorter**; decreasing it makes them **taller**.
-
 
 ## Architecture & Design Decisions
 
@@ -180,7 +194,7 @@ To add more or less space at the top/bottom of the cards (e.g., to prevent clipp
 
 We use a **Hybrid Clipboard Approach** to solve the notorious Windows `OSError 1418` (Thread does not have a clipboard open).
 
--   **Backend (Rust)**: Great for monitoring the clipboard and handling database checks. However, on Windows, clipboard access is bound to the thread that created the window (STA). Trying to write images from a background Tokio thread often leads to race conditions and "OpenClipboard Failed" errors. The solution would be to write images on the main thread, but this severely slows down UI responsiveness and causes lag.
+-   **Backend (Rust)**: Great for monitoring the clipboard and handling database checks. However, on Windows, clipboard access is bound to the thread that created the window (STA). Trying to write images from a background Tokio thread often leads to race conditions and "OpenClipboard Failed" errors.
 -   **Frontend (WebView2)**: The browser engine has a mature, stable implementation of `navigator.clipboard.write`.
 
 **Our Solution:**
@@ -239,3 +253,7 @@ sequenceDiagram
     OS->>User: Display Pasted Image
     deactivate OS
 ```
+
+## License
+
+[GPL-3.0](LICENSE)

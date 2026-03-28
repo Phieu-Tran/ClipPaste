@@ -2,7 +2,7 @@ import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
 import { useMemo, memo, useState } from 'react';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Pin } from 'lucide-react';
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -10,6 +10,7 @@ interface ClipCardProps {
   onSelect: () => void;
   onPaste: () => void;
   onCopy: () => void;
+  onPin: () => void;
   onDragStart: (clipId: string, startX: number, startY: number) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }
@@ -20,6 +21,7 @@ export const ClipCard = memo(function ClipCard({
   onSelect,
   onPaste,
   onCopy,
+  onPin,
   onDragStart,
   onContextMenu,
 }: ClipCardProps) {
@@ -119,6 +121,21 @@ export const ClipCard = memo(function ClipCard({
           <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-foreground shadow-sm">
             {title}
           </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPin();
+            }}
+            className={clsx(
+              'rounded-md p-1 transition-all hover:bg-black/10',
+              clip.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            )}
+            title={clip.is_pinned ? 'Unpin' : 'Pin'}
+          >
+            <Pin size={14} className={clsx(
+              clip.is_pinned ? 'text-amber-400 fill-amber-400' : 'text-foreground/70 hover:text-foreground'
+            )} />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();

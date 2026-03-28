@@ -27,7 +27,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                 log::info!("Querying for folder_id: {}", numeric_id);
                 sqlx::query_as(r#"
                     SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ?
-                    ORDER BY created_at DESC LIMIT ? OFFSET ?
+                    ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
                 .bind(limit)
@@ -42,7 +42,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             log::info!("Querying for items, offset: {}, limit: {}", offset, limit);
             sqlx::query_as(r#"
                 SELECT * FROM clips WHERE is_deleted = 0
-                ORDER BY created_at DESC LIMIT ? OFFSET ?
+                ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
             "#)
             .bind(limit)
             .bind(offset)
@@ -77,6 +77,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             source_app: clip.source_app.clone(),
             source_icon: clip.source_icon.clone(),
             metadata: clip.metadata.clone(),
+            is_pinned: clip.is_pinned,
         }
     }).collect();
 
@@ -109,6 +110,7 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
                 source_app: clip.source_app,
                 source_icon: clip.source_icon,
                 metadata: clip.metadata,
+                is_pinned: clip.is_pinned,
             })
         }
         None => Err("Clip not found".to_string()),
@@ -347,6 +349,12 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
     let pool = &db.pool;
 
     let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
+
+    // Hard-delete all clips in this folder first (user explicitly chose to delete the folder)
+    sqlx::query(r#"DELETE FROM clips WHERE folder_id = ?"#)
+        .bind(folder_id)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+
     sqlx::query(r#"DELETE FROM folders WHERE id = ?"#)
         .bind(folder_id)
         .execute(pool).await.map_err(|e| e.to_string())?;
@@ -356,7 +364,7 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
 }
 
 #[tauri::command]
-pub async fn rename_folder(id: String, name: String, db: tauri::State<'_, Arc<Database>>, window: tauri::WebviewWindow) -> Result<(), String> {
+pub async fn rename_folder(id: String, name: String, color: Option<String>, db: tauri::State<'_, Arc<Database>>, window: tauri::WebviewWindow) -> Result<(), String> {
     let pool = &db.pool;
 
     let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
@@ -371,14 +379,29 @@ pub async fn rename_folder(id: String, name: String, db: tauri::State<'_, Arc<Da
         return Err("A folder with this name already exists".to_string());
     }
 
-    sqlx::query(r#"UPDATE folders SET name = ? WHERE id = ?"#)
+    sqlx::query(r#"UPDATE folders SET name = ?, color = ? WHERE id = ?"#)
         .bind(name)
+        .bind(color)
         .bind(folder_id)
         .execute(pool).await.map_err(|e| e.to_string())?;
 
     // Emit event so main window knows to refresh
     let _ = window.emit("clipboard-change", ());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn toggle_pin(id: String, db: tauri::State<'_, Arc<Database>>) -> Result<bool, String> {
+    let pool = &db.pool;
+    sqlx::query("UPDATE clips SET is_pinned = CASE WHEN is_pinned = 0 THEN 1 ELSE 0 END WHERE uuid = ?")
+        .bind(&id)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+
+    let is_pinned: bool = sqlx::query_scalar("SELECT is_pinned FROM clips WHERE uuid = ?")
+        .bind(&id)
+        .fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    Ok(is_pinned)
 }
 
 #[tauri::command]
@@ -406,7 +429,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             if let Some(numeric_id) = folder_id_num {
                 sqlx::query_as(r#"
                     SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ? AND (text_preview LIKE ? OR content LIKE ?)
-                    ORDER BY created_at DESC LIMIT ? OFFSET ?
+                    ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
                 .bind(&search_pattern)
@@ -421,7 +444,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         None => {
             sqlx::query_as(r#"
                 SELECT * FROM clips WHERE is_deleted = 0 AND (text_preview LIKE ? OR content LIKE ?)
-                ORDER BY created_at DESC LIMIT ? OFFSET ?
+                ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
             "#)
             .bind(&search_pattern)
             .bind(&search_pattern)
@@ -448,6 +471,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             source_app: clip.source_app.clone(),
             source_icon: clip.source_icon.clone(),
             metadata: clip.metadata.clone(),
+            is_pinned: clip.is_pinned,
         }
     }).collect();
 
@@ -682,11 +706,16 @@ pub async fn clear_clipboard_history(db: tauri::State<'_, Arc<Database>>) -> Res
 }
 
 #[tauri::command]
-pub async fn clear_all_clips(db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
     sqlx::query(r#"DELETE FROM clips WHERE folder_id IS NULL"#)
         .execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Notify main window to refresh
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.emit("clipboard-change", ());
+    }
     Ok(())
 }
 
@@ -838,31 +867,30 @@ pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-            let dialog: IFileOpenDialog =
-                CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
-                    .map_err(|e| format!("Failed to create dialog: {}", e))?;
+            // Use a closure so CoUninitialize is always called regardless of early returns
+            let result = (|| -> Result<String, String> {
+                let dialog: IFileOpenDialog =
+                    CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                        .map_err(|e| format!("Failed to create dialog: {}", e))?;
 
-            let options = dialog.GetOptions().map_err(|e| e.to_string())?;
-            dialog
-                .SetOptions(options | FOS_PICKFOLDERS)
-                .map_err(|e| e.to_string())?;
+                let options = dialog.GetOptions().map_err(|e| e.to_string())?;
+                dialog
+                    .SetOptions(options | FOS_PICKFOLDERS)
+                    .map_err(|e| e.to_string())?;
 
-            match dialog.Show(Some(hwnd)) {
-                Ok(_) => {
-                    let result = dialog.GetResult().map_err(|e| e.to_string())?;
-                    let pwstr = result
-                        .GetDisplayName(SIGDN_FILESYSPATH)
-                        .map_err(|e| e.to_string())?;
-                    let path = pwstr.to_string().map_err(|e| e.to_string())?;
-                    CoTaskMemFree(Some(pwstr.0 as _));
-                    CoUninitialize();
-                    Ok(path)
-                }
-                Err(_) => {
-                    CoUninitialize();
-                    Err("No folder selected".to_string())
-                }
-            }
+                dialog.Show(Some(hwnd)).map_err(|_| "No folder selected".to_string())?;
+
+                let item = dialog.GetResult().map_err(|e| e.to_string())?;
+                let pwstr = item
+                    .GetDisplayName(SIGDN_FILESYSPATH)
+                    .map_err(|e| e.to_string())?;
+                let path = pwstr.to_string().map_err(|e| e.to_string())?;
+                CoTaskMemFree(Some(pwstr.0 as _));
+                Ok(path)
+            })();
+
+            CoUninitialize();
+            result
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -917,9 +945,25 @@ pub async fn set_data_directory(
     app: AppHandle,
 ) -> Result<(), String> {
     use std::path::PathBuf;
-    
+
     let new_path_buf = PathBuf::from(&new_path);
-    
+
+    // Security: reject relative paths
+    if !new_path_buf.is_absolute() {
+        return Err("Path must be absolute".to_string());
+    }
+
+    // Security: reject UNC/network paths
+    if new_path.starts_with("\\\\") || new_path.starts_with("//") {
+        return Err("Network paths are not supported".to_string());
+    }
+
+    // Security: reject path traversal
+    let path_str = new_path_buf.to_string_lossy();
+    if path_str.contains("..") {
+        return Err("Path traversal is not allowed".to_string());
+    }
+
     // Validate path exists or can be created
     if !new_path_buf.exists() {
         if let Some(parent) = new_path_buf.parent() {
@@ -972,7 +1016,9 @@ pub async fn set_data_directory(
         "data_directory": new_path
     });
     
-    std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+    let config_json = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    std::fs::write(&config_path, config_json)
         .map_err(|e| format!("Failed to save config: {}", e))?;
     
     log::info!("Data directory set to: {}", new_path);

@@ -11,6 +11,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.7] - 2026-03-28
+
+### Added
+- **Folder hover preview** — hover over a folder tab to instantly preview its clips in the main list without switching folders; move mouse down to interact (select, paste, copy), move away to return to current folder
+- **Pin/Unpin clips** — pin important clips to the top of the list; toggle via pin icon on card header, keyboard shortcut `P`, or right-click context menu
+- **Winget manifest** — prepared manifest files for `winget install Phieu-Tran.ClipPaste`
+
+---
+
+## [1.2.6] - 2026-03-16
+
+### Fixed
+- **Security: CSP enabled** — added Content Security Policy (`script-src 'self'`, `img-src 'self' data:`) to prevent XSS
+- **Security: path traversal blocked** — `set_data_directory` now rejects relative paths, `..` traversal, and UNC/network paths
+- **Security: sensitive data removed from logs** — clipboard content preview, hashes, and exe paths are no longer logged
+- **Security: COM resource leak fixed** — `CoUninitialize` is now always called in `pick_folder` regardless of error path
+- **Silent DB errors fixed** — clipboard insert/update failures are now logged and no longer emit misleading frontend events
+- **Folder name validation** — reject names longer than 50 characters or containing special characters (`<>:"|?*\/`)
+- **Arrow key navigation in search** — arrow keys no longer hijack cursor movement while typing in the search bar
+- **Config serialization panic fixed** — replaced `.unwrap()` with proper error handling in `set_data_directory`
+
+---
+
+## [1.2.5] - 2026-03-10
+
+### Fixed
+- **Folder items protected from "Clear History"**: bulk clear operations now correctly preserve all clips saved in user folders (`folder_id IS NULL` filter enforced in `clear_all_clips`, `clear_clipboard_history`, and `remove_duplicate_clips`)
+- **Deleting a folder now removes its clips**: previously deleting a folder left its clips as orphaned DB rows that were invisible but permanently shielded from any bulk-delete — now the clips are hard-deleted together with the folder
+- **Main window refreshes after Clear History**: `clear_all_clips` now emits `clipboard-change` so the main window reloads immediately without requiring a new clipboard copy
+- **Folder item delete is now a hard-delete**: deleting a clip that lives inside a folder performs a hard-delete instead of soft-delete, preventing uncleanable soft-deleted orphan rows
+
+---
+
+## [1.2.4] - 2026-03-09
+
+### Fixed
+- **Window stuck visible after closing settings**: fixed a race condition where closing the settings window while the main window's blur event was suppressed caused the main window to remain visible permanently. Now detects settings window destruction and hides main window if needed
+- **IS_ANIMATING flag could get stuck**: replaced manual `store(false)` calls with a RAII guard so the animation lock is always released even if the animation thread panics
+
+---
+
+## [1.2.3] - 2026-03-07
+
+### Added
+- **Folder color picker**: choose a color for each folder when creating or renaming — right-click a folder tab and select "Change color" or pick a color during creation
+- Folder color is persisted to the database and reflected on the folder tab in the main window
+
+### Fixed
+- **Folder tab scroll**: scrolling up (left) on the folder tab bar now works correctly — mouse wheel up/down is properly mapped to horizontal scroll
+
+---
+
+## [1.2.2] - 2026-03-05
+
+### Fixed
+- Minor stability improvements
+
+---
+
+## [1.2.1] - 2026-03-04
+
+### Fixed
+- **Edit hotkey**: edit shortcut (`E`) no longer fires while typing in the search bar or any input field
+- **Folder picker**: refactored to use Windows COM API directly instead of PowerShell, improving reliability and speed
+
+---
+
+## [1.2.0] - 2026-03-03
+
+### Added
+- **Edit before paste**: press `E` on a selected clip to open an editor and modify the text before pasting — images are excluded
+
+---
+
 ## [1.1.9] - 2026-03-01
 
 ### Fixed
@@ -104,7 +178,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 <!-- Links -->
-[Unreleased]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.1.9...HEAD
+[Unreleased]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.6...HEAD
+[1.2.6]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.5...v1.2.6
+[1.2.5]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.4...v1.2.5
+[1.2.4]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.3...v1.2.4
+[1.2.3]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.2...v1.2.3
+[1.2.2]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.1.9...v1.2.0
 [1.1.9]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.1.6...v1.1.7

@@ -18,6 +18,15 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_TIME: AtomicI64 = AtomicI64::new(0);
 
+/// RAII guard that resets IS_ANIMATING to false when dropped,
+/// ensuring the flag is always cleared even if the thread panics.
+struct AnimatingGuard;
+impl Drop for AnimatingGuard {
+    fn drop(&mut self) {
+        IS_ANIMATING.store(false, Ordering::SeqCst);
+    }
+}
+
 mod clipboard;
 mod database;
 mod models;
@@ -202,6 +211,28 @@ pub fn run_app() {
                         }
                     }
                 }
+                tauri::WindowEvent::Destroyed => {
+                    // When settings window is destroyed, check if main window should be hidden.
+                    // This handles the race condition where settings closes while main window's
+                    // blur event was suppressed (get_webview_window("settings") returned Some
+                    // during the brief destruction window).
+                    if window.label() == "settings" {
+                        let app_handle = window.app_handle().clone();
+                        std::thread::spawn(move || {
+                            // Small delay to let focus settle after settings window closes
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            if let Some(main_win) = app_handle.get_webview_window("main") {
+                                if !IS_ANIMATING.load(Ordering::SeqCst)
+                                    && main_win.is_visible().unwrap_or(false)
+                                    && !main_win.is_focused().unwrap_or(true)
+                                {
+                                    log::info!("Settings closed: main window visible but not focused, hiding.");
+                                    crate::animate_window_hide(&main_win, None);
+                                }
+                            }
+                        });
+                    }
+                }
                 _ => {}
             }
         })
@@ -352,6 +383,7 @@ pub fn run_app() {
             commands::set_data_directory,
             commands::pick_folder,
             commands::reorder_folders,
+            commands::toggle_pin,
             commands::paste_text
         ])
         .run(tauri::generate_context!())
@@ -372,6 +404,7 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
 
     let window = window.clone();
     std::thread::spawn(move || {
+        let _guard = AnimatingGuard; // resets IS_ANIMATING on drop (even on panic)
         let monitor = get_monitor_at_cursor(&window);
 
         if let Some(monitor) = monitor {
@@ -442,7 +475,7 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
                 }));
             }
         }
-        IS_ANIMATING.store(false, Ordering::SeqCst);
+        // IS_ANIMATING is reset by _guard on drop
     });
 }
 
@@ -454,6 +487,7 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 
     let window = window.clone();
     std::thread::spawn(move || {
+        let _guard = AnimatingGuard; // resets IS_ANIMATING on drop (even on panic)
         if let Some(monitor) = window.current_monitor().ok().flatten() {
             let scale_factor = monitor.scale_factor();
             let work_area = monitor.work_area();
@@ -556,7 +590,7 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
                 callback();
             }
         }
-        IS_ANIMATING.store(false, Ordering::SeqCst);
+        // IS_ANIMATING is reset by _guard on drop
     });
 }
 

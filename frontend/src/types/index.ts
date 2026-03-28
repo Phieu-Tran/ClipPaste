@@ -8,6 +8,7 @@ export interface ClipboardItem {
   source_app: string | null;
   source_icon: string | null;
   metadata: string | null;
+  is_pinned: boolean;
 }
 
 export interface FolderItem {

@@ -10,10 +10,12 @@ interface ClipListProps {
   onSelectClip: (clipId: string) => void;
   onPaste: (clipId: string) => void;
   onCopy: (clipId: string) => void;
+  onPin: (clipId: string) => void;
   onLoadMore: () => void;
   resetScrollKey?: number;
   onDragStart: (clipId: string, startX: number, startY: number) => void;
   onCardContextMenu?: (e: React.MouseEvent, clipId: string) => void;
+  isPreviewing?: boolean;
 }
 
 export function ClipList({
@@ -24,10 +26,12 @@ export function ClipList({
   onSelectClip,
   onPaste,
   onCopy,
+  onPin,
   onLoadMore,
   resetScrollKey,
   onDragStart,
   onCardContextMenu,
+  isPreviewing,
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -94,7 +98,7 @@ export function ClipList({
   return (
     <div
       ref={containerRef}
-      className="no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4"
+      className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
       style={{
@@ -110,6 +114,7 @@ export function ClipList({
           onSelect={() => onSelectClip(clip.id)}
           onPaste={() => onPaste(clip.id)}
           onCopy={() => onCopy(clip.id)}
+          onPin={() => onPin(clip.id)}
           onDragStart={onDragStart}
           onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
         />

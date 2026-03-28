@@ -11,7 +11,9 @@ impl Database {
             .filename(db_path)
             .create_if_missing(true);
 
-        let pool = SqlitePool::connect_with(options).await.unwrap();
+        let pool = SqlitePool::connect_with(options)
+            .await
+            .expect("Failed to connect to database");
 
         Self { pool }
     }
@@ -78,6 +80,10 @@ impl Database {
 
         // Add position column to folders if it doesn't exist yet (safe to run multiple times)
         let _ = sqlx::query("ALTER TABLE folders ADD COLUMN position INTEGER DEFAULT 0")
+            .execute(&self.pool).await;
+
+        // Add is_pinned column to clips if it doesn't exist yet (safe to run multiple times)
+        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_pinned INTEGER DEFAULT 0")
             .execute(&self.pool).await;
 
        Ok(())

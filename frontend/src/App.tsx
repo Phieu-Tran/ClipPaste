@@ -386,6 +386,11 @@ function App() {
         handleEditBeforePaste(selectedClipId);
       }
     },
+    onPin: () => {
+      if (selectedClipId && !editingClip) {
+        handleTogglePin(selectedClipId);
+      }
+    },
   });
 
   const handleDelete = async (clipId: string | null) => {
@@ -393,7 +398,9 @@ function App() {
     if (isDeletingRef.current) return;
     isDeletingRef.current = true;
     try {
-      await invoke('delete_clip', { id: clipId, hardDelete: false });
+      // Folder items are hard-deleted directly (soft-deleted folder items can never be cleaned up by bulk clear)
+      const isInFolder = clips.find((c) => c.id === clipId)?.folder_id != null;
+      await invoke('delete_clip', { id: clipId, hardDelete: isInFolder });
       setClips((prev) => prev.filter((c) => c.id !== clipId));
       setSelectedClipId(null);
       // Refresh counts
@@ -428,6 +435,21 @@ function App() {
     }
   };
 
+  const handleTogglePin = async (clipId: string) => {
+    try {
+      const isPinned = await invoke<boolean>('toggle_pin', { id: clipId });
+      setClips((prev) =>
+        prev.map((c) => (c.id === clipId ? { ...c, is_pinned: isPinned } : c))
+      );
+      toast.success(isPinned ? 'Pinned' : 'Unpinned');
+      // Reload to re-sort pinned items to top
+      refreshCurrentFolder();
+    } catch (error) {
+      console.error('Failed to toggle pin:', error);
+      toast.error('Failed to pin clip');
+    }
+  };
+
   const handleCopy = async (clipId: string) => {
     try {
       const clip = clips.find((c) => c.id === clipId);
@@ -445,9 +467,9 @@ function App() {
     }
   };
 
-  const handleCreateFolder = async (name: string) => {
+  const handleCreateFolder = async (name: string, color: string | null) => {
     try {
-      await invoke('create_folder', { name, icon: null, color: null });
+      await invoke('create_folder', { name, icon: null, color });
       await loadFolders();
     } catch (error) {
       console.error('Failed to create folder:', error);
@@ -494,9 +516,94 @@ function App() {
   // New Folder Modal Rename Mode
   const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename'>('create');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingFolderColor, setEditingFolderColor] = useState<string | null>(null);
 
   // Edit clip before paste
   const [editingClip, setEditingClip] = useState<AppClipboardItem | null>(null);
+
+  // Folder hover preview state
+  const [previewFolder, setPreviewFolder] = useState<string | null | undefined>(undefined);
+  const [previewClips, setPreviewClips] = useState<AppClipboardItem[]>([]);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const previewCacheRef = useRef<Map<string, AppClipboardItem[]>>(new Map());
+  const previewRequestIdRef = useRef(0); // Track latest request to ignore stale responses
+  const previewEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPreviewEnd = useCallback(() => {
+    if (previewEndTimerRef.current) {
+      clearTimeout(previewEndTimerRef.current);
+      previewEndTimerRef.current = null;
+    }
+  }, []);
+
+  const clearPreview = useCallback(() => {
+    cancelPreviewEnd();
+    previewRequestIdRef.current++; // Invalidate any in-flight requests
+    setPreviewFolder(undefined);
+    setPreviewClips([]);
+    setIsPreviewLoading(false);
+  }, [cancelPreviewEnd]);
+
+  const handleFolderHover = useCallback(async (folderId: string | null) => {
+    cancelPreviewEnd();
+    const requestId = ++previewRequestIdRef.current;
+
+    setPreviewFolder(folderId);
+
+    // Check cache first
+    const cacheKey = folderId ?? '__all__';
+    const cached = previewCacheRef.current.get(cacheKey);
+    if (cached) {
+      setPreviewClips(cached);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    setIsPreviewLoading(true);
+    try {
+      const data = await invoke<AppClipboardItem[]>('get_clips', {
+        filterId: folderId,
+        limit: 20,
+        offset: 0,
+        previewOnly: false,
+      });
+      // Only apply if this is still the latest request
+      if (requestId !== previewRequestIdRef.current) return;
+      previewCacheRef.current.set(cacheKey, data);
+      setPreviewClips(data);
+    } catch (error) {
+      if (requestId !== previewRequestIdRef.current) return;
+      console.error('Failed to load preview clips:', error);
+    } finally {
+      if (requestId === previewRequestIdRef.current) {
+        setIsPreviewLoading(false);
+      }
+    }
+  }, [cancelPreviewEnd]);
+
+  const handleFolderHoverEnd = useCallback(() => {
+    // Delay ending preview so user can move mouse down to clip list
+    cancelPreviewEnd();
+    previewEndTimerRef.current = setTimeout(() => {
+      clearPreview();
+    }, 300);
+  }, [cancelPreviewEnd, clearPreview]);
+
+  const handlePreviewListEnter = useCallback(() => {
+    // Mouse entered clip list while previewing — keep preview alive
+    cancelPreviewEnd();
+  }, [cancelPreviewEnd]);
+
+  const handlePreviewListLeave = useCallback(() => {
+    clearPreview();
+  }, [clearPreview]);
+
+  // Invalidate preview cache when clips change (new copy, delete, move, etc.)
+  useEffect(() => {
+    previewCacheRef.current.clear();
+  }, [clips, folders]);
+
+  const isPreviewing = previewFolder !== undefined;
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, type: 'card' | 'folder', itemId: string) => {
@@ -533,15 +640,15 @@ function App() {
   }, []);
 
   // Updated Create Folder to handle Rename
-  const handleCreateOrRenameFolder = async (name: string) => {
+  const handleCreateOrRenameFolder = async (name: string, color: string | null) => {
     if (folderModalMode === 'create') {
-      await handleCreateFolder(name);
+      await handleCreateFolder(name, color);
       toast.success(`Folder "${name}" created`);
       setShowAddFolderModal(false);
       setNewFolderName('');
     } else if (folderModalMode === 'rename' && editingFolderId) {
       try {
-        await invoke('rename_folder', { id: editingFolderId, name });
+        await invoke('rename_folder', { id: editingFolderId, name, color });
         await loadFolders();
         toast.success(`Renamed to "${name}"`);
         setShowAddFolderModal(false);
@@ -598,12 +705,15 @@ function App() {
       {/* Content Container */}
       <div className="relative h-full w-full" style={{ padding: `${LAYOUT.WINDOW_PADDING}px` }}>
         <div className="flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 font-sans text-foreground shadow-[0_0_24px_rgba(0,0,0,0.2)] dark:shadow-[0_0_24px_rgba(0,0,0,0.4)]">
-          {draggingClipId && (
-            <DragPreview
-              clip={clips.find((c) => c.id === draggingClipId)!}
-              position={dragPosition}
-            />
-          )}
+          {draggingClipId && (() => {
+            const dragClip = clips.find((c) => c.id === draggingClipId);
+            return dragClip ? (
+              <DragPreview
+                clip={dragClip}
+                position={dragPosition}
+              />
+            ) : null;
+          })()}
 
           {contextMenu && (
             <ContextMenu
@@ -613,6 +723,10 @@ function App() {
               options={
                 contextMenu.type === 'card'
                   ? [
+                      {
+                        label: clips.find((c) => c.id === contextMenu.itemId)?.is_pinned ? 'Unpin' : 'Pin',
+                        onClick: () => handleTogglePin(contextMenu.itemId),
+                      },
                       ...(clips.find((c) => c.id === contextMenu.itemId)?.clip_type !== 'image'
                         ? [{ label: 'Chỉnh sửa trước khi paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) }]
                         : []),
@@ -638,6 +752,18 @@ function App() {
                           setEditingFolderId(contextMenu.itemId);
                           const folder = folders.find((f) => f.id === contextMenu.itemId);
                           setNewFolderName(folder ? folder.name : '');
+                          setEditingFolderColor(folder?.color ?? null);
+                          setShowAddFolderModal(true);
+                        },
+                      },
+                      {
+                        label: 'Change color',
+                        onClick: () => {
+                          setFolderModalMode('rename');
+                          setEditingFolderId(contextMenu.itemId);
+                          const folder = folders.find((f) => f.id === contextMenu.itemId);
+                          setNewFolderName(folder ? folder.name : '');
+                          setEditingFolderColor(folder?.color ?? null);
                           setShowAddFolderModal(true);
                         },
                       },
@@ -687,23 +813,31 @@ function App() {
               if (folderId) handleContextMenu(e, 'folder', folderId);
             }}
             onReorderFolders={handleReorderFolders}
+            onFolderHover={handleFolderHover}
+            onFolderHoverEnd={handleFolderHoverEnd}
             theme={effectiveTheme}
           />
 
-          <main className="no-scrollbar relative flex-1">
+          <main
+            className="no-scrollbar relative flex-1"
+            onMouseEnter={isPreviewing ? handlePreviewListEnter : undefined}
+            onMouseLeave={isPreviewing ? handlePreviewListLeave : undefined}
+          >
             <ClipList
-              clips={clips}
-              isLoading={isLoading}
-              hasMore={hasMore}
+              clips={isPreviewing ? previewClips : clips}
+              isLoading={isPreviewing ? isPreviewLoading : isLoading}
+              hasMore={isPreviewing ? false : hasMore}
               selectedClipId={selectedClipId}
               onSelectClip={setSelectedClipId}
               onPaste={handlePaste}
               onCopy={handleCopy}
-              onLoadMore={loadMore}
-              resetScrollKey={windowFocusCount}
+              onPin={handleTogglePin}
+              onLoadMore={isPreviewing ? () => {} : loadMore}
+              resetScrollKey={isPreviewing ? undefined : windowFocusCount}
               // Simulated Drag Props
               onDragStart={startDrag}
               onCardContextMenu={(e, clipId) => handleContextMenu(e, 'card', clipId)}
+              isPreviewing={isPreviewing}
             />
 
             {/* Add/Rename Folder Modal Overlay */}
@@ -711,6 +845,7 @@ function App() {
               isOpen={showAddFolderModal}
               mode={folderModalMode}
               initialName={newFolderName}
+              initialColor={folderModalMode === 'rename' ? editingFolderColor : null}
               onClose={() => {
                 setShowAddFolderModal(false);
                 setNewFolderName('');

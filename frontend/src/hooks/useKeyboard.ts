@@ -8,6 +8,7 @@ interface KeyboardOptions {
   onNavigateDown?: () => void;
   onPaste?: () => void;
   onEdit?: () => void;
+  onPin?: () => void;
 }
 
 export function useKeyboard(options: KeyboardOptions) {
@@ -34,12 +35,12 @@ export function useKeyboard(options: KeyboardOptions) {
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable;
 
-      if (e.key === 'ArrowUp' && options.onNavigateUp) {
+      if (e.key === 'ArrowUp' && !isTyping && options.onNavigateUp) {
         e.preventDefault();
         options.onNavigateUp();
       }
 
-      if (e.key === 'ArrowDown' && options.onNavigateDown) {
+      if (e.key === 'ArrowDown' && !isTyping && options.onNavigateDown) {
         e.preventDefault();
         options.onNavigateDown();
       }
@@ -52,6 +53,11 @@ export function useKeyboard(options: KeyboardOptions) {
       if (e.key === 'e' && !e.metaKey && !e.ctrlKey && !isTyping && options.onEdit) {
         e.preventDefault();
         options.onEdit();
+      }
+
+      if (e.key === 'p' && !e.metaKey && !e.ctrlKey && !isTyping && options.onPin) {
+        e.preventDefault();
+        options.onPin();
       }
     };
 

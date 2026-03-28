@@ -18,6 +18,7 @@ pub struct Clip {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_accessed: chrono::DateTime<chrono::Utc>,
     pub last_pasted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -58,6 +59,7 @@ pub struct ClipboardItem {
     pub source_app: Option<String>,
     pub source_icon: Option<String>,
     pub metadata: Option<String>,
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

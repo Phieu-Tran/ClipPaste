@@ -20,6 +20,8 @@ interface ControlBarProps {
   totalClipCount: number;
   onFolderContextMenu?: (e: React.MouseEvent, folderId: string) => void;
   onReorderFolders?: (folderIds: string[]) => void;
+  onFolderHover?: (folderId: string | null) => void;
+  onFolderHoverEnd?: () => void;
   theme?: 'light' | 'dark';
 }
 
@@ -41,6 +43,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     totalClipCount,
     onFolderContextMenu,
     onReorderFolders,
+    onFolderHover,
+    onFolderHoverEnd,
     theme = 'dark',
   },
   ref
@@ -48,6 +52,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Scroll selected folder tab into view when selection changes
   useEffect(() => {
@@ -66,7 +71,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     }
   }, [selectedFolder]);
 
-  const allCategories = [
+  const allCategories: { id: string | null; name: string; count: number; color?: string | null }[] = [
     { id: null, name: 'All', count: totalClipCount },
     ...folders.map((f) => ({ ...f, count: f.item_count })),
   ];
@@ -74,14 +79,41 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   const handleMouseEnter = (folderId: string | null) => {
     if (isDragging) {
       onDragHover(folderId);
+      return;
+    }
+    // Always cancel any pending hover timer first
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    if (folderId !== selectedFolder && onFolderHover) {
+      // Start hover preview delay (only for non-selected folders)
+      hoverTimerRef.current = setTimeout(() => {
+        onFolderHover(folderId);
+      }, 200);
+    } else if (folderId === selectedFolder) {
+      // Hovering back to selected folder — end preview immediately
+      onFolderHoverEnd?.();
     }
   };
 
   const handleMouseLeave = () => {
     onDragLeave();
+    // Cancel pending hover timer
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    onFolderHoverEnd?.();
   };
 
-  const getFolderColor = (name: string) => {
+  const COLOR_KEY_TO_INDEX: Record<string, number> = {
+    red: 0, orange: 1, amber: 2, green: 3, emerald: 4, teal: 5,
+    cyan: 6, sky: 7, blue: 8, indigo: 9, violet: 10, purple: 11,
+    fuchsia: 12, pink: 13, rose: 14,
+  };
+
+  const getFolderColor = (name: string, colorKey?: string | null) => {
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -245,6 +277,9 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 'bg-rose-400/10 text-white/80 hover:bg-rose-400/20 hover:text-white drop-shadow-sm',
             },
           ];
+    if (colorKey && colorKey in COLOR_KEY_TO_INDEX) {
+      return colors[COLOR_KEY_TO_INDEX[colorKey]];
+    }
     return colors[Math.abs(hash) % colors.length];
   };
 
@@ -298,6 +333,11 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         ref={scrollContainerRef}
         className="no-scrollbar mask-gradient-right flex flex-1 items-center gap-2 overflow-x-auto p-1"
         style={{ WebkitAppRegion: 'no-drag' } as any}
+        onWheel={(e) => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollLeft += e.deltaY + e.deltaX;
+          }
+        }}
       >
         {allCategories.map((cat) => {
           const isActive = selectedFolder === cat.id;
@@ -320,8 +360,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 : 'bg-indigo-500/10 text-white/80 hover:bg-indigo-500/20 hover:text-white shadow-sm';
             }
           } else {
-            // Custom Folder - Use dynamic color
-            const style = getFolderColor(cat.name);
+            // Custom Folder - Use stored color or hash-based fallback
+            const style = getFolderColor(cat.name, cat.color);
             colorClass = isActive ? style.active : style.inactive;
           }
 
