@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.8] - 2026-03-28
+
+### Changed
+- **Window vibrancy upgraded** — using custom `window-vibrancy` v0.8.0 with flicker-free effect switching (`switch_effect`), smart OS-version fallback, and `clear_all_effects`
+- **Native rounded corners** — Windows 11 DWM `DWMWA_WINDOW_CORNER_PREFERENCE` for native-looking window corners
+- **Smoother effect transitions** — switching between Mica/Mica Alt/Clear no longer flickers
+
+---
+
 ## [1.2.7] - 2026-03-28
 
 ### Added

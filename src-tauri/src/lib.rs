@@ -15,6 +15,9 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
+#[cfg(target_os = "windows")]
+use window_vibrancy::{switch_effect, apply_rounded_corners, clear_all_effects, Effect, CornerPreference};
+
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_TIME: AtomicI64 = AtomicI64::new(0);
 
@@ -738,33 +741,25 @@ pub fn get_monitor_at_cursor(window: &tauri::WebviewWindow) -> Option<tauri::Mon
 pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &tauri::Theme) {
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::{clear_mica, apply_mica, apply_tabbed};
+        let dark = Some(matches!(theme, tauri::Theme::Dark));
 
-        // 1. mica && mica_tabbed(mica_alt) ref:https://learn.microsoft.com/en-us/windows/apps/design/style/mica
-        // "Mica Alt is a variant of Mica, with stronger tinting of the user's desktop background color"
-        // 2. How to use: DWMWA_USE_IMMERSIVE_DARK_MODE (underlying of apply_mica)?
-        // After passing hWnd (the handle to the window you want to change) as your first parameter,
-        // you need to pass in DWMWA_USE_IMMERSIVE_DARK_MODE as the dwAttribute parameter.
-        // This is a constant in the DWM API that lets the Windows frame be drawn in Dark mode colors when the Dark mode system setting is enabled.
-        // If you switch to Light mode, you will have to change DWMWA_USE_IMMERSIVE_DARK_MODE from 20 to 0
-        // for the title bar to be drawn in light mode colors.
-        // see https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-windows-themes
+        // Use switch_effect for flicker-free transitions (clears old effect first)
         match effect {
             "clear" => {
-                let _ = clear_mica(window);
-                log::info!("THEME:Mica effect cleared");
+                let _ = clear_all_effects(window);
+                log::info!("THEME:All effects cleared");
             },
-            "mica" | "dark" => {  // dark for legacy reasons, remove in future
-                let _ = clear_mica(window);
-                let _ = apply_mica(window, Some(matches!(theme, tauri::Theme::Dark)));
+            "mica" | "dark" => {
+                let _ = switch_effect(window, Effect::Mica, dark, None);
                 log::info!("THEME:Applied Mica effect (Theme: {})", theme);
             },
-            "mica_alt" | "auto" | _ => {  // auto for legacy reasons, remove in future
-                let _ = clear_mica(window);
-                // Use Tabbed effect for 'mica_alt' as it looks more modern on Win11
-                let _ = apply_tabbed(window, Some(matches!(theme, tauri::Theme::Dark)));
+            "mica_alt" | "auto" | _ => {
+                let _ = switch_effect(window, Effect::Tabbed, dark, None);
                 log::info!("THEME:Applied Tabbed effect (Theme: {})", theme);
             }
         }
+
+        // Apply native rounded corners on Win11
+        let _ = apply_rounded_corners(window, CornerPreference::Round);
     }
 }
