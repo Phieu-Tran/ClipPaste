@@ -356,7 +356,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         {/* Header */}
         <div className="drag-area flex items-center justify-between border-b border-border p-4">
           <h2 className="text-lg font-semibold">Settings</h2>
-          <button onClick={onClose} className="icon-button">
+          <button onClick={onClose} className="no-drag icon-button" style={{ WebkitAppRegion: 'no-drag' } as any}>
             <X size={18} />
           </button>
         </div>
