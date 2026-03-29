@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-03-28
+
+### Added
+- **Per-folder pin** — pin only affects the folder it belongs to; "All" view ignores pin status
+- **Search filters folders** — typing in search bar filters both clips and folder tabs simultaneously
+- **Gradient card headers** — headers now use gradient colors instead of flat backgrounds
+- **Update progress bar** — shows percentage, downloaded/total MB, and animated progress bar during auto-update
+
+### Changed
+- **Smoother card animations** — transitions target specific properties (transform, shadow) instead of `transition-all` for better performance
+- **Selected card glow** — subtle blue shadow glow when a card is selected
+- **Snappier button transitions** — pin/copy buttons use 150ms opacity transition
+- **Native rounded corners** — Windows 11 DWM API for native-looking window corners
+- **Flicker-free effect switching** — `switch_effect()` clears old effect before applying new one
+- **Smart OS fallback** — Mica falls back to Acrylic on Windows 10, Tabbed falls back to Mica then Acrylic
+
+### Fixed
+- **Settings X button** — no longer triggers window maximize instead of close
+- **Footer year** — corrected from 2025 to 2026
+
+---
+
 ## [1.2.9] - 2026-03-28
 
 ### Added

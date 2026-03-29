@@ -40,12 +40,12 @@
 |:---:|:---|:---|
 | 🔒 | **Private** | All data stored locally, never leaves your machine |
 | ⚡ | **Fast & Lightweight** | Built with Rust for native performance |
-| 📌 | **Pin/Unpin** | Pin important clips to the top of the list |
+| 📌 | **Per-Folder Pin** | Pin clips to the top — scoped to each folder individually |
 | ✏️ | **Edit Before Paste** | Modify text content before pasting |
 | 📁 | **Folders** | Organize clips into color-coded folders with drag & drop |
 | 👀 | **Hover Preview** | Hover a folder tab to preview its clips without switching |
-| 🔍 | **Search** | Full-text search across all clips and folders |
-| 🎨 | **Themes** | Dark / Light / System with Windows Mica & Mica Alt effects |
+| 🔍 | **Unified Search** | Search filters both clips and folder tabs simultaneously |
+| 🎨 | **Themes & Effects** | Dark / Light / System with Mica, Mica Alt, and native rounded corners |
 | 🖥️ | **Multi-Monitor** | Window appears on the active display |
 | 🚫 | **Ignore Apps** | Exclude sensitive apps (password managers, etc.) |
 | ⌨️ | **Custom Hotkey** | Set your preferred shortcut (default: `Ctrl+Shift+V`) |
@@ -53,6 +53,7 @@
 | 🛡️ | **Smart Filtering** | Ignore "Ghost Copies" from other clipboard tools |
 | 🗂️ | **Folder Protection** | Folder items survive bulk clear operations |
 | 📂 | **Custom Data Dir** | Choose where to store your clipboard database |
+| 🔄 | **Auto-Update** | In-app update with download progress bar |
 
 ---
 
