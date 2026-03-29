@@ -50,32 +50,32 @@ export const ClipCard = memo(function ClipCard({
   }, [clip.clip_type, clip.content]);
 
   // Generate distinct color based on source app name
-  const getAppColor = (name: string) => {
+  const getAppGradient = (name: string) => {
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const colors = [
-      'bg-red-400',
-      'bg-orange-400',
-      'bg-amber-400',
-      'bg-green-400',
-      'bg-emerald-400',
-      'bg-teal-400',
-      'bg-cyan-400',
-      'bg-sky-400',
-      'bg-blue-400',
-      'bg-indigo-400',
-      'bg-violet-400',
-      'bg-purple-400',
-      'bg-fuchsia-400',
-      'bg-pink-400',
-      'bg-rose-400',
+    const gradients = [
+      'bg-gradient-to-r from-red-500 to-rose-400',
+      'bg-gradient-to-r from-orange-500 to-amber-400',
+      'bg-gradient-to-r from-amber-500 to-yellow-400',
+      'bg-gradient-to-r from-green-500 to-emerald-400',
+      'bg-gradient-to-r from-emerald-500 to-teal-400',
+      'bg-gradient-to-r from-teal-500 to-cyan-400',
+      'bg-gradient-to-r from-cyan-500 to-sky-400',
+      'bg-gradient-to-r from-sky-500 to-blue-400',
+      'bg-gradient-to-r from-blue-500 to-indigo-400',
+      'bg-gradient-to-r from-indigo-500 to-violet-400',
+      'bg-gradient-to-r from-violet-500 to-purple-400',
+      'bg-gradient-to-r from-purple-500 to-fuchsia-400',
+      'bg-gradient-to-r from-fuchsia-500 to-pink-400',
+      'bg-gradient-to-r from-pink-500 to-rose-400',
+      'bg-gradient-to-r from-rose-500 to-red-400',
     ];
-    return colors[Math.abs(hash) % colors.length];
+    return gradients[Math.abs(hash) % gradients.length];
   };
 
-  const headerColor = getAppColor(title);
+  const headerColor = getAppGradient(title);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only left click
@@ -103,10 +103,11 @@ export const ClipCard = memo(function ClipCard({
         onDoubleClick={onPaste}
         onContextMenu={handleContextMenu}
         className={clsx(
-          'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg transition-all',
+          'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg',
+          'transition-[transform,box-shadow,ring-color] duration-200 ease-out',
           isSelected
-            ? 'z-10 scale-[1.02] transform ring-4 ring-blue-500'
-            : 'hover:-translate-y-1 hover:ring-2 hover:ring-primary/30',
+            ? 'z-10 scale-[1.03] ring-[3px] ring-blue-500/80 shadow-xl shadow-blue-500/10'
+            : 'hover:-translate-y-1 hover:shadow-xl hover:ring-2 hover:ring-primary/30',
           'group'
         )}
       >
@@ -127,7 +128,7 @@ export const ClipCard = memo(function ClipCard({
               onPin();
             }}
             className={clsx(
-              'rounded-md p-1 transition-all hover:bg-black/10',
+              'rounded-md p-1 transition-opacity duration-150 hover:bg-black/10',
               clip.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
             )}
             title={clip.is_pinned ? 'Unpin' : 'Pin'}
@@ -143,7 +144,7 @@ export const ClipCard = memo(function ClipCard({
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
-            className="rounded-md p-1 opacity-0 transition-all hover:bg-black/10 group-hover:opacity-100"
+            className="rounded-md p-1 opacity-0 transition-opacity duration-150 hover:bg-black/10 group-hover:opacity-100"
             title="Copy to clipboard"
           >
             {copied ? (
