@@ -37,6 +37,8 @@ generate_logos.py
 generate_new_icons.bat
 AGENTS.md
 release_notes.md
+project_analysis.md
+replace_pastepaw.py
 
 # Don't know why this file is always created...
 nul
