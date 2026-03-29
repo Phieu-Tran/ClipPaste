@@ -71,10 +71,17 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     }
   }, [selectedFolder]);
 
-  const allCategories: { id: string | null; name: string; count: number; color?: string | null }[] = [
+  const allCategoriesRaw: { id: string | null; name: string; count: number; color?: string | null }[] = [
     { id: null, name: 'All', count: totalClipCount },
     ...folders.map((f) => ({ ...f, count: f.item_count })),
   ];
+
+  // Filter folder tabs by search query
+  const allCategories = searchQuery.trim()
+    ? allCategoriesRaw.filter((cat) =>
+        cat.id === null || cat.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : allCategoriesRaw;
 
   const handleMouseEnter = (folderId: string | null) => {
     if (isDragging) {
