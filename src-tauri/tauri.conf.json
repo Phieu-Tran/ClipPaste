@@ -47,7 +47,14 @@
             "icons/icon.ico",
             "icons/icon.icns"
         ],
-        "createUpdaterArtifacts": true
+        "createUpdaterArtifacts": true,
+        "windows": {
+            "nsis": {
+                "displayLanguageSelector": false,
+                "installerIcon": "icons/icon.ico",
+                "headerImage": "icons/128x128.png"
+            }
+        }
     },
     "plugins": {
         "updater": {

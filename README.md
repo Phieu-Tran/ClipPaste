@@ -65,6 +65,12 @@
 
 Available for **x64** (Intel/AMD) and **ARM64** (Snapdragon).
 
+### Security
+
+Every release is scanned with [VirusTotal](https://www.virustotal.com/) (70+ antivirus engines). Some AI-based engines may flag the installer as a false positive because ClipPaste monitors the clipboard and sends keyboard input — behaviors shared with legitimate clipboard managers.
+
+> If your antivirus blocks ClipPaste, add it to your exclusion list or [report a false positive](https://www.virustotal.com/).
+
 ---
 
 ## Keyboard Shortcuts
