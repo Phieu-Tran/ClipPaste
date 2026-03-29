@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { FolderItem } from '../types';
 import { Search, Plus, MoreHorizontal, X } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -120,7 +120,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     fuchsia: 12, pink: 13, rose: 14,
   };
 
-  const getFolderColor = (name: string, colorKey?: string | null) => {
+  const getFolderColor = useCallback((name: string, colorKey?: string | null) => {
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -288,7 +288,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       return colors[COLOR_KEY_TO_INDEX[colorKey]];
     }
     return colors[Math.abs(hash) % colors.length];
-  };
+  }, [theme]);
 
   return (
     <div className="drag-area flex min-h-[52px] items-center gap-4 border-b border-border bg-background/90 px-6 py-2">

@@ -77,7 +77,7 @@ export const ClipCard = memo(function ClipCard({
     return gradients[Math.abs(hash) % gradients.length];
   };
 
-  const headerColor = getAppGradient(title);
+  const headerColor = useMemo(() => getAppGradient(title), [title]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only left click

@@ -336,11 +336,20 @@ function App() {
     refreshTotalCount();
   }, [refreshTotalCount]);
 
+  // Debounced folder/count refresh — avoids hammering DB on rapid copies
+  const folderRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedFolderRefresh = useCallback(() => {
+    if (folderRefreshTimerRef.current) clearTimeout(folderRefreshTimerRef.current);
+    folderRefreshTimerRef.current = setTimeout(() => {
+      loadFolders();
+      refreshTotalCount();
+    }, 500);
+  }, [loadFolders, refreshTotalCount]);
+
   useEffect(() => {
     const unlistenClipboard = listen('clipboard-change', () => {
       refreshCurrentFolder();
-      loadFolders(); // Refresh folders to get updated counts
-      refreshTotalCount(); // Refresh total count
+      debouncedFolderRefresh();
     });
 
     return () => {
@@ -348,7 +357,7 @@ function App() {
         if (typeof unlisten === 'function') unlisten();
       });
     };
-  }, [refreshCurrentFolder, loadFolders, refreshTotalCount]);
+  }, [refreshCurrentFolder, debouncedFolderRefresh]);
 
   useKeyboard({
     onClose: () => { if (!editingClip) appWindow.hide(); },
@@ -598,10 +607,12 @@ function App() {
     clearPreview();
   }, [clearPreview]);
 
-  // Invalidate preview cache when clips change (new copy, delete, move, etc.)
+  // Invalidate preview cache only when clip/folder structure changes (not count updates)
+  const clipIdsKey = clips.map(c => c.id).join(',');
+  const folderIdsKey = folders.map(f => f.id).join(',');
   useEffect(() => {
     previewCacheRef.current.clear();
-  }, [clips, folders]);
+  }, [clipIdsKey, folderIdsKey]);
 
   const isPreviewing = previewFolder !== undefined;
 
