@@ -35,12 +35,13 @@ export function useKeyboard(options: KeyboardOptions) {
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable;
 
-      if (e.key === 'ArrowUp' && !isTyping && options.onNavigateUp) {
+      // Arrow keys work even when typing in search input
+      if (e.key === 'ArrowUp' && options.onNavigateUp) {
         e.preventDefault();
         options.onNavigateUp();
       }
 
-      if (e.key === 'ArrowDown' && !isTyping && options.onNavigateDown) {
+      if (e.key === 'ArrowDown' && options.onNavigateDown) {
         e.preventDefault();
         options.onNavigateDown();
       }
