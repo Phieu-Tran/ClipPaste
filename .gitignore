@@ -17,37 +17,10 @@ Thumbs.db
 target/
 Cargo.lock
 
-# Local data
-data/
-
 # Logs
 *.log
 
-# Claude Code config
-.claude/settings.json
-.claude/settings.local.json
-.claude/projects/
-
-# Tauri signing keys & metadata
-.tauri_private_key
+# Local config & data
+.claude/
 *.key
-src-tauri/meta.json
-
-# Winget manifests (generated per release)
-winget/
-
-# Local scripts & utilities
-bump_version.ps1
-gen_new_icons.py
-generate_icns.py
-generate_ico.py
-generate_icons.ps1
-generate_logos.py
-generate_new_icons.bat
-AGENTS.md
-release_notes.md
-project_analysis.md
-replace_pastepaw.py
-
-# Don't know why this file is always created...
 nul
