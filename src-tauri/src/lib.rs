@@ -41,7 +41,7 @@ use models::get_runtime;
 use database::Database;
 
 pub fn run_app() {
-    let builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default();
 
     #[cfg(target_os = "macos")]
     {
