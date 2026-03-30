@@ -1,6 +1,6 @@
 {
   "name": "clippaste",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "A beautiful clipboard history manager for Windows",
   "license": "GPL-3.0",
   "scripts": {
@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "format": "prettier --write \"frontend/src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"frontend/src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --check \"frontend/src/**/*.{ts,tsx,css}\"",
+    "kill": "kill-dev.bat",
+    "dev:clean": "kill-dev.bat && pnpm tauri dev"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
@@ -20,6 +22,7 @@
     "@tauri-apps/plugin-updater": "^2.10.0",
     "clsx": "^2.1.1",
     "date-fns": "^2.30.0",
+    "framer-motion": "^12.38.0",
     "lucide-react": "^0.294.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

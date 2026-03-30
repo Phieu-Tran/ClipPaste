@@ -1,7 +1,18 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FolderItem } from '../types';
-import { Search, Plus, MoreHorizontal, X } from 'lucide-react';
+import { FolderItem, ClipType } from '../types';
+import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Code, Type, File, Link } from 'lucide-react';
 import { clsx } from 'clsx';
+import { FOLDER_ICON_MAP } from './FolderModal';
+import { type LucideIcon } from 'lucide-react';
+
+const CONTENT_TYPE_FILTERS: { key: ClipType; label: string; Icon: LucideIcon }[] = [
+  { key: 'text', label: 'Text', Icon: FileText },
+  { key: 'image', label: 'Image', Icon: Image },
+  { key: 'html', label: 'HTML', Icon: Code },
+  { key: 'rtf', label: 'RTF', Icon: Type },
+  { key: 'file', label: 'File', Icon: File },
+  { key: 'url', label: 'URL', Icon: Link },
+];
 
 interface ControlBarProps {
   folders: FolderItem[];
@@ -23,6 +34,8 @@ interface ControlBarProps {
   onFolderHover?: (folderId: string | null) => void;
   onFolderHoverEnd?: () => void;
   theme?: 'light' | 'dark';
+  contentTypeFilter?: ClipType | null;
+  onContentTypeFilterChange?: (filter: ClipType | null) => void;
 }
 
 export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(function ControlBar(
@@ -46,13 +59,81 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     onFolderHover,
     onFolderHoverEnd,
     theme = 'dark',
+    contentTypeFilter,
+    onContentTypeFilterChange,
   },
   ref
 ) {
-  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
-  const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Simulated folder drag state
+  const [folderDragId, setFolderDragId] = useState<string | null>(null);
+  const [folderDropTargetId, setFolderDropTargetId] = useState<string | null>(null);
+  const [folderDragPos, setFolderDragPos] = useState({ x: 0, y: 0 });
+  const folderDragRef = useRef<{
+    id: string;
+    startX: number;
+    started: boolean;
+  } | null>(null);
+
+  // Simulated folder drag: global mouse handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const drag = folderDragRef.current;
+      if (!drag) return;
+
+      // Start dragging after 5px threshold
+      if (!drag.started) {
+        if (Math.abs(e.clientX - drag.startX) > 5) {
+          drag.started = true;
+          setFolderDragId(drag.id);
+          setFolderDragPos({ x: e.clientX, y: e.clientY });
+        }
+        return;
+      }
+
+      setFolderDragPos({ x: e.clientX, y: e.clientY });
+
+      // Find which folder button the mouse is over
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      const buttons = container.querySelectorAll('[data-folder-id]');
+      let hoveredId: string | null = null;
+      buttons.forEach((btn) => {
+        const rect = btn.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          hoveredId = btn.getAttribute('data-folder-id');
+        }
+      });
+      setFolderDropTargetId(hoveredId && hoveredId !== drag.id ? hoveredId : null);
+    };
+
+    const handleMouseUp = () => {
+      const drag = folderDragRef.current;
+      if (drag?.started && folderDropTargetId && onReorderFolders) {
+        const folderIds = folders.map((f) => f.id);
+        const dragIdx = folderIds.indexOf(drag.id);
+        const dropIdx = folderIds.indexOf(folderDropTargetId);
+        if (dragIdx !== -1 && dropIdx !== -1) {
+          const reordered = [...folderIds];
+          const [dragged] = reordered.splice(dragIdx, 1);
+          reordered.splice(dropIdx, 0, dragged);
+          onReorderFolders(reordered);
+        }
+      }
+      folderDragRef.current = null;
+      setFolderDragId(null);
+      setFolderDropTargetId(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [folders, folderDropTargetId, onReorderFolders]);
 
   // Scroll selected folder tab into view when selection changes
   useEffect(() => {
@@ -71,8 +152,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     }
   }, [selectedFolder]);
 
-  const allCategoriesRaw: { id: string | null; name: string; count: number; color?: string | null }[] = [
-    { id: null, name: 'All', count: totalClipCount },
+  const allCategoriesRaw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null }[] = [
+    { id: null, name: 'All', count: totalClipCount, icon: null },
     ...folders.map((f) => ({ ...f, count: f.item_count })),
   ];
 
@@ -88,25 +169,21 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       onDragHover(folderId);
       return;
     }
-    // Always cancel any pending hover timer first
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = null;
     }
     if (folderId !== selectedFolder && onFolderHover) {
-      // Start hover preview delay (only for non-selected folders)
       hoverTimerRef.current = setTimeout(() => {
         onFolderHover(folderId);
       }, 200);
     } else if (folderId === selectedFolder) {
-      // Hovering back to selected folder — end preview immediately
       onFolderHoverEnd?.();
     }
   };
 
   const handleMouseLeave = () => {
     onDragLeave();
-    // Cancel pending hover timer
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = null;
@@ -128,161 +205,38 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     const colors =
       theme === 'light'
         ? [
-            {
-              active: 'bg-red-600 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-red-400 text-white hover:bg-red-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-amber-600 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-amber-400 text-white hover:bg-amber-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-green-600 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-green-400 text-white hover:bg-green-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-emerald-600 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-emerald-400 text-white hover:bg-emerald-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-teal-600 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-teal-400 text-white hover:bg-teal-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-cyan-600 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-cyan-400 text-white hover:bg-cyan-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-sky-600 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-sky-400 text-white hover:bg-sky-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-blue-600 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-blue-400 text-white hover:bg-blue-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-indigo-600 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-indigo-400 text-white hover:bg-indigo-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-purple-600 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-purple-400 text-white hover:bg-purple-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-fuchsia-600 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-fuchsia-400 text-white hover:bg-fuchsia-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-pink-600 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-pink-400 text-white hover:bg-pink-500 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-rose-600 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm',
-              inactive: 'bg-rose-400 text-white hover:bg-rose-500 hover:text-white drop-shadow-sm',
-            },
+            { active: 'bg-red-600 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400 text-white hover:bg-red-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-amber-600 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400 text-white hover:bg-amber-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-green-600 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400 text-white hover:bg-green-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-emerald-600 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400 text-white hover:bg-emerald-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-teal-600 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400 text-white hover:bg-teal-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-cyan-600 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400 text-white hover:bg-cyan-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-sky-600 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400 text-white hover:bg-sky-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-blue-600 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400 text-white hover:bg-blue-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-indigo-600 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400 text-white hover:bg-indigo-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-purple-600 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400 text-white hover:bg-purple-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-fuchsia-600 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400 text-white hover:bg-fuchsia-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-pink-600 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400 text-white hover:bg-pink-500 hover:text-white drop-shadow-sm' },
+            { active: 'bg-rose-600 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400 text-white hover:bg-rose-500 hover:text-white drop-shadow-sm' },
           ]
         : [
-            {
-              active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-red-400/10 text-white/80 hover:bg-red-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-amber-400/10 text-white/80 hover:bg-amber-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-green-400/10 text-white/80 hover:bg-green-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-emerald-400/10 text-white/80 hover:bg-emerald-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-teal-400/10 text-white/80 hover:bg-teal-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-cyan-400/10 text-white/80 hover:bg-cyan-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-sky-400/10 text-white/80 hover:bg-sky-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-blue-400/10 text-white/80 hover:bg-blue-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-indigo-400/10 text-white/80 hover:bg-indigo-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-purple-400/10 text-white/80 hover:bg-purple-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active:
-                'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-fuchsia-400/10 text-white/80 hover:bg-fuchsia-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-pink-400/10 text-white/80 hover:bg-pink-400/20 hover:text-white drop-shadow-sm',
-            },
-            {
-              active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm',
-              inactive:
-                'bg-rose-400/10 text-white/80 hover:bg-rose-400/20 hover:text-white drop-shadow-sm',
-            },
+            { active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400/10 text-white/80 hover:bg-red-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400/10 text-white/80 hover:bg-amber-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400/10 text-white/80 hover:bg-green-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400/10 text-white/80 hover:bg-emerald-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400/10 text-white/80 hover:bg-teal-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400/10 text-white/80 hover:bg-cyan-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400/10 text-white/80 hover:bg-sky-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400/10 text-white/80 hover:bg-blue-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400/10 text-white/80 hover:bg-indigo-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400/10 text-white/80 hover:bg-purple-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400/10 text-white/80 hover:bg-fuchsia-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400/10 text-white/80 hover:bg-pink-400/20 hover:text-white drop-shadow-sm' },
+            { active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400/10 text-white/80 hover:bg-rose-400/20 hover:text-white drop-shadow-sm' },
           ];
     if (colorKey && colorKey in COLOR_KEY_TO_INDEX) {
       return colors[COLOR_KEY_TO_INDEX[colorKey]];
@@ -291,7 +245,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   }, [theme]);
 
   return (
-    <div className="drag-area flex min-h-[52px] items-center gap-4 border-b border-border bg-background/90 px-6 py-2">
+    <div className="drag-area flex min-h-[52px] items-center gap-4 border-b border-border/50 bg-gradient-to-r from-background/95 via-background/90 to-background/95 px-6 py-2 backdrop-blur-sm">
       {/* Search Toggle / Input */}
       <div
         className={clsx(
@@ -299,7 +253,6 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
           showSearch ? 'w-[300px]' : 'w-10'
         )}
       >
-        {/** Search Render Code Omitted here for brevity, referencing original structure **/}
         {showSearch ? (
           <div className="animate-in fade-in slide-in-from-left-2 flex w-full items-center gap-2 rounded-full border border-border bg-input px-3 py-1.5 duration-300">
             <Search size={18} className="text-blue-400" />
@@ -335,6 +288,27 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         )}
       </div>
 
+      {/* Content Type Filter */}
+      {showSearch && (
+        <div className="no-drag flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {CONTENT_TYPE_FILTERS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => onContentTypeFilterChange?.(contentTypeFilter === key ? null : key)}
+              title={label}
+              className={clsx(
+                'rounded-md p-1.5 transition-all duration-150',
+                contentTypeFilter === key
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-muted-foreground/50 hover:bg-accent hover:text-foreground'
+              )}
+            >
+              <Icon size={14} />
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Category Pills (Always visible) */}
       <div
         ref={scrollContainerRef}
@@ -349,14 +323,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         {allCategories.map((cat) => {
           const isActive = selectedFolder === cat.id;
 
-          // Define colors based on category
           let colorClass =
             theme === 'light'
               ? 'bg-slate-400 text-white hover:bg-slate-500 hover:text-white shadow-sm'
               : 'bg-secondary text-white hover:bg-secondary/80 hover:text-white shadow-sm';
 
           if (cat.id === null) {
-            // System "All" Folder
             if (theme === 'light') {
               colorClass = isActive
                 ? 'bg-slate-600 text-white ring-1 ring-slate-500/50 font-bold shadow-sm'
@@ -367,7 +339,6 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 : 'bg-indigo-500/10 text-white/80 hover:bg-indigo-500/20 hover:text-white shadow-sm';
             }
           } else {
-            // Custom Folder - Use stored color or hash-based fallback
             const style = getFolderColor(cat.name, cat.color);
             colorClass = isActive ? style.active : style.inactive;
           }
@@ -376,69 +347,48 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
             <button
               key={cat.id ?? 'all'}
               data-folder-active={isActive ? 'true' : undefined}
-              draggable={!!cat.id && !isDragging}
-              onClick={() => onSelectFolder(cat.id)}
+              data-folder-id={cat.id ?? undefined}
+              onClick={() => {
+                // Don't select if we just finished dragging
+                if (folderDragRef.current?.started) return;
+                onSelectFolder(cat.id);
+              }}
+              onMouseDown={(e) => {
+                if (e.button !== 0 || !cat.id) return;
+                folderDragRef.current = { id: cat.id, startX: e.clientX, started: false };
+              }}
               onMouseEnter={() => handleMouseEnter(cat.id)}
               onMouseLeave={handleMouseLeave}
-              onMouseUp={() => {
-                // MouseUp logic is handled globally
-              }}
               onContextMenu={(e) => {
                 if (onFolderContextMenu && cat.id) {
                   onFolderContextMenu(e, cat.id);
                 }
-              }}
-              onDragStart={(e) => {
-                if (!cat.id) return;
-                setDraggingFolderId(cat.id);
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-              onDragEnd={() => {
-                setDraggingFolderId(null);
-                setDropTargetFolderId(null);
-              }}
-              onDragOver={(e) => {
-                if (!cat.id || !draggingFolderId || cat.id === draggingFolderId) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                setDropTargetFolderId(cat.id);
-              }}
-              onDragLeave={() => {
-                setDropTargetFolderId(null);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (draggingFolderId && cat.id && draggingFolderId !== cat.id && onReorderFolders) {
-                  const folderIds = folders.map((f) => f.id);
-                  const dragIdx = folderIds.indexOf(draggingFolderId);
-                  const dropIdx = folderIds.indexOf(cat.id);
-                  if (dragIdx !== -1 && dropIdx !== -1) {
-                    const reordered = [...folderIds];
-                    const [dragged] = reordered.splice(dragIdx, 1);
-                    reordered.splice(dropIdx, 0, dragged);
-                    onReorderFolders(reordered);
-                  }
-                }
-                setDraggingFolderId(null);
-                setDropTargetFolderId(null);
               }}
               style={
                 {
                   WebkitAppRegion: 'no-drag',
                   textShadow:
                     theme === 'light' ? '0 1px 3px rgba(0,0,0,0.8)' : '0 1px 2px rgba(0,0,0,0.7)',
+                  cursor: cat.id ? (folderDragId === cat.id ? 'grabbing' : 'grab') : 'pointer',
                 } as any
               }
               className={clsx(
                 'whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all',
                 colorClass,
                 isDragging && cat.id === dragTargetFolderId && 'bg-accent ring-2 ring-primary',
-                draggingFolderId === cat.id && 'opacity-40',
-                dropTargetFolderId === cat.id && draggingFolderId && 'ring-2 ring-white/60'
+                folderDragId === cat.id && 'opacity-40 scale-95',
+                folderDropTargetId === cat.id && folderDragId && 'ring-2 ring-white/60 scale-105'
               )}
             >
+              {cat.id === null ? (
+                <Layers size={14} className="mr-1 inline-block opacity-80" />
+              ) : cat.icon && FOLDER_ICON_MAP[cat.icon] ? (
+                (() => {
+                  const FolderIcon = FOLDER_ICON_MAP[cat.icon];
+                  return <FolderIcon size={14} className="mr-1 inline-block opacity-80" />;
+                })()
+              ) : null}
               {cat.name}
-              {/* Show count badge if defined and > 0 */}
               {cat.count !== undefined && cat.count > 0 && (
                 <span className="ml-2 text-[10px] opacity-70">{cat.count}</span>
               )}
@@ -447,8 +397,35 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         })}
       </div>
 
+      {/* Drag ghost */}
+      {folderDragId && (() => {
+        const dragFolder = allCategories.find((c) => c.id === folderDragId);
+        if (!dragFolder) return null;
+        const style = dragFolder.id ? getFolderColor(dragFolder.name, dragFolder.color) : null;
+        const colorClass = style ? style.active : 'bg-indigo-500/30 text-white';
+        const FolderIcon = dragFolder.icon && FOLDER_ICON_MAP[dragFolder.icon] ? FOLDER_ICON_MAP[dragFolder.icon] : null;
+        return (
+          <div
+            className={clsx(
+              'pointer-events-none fixed z-[9999] rounded-full px-4 py-1.5 text-sm font-bold shadow-xl',
+              colorClass,
+              'opacity-90 scale-105'
+            )}
+            style={{
+              left: folderDragPos.x,
+              top: folderDragPos.y,
+              transform: 'translate(-50%, -50%)',
+              textShadow: '0 1px 2px rgba(0,0,0,0.7)',
+            }}
+          >
+            {FolderIcon && <FolderIcon size={14} className="mr-1 inline-block opacity-80" />}
+            {dragFolder.name}
+          </div>
+        );
+      })()}
+
       {/* Actions */}
-      <div 
+      <div
         className="flex flex-shrink-0 items-center gap-2"
         style={{ WebkitAppRegion: 'no-drag' } as any}
         onDoubleClick={(e) => e.stopPropagation()}

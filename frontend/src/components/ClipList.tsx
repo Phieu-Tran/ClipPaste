@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 
@@ -36,6 +36,19 @@ export function ClipList({
   isPreviewing,
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [fadeIn, setFadeIn] = useState(false);
+  const prevClipsKeyRef = useRef('');
+
+  // Detect when the clip list changes entirely (folder switch) and trigger a subtle fade
+  const clipsKey = clips.slice(0, 5).map(c => c.id).join(',');
+  useEffect(() => {
+    if (prevClipsKeyRef.current && clipsKey !== prevClipsKeyRef.current) {
+      setFadeIn(true);
+      const t = setTimeout(() => setFadeIn(false), 200);
+      return () => clearTimeout(t);
+    }
+    prevClipsKeyRef.current = clipsKey;
+  }, [clipsKey]);
 
   // Scroll selected card into view when navigating with arrow keys
   useEffect(() => {
@@ -57,11 +70,7 @@ export function ClipList({
   // Native onScroll handler for infinite scroll
   const handleScroll = () => {
     if (!containerRef.current || !hasMore || isLoading) return;
-
-    // We check native scroll properties
     const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
-
-    // If scrolled within 300px of the end
     if (scrollLeft + clientWidth >= scrollWidth - 300) {
       onLoadMore();
     }
@@ -99,7 +108,7 @@ export function ClipList({
   return (
     <div
       ref={containerRef}
-      className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4${isPreviewing ? ' opacity-80' : ''}`}
+      className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4 transition-opacity duration-200${isPreviewing ? ' opacity-80' : ''}${fadeIn ? ' opacity-0' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
       style={{

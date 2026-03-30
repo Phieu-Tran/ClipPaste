@@ -56,7 +56,8 @@ export function useKeyboard(options: KeyboardOptions) {
         options.onEdit();
       }
 
-      if (e.key === 'p' && !e.metaKey && !e.ctrlKey && !isTyping && options.onPin) {
+      // 'p' without modifier = pin; Ctrl+P = also pin (and block browser print)
+      if (e.key === 'p' && !isTyping && options.onPin) {
         e.preventDefault();
         options.onPin();
       }

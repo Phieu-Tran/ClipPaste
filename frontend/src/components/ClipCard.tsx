@@ -109,7 +109,7 @@ export const ClipCard = memo(function ClipCard({
           'transition-[transform,box-shadow,ring-color] duration-200 ease-out',
           isSelected
             ? 'z-10 scale-[1.03] ring-[3px] ring-blue-500/80 shadow-xl shadow-blue-500/10'
-            : 'hover:-translate-y-1 hover:shadow-xl hover:ring-2 hover:ring-primary/30',
+            : 'hover:-translate-y-[2px] hover:shadow-xl hover:ring-2 hover:ring-primary/30',
           'group'
         )}
       >

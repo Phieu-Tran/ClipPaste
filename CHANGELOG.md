@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.7] - 2026-03-30
+
+### Added
+- **Folder icons** — 20 icon options (Briefcase, Code, Bookmark, Lock, Star, Heart, Zap, Coffee, etc.) when creating or editing folders; icons display alongside folder name in tabs
+- **Content type filter** — filter clips by type (Text, Image, HTML, RTF, File, URL) using icon buttons next to the search bar
+- **Folder drag reorder** — grab and drag folder tabs to reorder them (simulated drag, works reliably on Windows/Tauri)
+- **Folder move via context menu** — right-click folder tab for "Move to start", "Move left" (repeatable), "Move right" (repeatable), "Move to end"
+- **Drag ghost preview** — floating folder tab follows cursor while dragging, showing folder name, icon, and color
+- **"All" tab icon** — Layers icon on the system "All" folder tab for visual consistency
+
+### Changed
+- **Visual polish: toolbar** — gradient background with backdrop blur on the control bar
+- **Visual polish: window shadow** — upgraded to directional shadow (`0 4px 32px`) for depth
+- **Visual polish: font** — Segoe UI Variable (Windows 11 native) with Inter fallback for modern feel
+- **Visual polish: borders** — softer border opacity (`border-border/50`) on toolbar
+- **Hover effect** — subtle `-translate-y-2px` lift on card hover with CSS transitions (replaced Framer Motion spring to eliminate jitter)
+- **Ctrl+P** — now triggers pin/unpin instead of opening browser print dialog
+- **Reduced bundle size** — removed heavy Framer Motion card animations in favor of lightweight CSS transitions (405KB → 279KB JS)
+
+### Fixed
+- **Clipboard listener going stale** — after prolonged use, new clips would not appear at the top; root cause was unstable listener re-subscriptions due to dependency chain (`clips.length` → `loadClips` → `refreshCurrentFolder` → listener`). Fixed by using stable refs so the listener subscribes once and never re-subscribes
+- **Window focus reload** — force-reloads clips on every window focus to guarantee fresh data, also resets content type filter
+- **Folder animation jitter** — switching folders no longer causes cards to flash/shake; replaced per-card entrance animation with a subtle container crossfade
+
+### Backend
+- **`rename_folder` now accepts `icon` parameter** — saves folder icon to database alongside name and color
+
+---
+
 ## [1.3.6] - 2026-03-29
 
 ### Performance

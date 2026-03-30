@@ -364,7 +364,7 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
 }
 
 #[tauri::command]
-pub async fn rename_folder(id: String, name: String, color: Option<String>, db: tauri::State<'_, Arc<Database>>, window: tauri::WebviewWindow) -> Result<(), String> {
+pub async fn rename_folder(id: String, name: String, color: Option<String>, icon: Option<String>, db: tauri::State<'_, Arc<Database>>, window: tauri::WebviewWindow) -> Result<(), String> {
     let pool = &db.pool;
 
     let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
@@ -379,9 +379,10 @@ pub async fn rename_folder(id: String, name: String, color: Option<String>, db: 
         return Err("A folder with this name already exists".to_string());
     }
 
-    sqlx::query(r#"UPDATE folders SET name = ?, color = ? WHERE id = ?"#)
+    sqlx::query(r#"UPDATE folders SET name = ?, color = ?, icon = ? WHERE id = ?"#)
         .bind(name)
         .bind(color)
+        .bind(icon)
         .bind(folder_id)
         .execute(pool).await.map_err(|e| e.to_string())?;
 

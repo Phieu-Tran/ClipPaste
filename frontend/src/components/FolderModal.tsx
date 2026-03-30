@@ -1,5 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
+import {
+  Briefcase, Code, Bookmark, Palette, Lock,
+  Star, Heart, Zap, Coffee, Music,
+  Globe, Camera, Gamepad2, Rocket, ShoppingBag,
+  GraduationCap, Wrench, Lightbulb, MessageSquare, Flame,
+  type LucideIcon,
+} from 'lucide-react';
+
+export const FOLDER_ICON_OPTIONS: { key: string; Icon: LucideIcon }[] = [
+  { key: 'briefcase', Icon: Briefcase },
+  { key: 'code', Icon: Code },
+  { key: 'bookmark', Icon: Bookmark },
+  { key: 'palette', Icon: Palette },
+  { key: 'lock', Icon: Lock },
+  { key: 'star', Icon: Star },
+  { key: 'heart', Icon: Heart },
+  { key: 'zap', Icon: Zap },
+  { key: 'coffee', Icon: Coffee },
+  { key: 'music', Icon: Music },
+  { key: 'globe', Icon: Globe },
+  { key: 'camera', Icon: Camera },
+  { key: 'gamepad', Icon: Gamepad2 },
+  { key: 'rocket', Icon: Rocket },
+  { key: 'shopping', Icon: ShoppingBag },
+  { key: 'graduation', Icon: GraduationCap },
+  { key: 'wrench', Icon: Wrench },
+  { key: 'lightbulb', Icon: Lightbulb },
+  { key: 'message', Icon: MessageSquare },
+  { key: 'flame', Icon: Flame },
+];
+
+export const FOLDER_ICON_MAP: Record<string, LucideIcon> = Object.fromEntries(
+  FOLDER_ICON_OPTIONS.map(({ key, Icon }) => [key, Icon])
+);
 
 const COLOR_OPTIONS = [
   { key: 'red', bg: 'bg-red-500' },
@@ -17,19 +51,22 @@ interface FolderModalProps {
   mode: 'create' | 'rename';
   initialName: string;
   initialColor?: string | null;
+  initialIcon?: string | null;
   onClose: () => void;
-  onSubmit: (name: string, color: string | null) => void;
+  onSubmit: (name: string, color: string | null, icon: string | null) => void;
 }
 
-export function FolderModal({ isOpen, mode, initialName, initialColor, onClose, onSubmit }: FolderModalProps) {
+export function FolderModal({ isOpen, mode, initialName, initialColor, initialIcon, onClose, onSubmit }: FolderModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string | null>(initialColor ?? null);
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(initialIcon ?? null);
 
   useEffect(() => {
     if (isOpen) {
       setIsSubmitting(false);
       setSelectedColor(initialColor ?? null);
+      setSelectedIcon(initialIcon ?? null);
       if (inputRef.current) {
         setTimeout(() => inputRef.current?.focus(), 50);
         if (mode === 'rename') {
@@ -37,7 +74,7 @@ export function FolderModal({ isOpen, mode, initialName, initialColor, onClose, 
         }
       }
     }
-  }, [isOpen, mode, initialColor]);
+  }, [isOpen, mode, initialColor, initialIcon]);
 
   if (!isOpen) return null;
 
@@ -47,7 +84,7 @@ export function FolderModal({ isOpen, mode, initialName, initialColor, onClose, 
     if (!val) return;
     if (val.length > 50 || /[<>:"|?*\\/]/.test(val)) return;
     setIsSubmitting(true);
-    await onSubmit(val, selectedColor);
+    await onSubmit(val, selectedColor, selectedIcon);
     setIsSubmitting(false);
   };
 
@@ -68,6 +105,42 @@ export function FolderModal({ isOpen, mode, initialName, initialColor, onClose, 
             else if (e.key === 'Escape') onClose();
           }}
         />
+
+        {/* Icon Picker */}
+        <div className="mb-4">
+          <p className="mb-2 text-xs text-muted-foreground">Icon</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setSelectedIcon(null)}
+              title="None"
+              className={clsx(
+                'flex h-7 w-7 items-center justify-center rounded-md border transition-all',
+                selectedIcon === null
+                  ? 'border-primary bg-primary/20 text-primary'
+                  : 'border-transparent text-muted-foreground hover:bg-accent'
+              )}
+            >
+              <span className="text-[10px] font-bold">Aa</span>
+            </button>
+            {FOLDER_ICON_OPTIONS.map(({ key, Icon }) => (
+              <button
+                key={key}
+                onClick={() => setSelectedIcon(key)}
+                title={key}
+                className={clsx(
+                  'flex h-7 w-7 items-center justify-center rounded-md border transition-all',
+                  selectedIcon === key
+                    ? 'border-primary bg-primary/20 text-primary'
+                    : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
+                )}
+              >
+                <Icon size={14} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Color Picker */}
         <div className="mb-4">
           <p className="mb-2 text-xs text-muted-foreground">Color</p>
           <div className="flex items-center gap-2">
@@ -93,6 +166,7 @@ export function FolderModal({ isOpen, mode, initialName, initialColor, onClose, 
             ))}
           </div>
         </div>
+
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
