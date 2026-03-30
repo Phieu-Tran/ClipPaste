@@ -429,7 +429,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {
                 sqlx::query_as(r#"
-                    SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ? AND (text_preview LIKE ? OR content LIKE ?)
+                    SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ? AND (text_preview LIKE ? OR CAST(content AS TEXT) LIKE ?)
                     ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
@@ -444,7 +444,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         }
         None => {
             sqlx::query_as(r#"
-                SELECT * FROM clips WHERE is_deleted = 0 AND (text_preview LIKE ? OR content LIKE ?)
+                SELECT * FROM clips WHERE is_deleted = 0 AND (text_preview LIKE ? OR CAST(content AS TEXT) LIKE ?)
                 ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
             .bind(&search_pattern)

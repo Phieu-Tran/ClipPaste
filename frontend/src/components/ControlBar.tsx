@@ -384,8 +384,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 <Layers size={14} className="mr-1 inline-block opacity-80" />
               ) : cat.icon && FOLDER_ICON_MAP[cat.icon] ? (
                 (() => {
-                  const FolderIcon = FOLDER_ICON_MAP[cat.icon];
-                  return <FolderIcon size={14} className="mr-1 inline-block opacity-80" />;
+                  const { Icon: FolderIcon, color } = FOLDER_ICON_MAP[cat.icon];
+                  return <FolderIcon size={14} className={clsx('mr-1 inline-block', color || 'opacity-80')} />;
                 })()
               ) : null}
               {cat.name}
@@ -403,7 +403,9 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         if (!dragFolder) return null;
         const style = dragFolder.id ? getFolderColor(dragFolder.name, dragFolder.color) : null;
         const colorClass = style ? style.active : 'bg-indigo-500/30 text-white';
-        const FolderIcon = dragFolder.icon && FOLDER_ICON_MAP[dragFolder.icon] ? FOLDER_ICON_MAP[dragFolder.icon] : null;
+        const iconEntry = dragFolder.icon && FOLDER_ICON_MAP[dragFolder.icon] ? FOLDER_ICON_MAP[dragFolder.icon] : null;
+        const DragIcon = iconEntry?.Icon || null;
+        const dragIconColor = iconEntry?.color || '';
         return (
           <div
             className={clsx(
@@ -418,7 +420,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               textShadow: '0 1px 2px rgba(0,0,0,0.7)',
             }}
           >
-            {FolderIcon && <FolderIcon size={14} className="mr-1 inline-block opacity-80" />}
+            {DragIcon && <DragIcon size={14} className={clsx('mr-1 inline-block', dragIconColor)} />}
             {dragFolder.name}
           </div>
         );

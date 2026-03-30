@@ -628,16 +628,37 @@ function App() {
 
   const isPreviewing = previewFolder !== undefined;
 
+  // Smart content type matching — backend only stores "text" and "image",
+  // so we detect url/file/html/rtf from content for filtering purposes
+  const matchesContentType = useCallback((clip: AppClipboardItem, filter: ClipType): boolean => {
+    if (filter === 'image') return clip.clip_type === 'image';
+    if (filter === 'url') {
+      return clip.clip_type === 'text' && /^https?:\/\/\S+$/i.test(clip.content.trim());
+    }
+    if (filter === 'file') {
+      return clip.clip_type === 'text' && /^[a-zA-Z]:\\/.test(clip.content.trim());
+    }
+    if (filter === 'html') return clip.clip_type === 'html';
+    if (filter === 'rtf') return clip.clip_type === 'rtf';
+    // "text" = everything that's text but NOT url/file
+    if (filter === 'text') {
+      return clip.clip_type === 'text'
+        && !/^https?:\/\/\S+$/i.test(clip.content.trim())
+        && !/^[a-zA-Z]:\\/.test(clip.content.trim());
+    }
+    return clip.clip_type === filter;
+  }, []);
+
   // Filter clips by content type (client-side)
   const filteredClips = useMemo(() => {
     if (!contentTypeFilter) return clips;
-    return clips.filter((c) => c.clip_type === contentTypeFilter);
-  }, [clips, contentTypeFilter]);
+    return clips.filter((c) => matchesContentType(c, contentTypeFilter));
+  }, [clips, contentTypeFilter, matchesContentType]);
 
   const filteredPreviewClips = useMemo(() => {
     if (!contentTypeFilter) return previewClips;
-    return previewClips.filter((c) => c.clip_type === contentTypeFilter);
-  }, [previewClips, contentTypeFilter]);
+    return previewClips.filter((c) => matchesContentType(c, contentTypeFilter));
+  }, [previewClips, contentTypeFilter, matchesContentType]);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, type: 'card' | 'folder', itemId: string) => {
@@ -779,70 +800,9 @@ function App() {
                       },
                     ]
                   : (() => {
-                      const folderIdx = folders.findIndex((f) => f.id === contextMenu.itemId);
                       return [
                         {
-                          label: '⇤ Move to start',
-                          disabled: folderIdx <= 0,
-                          onClick: () => {
-                            if (folderIdx > 0) {
-                              const ids = folders.map((f) => f.id);
-                              const [moved] = ids.splice(folderIdx, 1);
-                              ids.unshift(moved);
-                              handleReorderFolders(ids);
-                            }
-                          },
-                        },
-                        {
-                          label: '← Move left',
-                          disabled: folderIdx <= 0,
-                          keepOpen: true,
-                          onClick: () => {
-                            if (folderIdx > 0) {
-                              const ids = folders.map((f) => f.id);
-                              [ids[folderIdx - 1], ids[folderIdx]] = [ids[folderIdx], ids[folderIdx - 1]];
-                              handleReorderFolders(ids);
-                            }
-                          },
-                        },
-                        {
-                          label: 'Move right →',
-                          disabled: folderIdx >= folders.length - 1,
-                          keepOpen: true,
-                          onClick: () => {
-                            if (folderIdx < folders.length - 1) {
-                              const ids = folders.map((f) => f.id);
-                              [ids[folderIdx], ids[folderIdx + 1]] = [ids[folderIdx + 1], ids[folderIdx]];
-                              handleReorderFolders(ids);
-                            }
-                          },
-                        },
-                        {
-                          label: 'Move to end ⇥',
-                          disabled: folderIdx >= folders.length - 1,
-                          onClick: () => {
-                            if (folderIdx < folders.length - 1) {
-                              const ids = folders.map((f) => f.id);
-                              const [moved] = ids.splice(folderIdx, 1);
-                              ids.push(moved);
-                              handleReorderFolders(ids);
-                            }
-                          },
-                        },
-                        {
-                          label: 'Rename',
-                          onClick: () => {
-                            setFolderModalMode('rename');
-                            setEditingFolderId(contextMenu.itemId);
-                            const folder = folders.find((f) => f.id === contextMenu.itemId);
-                            setNewFolderName(folder ? folder.name : '');
-                            setEditingFolderColor(folder?.color ?? null);
-                            setEditingFolderIcon(folder?.icon ?? null);
-                            setShowAddFolderModal(true);
-                          },
-                        },
-                        {
-                          label: 'Change color',
+                          label: 'Edit folder',
                           onClick: () => {
                             setFolderModalMode('rename');
                             setEditingFolderId(contextMenu.itemId);
@@ -856,7 +816,12 @@ function App() {
                         {
                           label: 'Delete',
                           danger: true,
-                          onClick: () => handleDeleteFolder(contextMenu.itemId),
+                          onClick: () => {
+                            const folder = folders.find((f) => f.id === contextMenu.itemId);
+                            if (window.confirm(`Delete folder "${folder?.name}"? Clips inside will be moved to All.`)) {
+                              handleDeleteFolder(contextMenu.itemId);
+                            }
+                          },
                         },
                       ];
                     })()
@@ -930,21 +895,22 @@ function App() {
               isPreviewing={isPreviewing}
             />
 
-            {/* Add/Rename Folder Modal Overlay */}
-            <FolderModal
-              isOpen={showAddFolderModal}
-              mode={folderModalMode}
-              initialName={newFolderName}
-              initialColor={folderModalMode === 'rename' ? editingFolderColor : null}
-              initialIcon={folderModalMode === 'rename' ? editingFolderIcon : null}
-              onClose={() => {
-                setShowAddFolderModal(false);
-                setNewFolderName('');
-              }}
-              onSubmit={handleCreateOrRenameFolder}
-            />
 
           </main>
+
+          {/* Folder Modal — outside <main> to avoid overflow-hidden clipping */}
+          <FolderModal
+            isOpen={showAddFolderModal}
+            mode={folderModalMode}
+            initialName={newFolderName}
+            initialColor={folderModalMode === 'rename' ? editingFolderColor : null}
+            initialIcon={folderModalMode === 'rename' ? editingFolderIcon : null}
+            onClose={() => {
+              setShowAddFolderModal(false);
+              setNewFolderName('');
+            }}
+            onSubmit={handleCreateOrRenameFolder}
+          />
           <Toaster richColors position="bottom-center" theme={effectiveTheme} />
         </div>
       </div>

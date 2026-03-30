@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.8] - 2026-03-30
+
+### Fixed
+- **Search full content** — search now works on full clip text, not just first 200 chars (`CAST(content AS TEXT)` for BLOB columns)
+- **Folder name validation** — allow `/` in folder names (was silently blocking "SSL / TLS", "Network / Misc" from saving)
+- **Modal Save button** — render via React Portal to fix click events being blocked by `overflow-hidden` parent
+- **Content type filter** — smart detection: URL (`http://...`), file path (`C:\...`) detected from text content
+
+### Added
+- **56 colored icons** — 20 new icons: Laptop, Monitor, PC, Wifi, Router, GitBranch, GitHub, Package, Workflow, Gauge, Cog, Cable, Plug, Activity, Hash, ShieldCheck, LockKeyhole, AppWindow, RefreshCw, Blocks — each with distinct color
+- **Delete folder confirmation** — `window.confirm` dialog before deleting a folder
+
+### Changed
+- **Context menu** — merged "Rename" and "Change color" into single "Edit folder" option
+
+---
+
 ## [1.3.7] - 2026-03-30
 
 ### Added
