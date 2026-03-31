@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.7] - 2026-03-31
+
+### Added
+- **Skeleton loading cards** — animated placeholder cards with shimmer effect and staggered entrance while search results load, replacing blank/frozen screen
+- **"No results" message** — shows clear feedback when search finds no clips instead of infinite skeleton
+- **Search within folder** — clicking a folder then searching filters within that folder only
+
+### Fixed
+- **Search no longer flashes old clips** — clips are cleared immediately when typing, skeleton shows instantly
+- **Hover folder no longer interferes with search** — folder preview is cancelled when search begins
+- **Window reopen resets to All** — reopening app via hotkey always returns to All folder with cleared search
+- **Search no longer floods backend** — 150ms debounce + generation counter prevents stale results
+
+### Performance
+- **SQLite WAL mode** — enabled Write-Ahead Logging for faster concurrent reads
+- **Search skips content BLOB entirely** — SQL query only fetches lightweight columns (no 26KB+ content), search results use `text_preview` for display
+- **No debounce removed, re-added 150ms** — balances responsiveness with backend load
+
+### Changed
+- **Search results show text_preview** — cards display 2000-char preview instead of full content for faster rendering (full content loaded on paste)
+
+---
+
 ## [1.4.6] - 2026-03-31
 
 Version bump for auto-updater (v1.4.5 was re-tagged, users on old 1.4.5 wouldn't receive the hotfix).

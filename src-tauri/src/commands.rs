@@ -424,18 +424,20 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
 
     let like_pattern = format!("%{}%", query);
 
-    // Search text_preview (2000 chars) + full content for text clips only (skip image BLOBs)
+    // Search text_preview only. SELECT excludes content BLOB for speed.
     let clips: Vec<Clip> = match filter_id.as_deref() {
         Some(id) => {
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {
                 sqlx::query_as(r#"
-                    SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ?
-                    AND (text_preview LIKE ? OR (clip_type != 'image' AND CAST(content AS TEXT) LIKE ?))
+                    SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
+                           folder_id, is_deleted, source_app, source_icon, metadata,
+                           created_at, last_accessed, last_pasted_at, is_pinned
+                    FROM clips WHERE is_deleted = 0 AND folder_id = ?
+                    AND text_preview LIKE ?
                     ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
-                .bind(&like_pattern)
                 .bind(&like_pattern)
                 .bind(limit)
                 .bind(offset)
@@ -446,11 +448,13 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         }
         None => {
             sqlx::query_as(r#"
-                SELECT * FROM clips WHERE is_deleted = 0
-                AND (text_preview LIKE ? OR (clip_type != 'image' AND CAST(content AS TEXT) LIKE ?))
+                SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
+                       folder_id, is_deleted, source_app, source_icon, metadata,
+                       created_at, last_accessed, last_pasted_at, is_pinned
+                FROM clips WHERE is_deleted = 0
+                AND text_preview LIKE ?
                 ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
-            .bind(&like_pattern)
             .bind(&like_pattern)
             .bind(limit)
             .bind(offset)
@@ -458,11 +462,14 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         }
     };
 
+    // Search results use text_preview instead of full content for speed.
+    // Cards only display ~300 chars anyway. Full content loaded on paste.
     let items: Vec<ClipboardItem> = clips.iter().map(|clip| {
         let content_str = if clip.clip_type == "image" {
-            BASE64.encode(&clip.content)
+            // Thumbnail or empty — images matched by text_preview only
+            String::new()
         } else {
-            String::from_utf8_lossy(&clip.content).to_string()
+            clip.text_preview.clone()
         };
 
         ClipboardItem {

@@ -33,6 +33,7 @@ function App() {
   const [contentTypeFilter, setContentTypeFilter] = useState<ClipType | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchDone, setSearchDone] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
 
@@ -95,13 +96,16 @@ function App() {
   useEffect(() => {
     const unlisten = appWindow.listen('tauri://focus', () => {
       setSelectedClipId(null);
+      setSelectedFolder(null);
       setSearchQuery('');
       setSearchInput('');
+      setSearchDone(false);
       setContentTypeFilter(null);
+      setPreviewFolder(undefined);
       autoSelectFirstOnNextLoadRef.current = true;
       setWindowFocusCount((c) => c + 1);
-      // Force reload with explicit empty query to avoid stale closure race condition
-      loadClipsRef.current(selectedFolderRef.current, false, '');
+      // Force reload All clips with empty query
+      loadClipsRef.current(null, false, '');
     });
     return () => {
       unlisten.then((f) => f());
@@ -198,7 +202,10 @@ function App() {
       } catch (error) {
         console.error('Failed to load clips:', error);
       } finally {
-        if (loadGenRef.current === thisGen) setIsLoading(false);
+        if (loadGenRef.current === thisGen) {
+          setIsLoading(false);
+          setSearchDone(true);
+        }
       }
     },
     [clips.length]
@@ -232,11 +239,17 @@ function App() {
 
   const handleSearch = useCallback((query: string) => {
     setSearchInput(query);
-    // Debounce: wait 80ms after user stops typing (fast with FTS5)
+    if (query.trim()) {
+      setClips([]);
+      setSearchDone(false);
+      setPreviewFolder(undefined);
+    } else {
+      setSearchDone(false);
+    }
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       setSearchQuery(query);
-    }, 80);
+    }, 150);
   }, []);
 
   useEffect(() => {
@@ -609,25 +622,11 @@ function App() {
     return clip.clip_type === filter;
   }, []);
 
-  // Filter clips by content type + instant search pre-filter (client-side)
+  // Filter clips by content type (client-side)
   const filteredClips = useMemo(() => {
-    let result = clips;
-
-    // Instant pre-filter by search input (while waiting for backend FTS5 results)
-    if (searchInput.trim()) {
-      const q = searchInput.trim().toLowerCase();
-      result = result.filter((c) =>
-        c.content.toLowerCase().includes(q) ||
-        (c.source_app && c.source_app.toLowerCase().includes(q))
-      );
-    }
-
-    if (contentTypeFilter) {
-      result = result.filter((c) => matchesContentType(c, contentTypeFilter));
-    }
-
-    return result;
-  }, [clips, searchInput, contentTypeFilter, matchesContentType]);
+    if (!contentTypeFilter) return clips;
+    return clips.filter((c) => matchesContentType(c, contentTypeFilter));
+  }, [clips, contentTypeFilter, matchesContentType]);
 
   const filteredPreviewClips = useMemo(() => {
     if (!contentTypeFilter) return previewClips;
@@ -858,6 +857,7 @@ function App() {
               onCardContextMenu={(e, clipId) => handleContextMenu(e, 'card', clipId)}
               isPreviewing={isPreviewing}
               isSearching={!!searchQuery.trim()}
+              isSearchPending={!!searchInput.trim() && !searchDone}
             />
 
 
