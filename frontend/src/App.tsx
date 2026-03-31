@@ -33,7 +33,6 @@ function App() {
   const [contentTypeFilter, setContentTypeFilter] = useState<ClipType | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchDone, setSearchDone] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
 
@@ -99,7 +98,7 @@ function App() {
       setSelectedFolder(null);
       setSearchQuery('');
       setSearchInput('');
-      setSearchDone(false);
+
       setContentTypeFilter(null);
       setPreviewFolder(undefined);
       autoSelectFirstOnNextLoadRef.current = true;
@@ -204,7 +203,6 @@ function App() {
       } finally {
         if (loadGenRef.current === thisGen) {
           setIsLoading(false);
-          setSearchDone(true);
         }
       }
     },
