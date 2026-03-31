@@ -283,16 +283,10 @@ pub async fn delete_clip(id: String, hard_delete: bool, db: tauri::State<'_, Arc
     let pool = &db.pool;
 
     if hard_delete {
-        // Remove from FTS5 index
-        let _ = sqlx::query("DELETE FROM clips_fts WHERE uuid = ?")
-            .bind(&id).execute(pool).await;
         sqlx::query(r#"DELETE FROM clips WHERE uuid = ?"#)
             .bind(&id)
             .execute(pool).await.map_err(|e| e.to_string())?;
     } else {
-        // Remove from FTS5 index (soft-deleted clips shouldn't appear in search)
-        let _ = sqlx::query("DELETE FROM clips_fts WHERE uuid = ?")
-            .bind(&id).execute(pool).await;
         sqlx::query(r#"UPDATE clips SET is_deleted = 1 WHERE uuid = ?"#)
             .bind(&id)
             .execute(pool).await.map_err(|e| e.to_string())?;
@@ -428,24 +422,20 @@ pub async fn reorder_folders(folder_ids: Vec<String>, db: tauri::State<'_, Arc<D
 pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, offset: i64, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
-    // Escape FTS5 special characters and build match query
-    let fts_query = query.replace('"', "\"\"");
-    let fts_match = format!("\"{}\"", fts_query);
     let like_pattern = format!("%{}%", query);
 
-    // Strategy: FTS5 for full-text match on text clips, LIKE fallback on text_preview for images/edge cases
+    // Search text_preview (2000 chars) + full content for text clips only (skip image BLOBs)
     let clips: Vec<Clip> = match filter_id.as_deref() {
         Some(id) => {
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {
                 sqlx::query_as(r#"
-                    SELECT c.* FROM clips c WHERE c.is_deleted = 0 AND c.folder_id = ?
-                    AND (c.uuid IN (SELECT uuid FROM clips_fts WHERE text_content MATCH ?)
-                         OR c.text_preview LIKE ?)
-                    ORDER BY c.is_pinned DESC, c.created_at DESC LIMIT ? OFFSET ?
+                    SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ?
+                    AND (text_preview LIKE ? OR (clip_type != 'image' AND CAST(content AS TEXT) LIKE ?))
+                    ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
-                .bind(&fts_match)
+                .bind(&like_pattern)
                 .bind(&like_pattern)
                 .bind(limit)
                 .bind(offset)
@@ -456,12 +446,11 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         }
         None => {
             sqlx::query_as(r#"
-                SELECT c.* FROM clips c WHERE c.is_deleted = 0
-                AND (c.uuid IN (SELECT uuid FROM clips_fts WHERE text_content MATCH ?)
-                     OR c.text_preview LIKE ?)
-                ORDER BY c.created_at DESC LIMIT ? OFFSET ?
+                SELECT * FROM clips WHERE is_deleted = 0
+                AND (text_preview LIKE ? OR (clip_type != 'image' AND CAST(content AS TEXT) LIKE ?))
+                ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
-            .bind(&fts_match)
+            .bind(&like_pattern)
             .bind(&like_pattern)
             .bind(limit)
             .bind(offset)
@@ -723,11 +712,6 @@ pub async fn clear_clipboard_history(db: tauri::State<'_, Arc<Database>>) -> Res
 #[tauri::command]
 pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
-
-    // Clean FTS5 for clips being deleted
-    let _ = sqlx::query(r#"
-        DELETE FROM clips_fts WHERE uuid IN (SELECT uuid FROM clips WHERE folder_id IS NULL)
-    "#).execute(pool).await;
 
     sqlx::query(r#"DELETE FROM clips WHERE folder_id IS NULL"#)
         .execute(pool).await.map_err(|e| e.to_string())?;

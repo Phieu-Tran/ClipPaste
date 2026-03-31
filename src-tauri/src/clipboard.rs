@@ -234,16 +234,6 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
             return;
         }
 
-        // Re-add to FTS5 if it was soft-deleted (removed from FTS on delete)
-        if clip_type != "image" {
-            let text_content = String::from_utf8_lossy(&clip_content).to_string();
-            // Delete first to avoid duplicates, then re-insert
-            let _ = sqlx::query("DELETE FROM clips_fts WHERE uuid = ?")
-                .bind(&existing_id).execute(pool).await;
-            let _ = sqlx::query("INSERT INTO clips_fts(uuid, text_content) VALUES (?, ?)")
-                .bind(&existing_id).bind(&text_content).execute(pool).await;
-        }
-
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": existing_id,
             "content": clip_preview,
@@ -272,16 +262,6 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         {
             log::error!("CLIPBOARD: Failed to insert new clip: {}", e);
             return;
-        }
-
-        // Sync FTS5 index for text clips
-        if clip_type != "image" {
-            let text_content = String::from_utf8_lossy(&clip_content).to_string();
-            let _ = sqlx::query("INSERT INTO clips_fts(uuid, text_content) VALUES (?, ?)")
-                .bind(&clip_uuid)
-                .bind(&text_content)
-                .execute(pool)
-                .await;
         }
 
         let _ = app.emit("clipboard-change", &serde_json::json!({

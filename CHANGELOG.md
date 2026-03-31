@@ -13,9 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.5] - 2026-03-31
 
+### Fixed
+- **Search returning wrong results** — removed FTS5 (was matching unrelated clips), reverted to optimized LIKE search (skip image BLOBs, 2000-char preview)
+
 ### Performance
-- **Instant search pre-filter** — client-side filtering of visible clips while waiting for backend FTS5 results, zero perceived latency
-- **Search debounce 200ms → 80ms** — faster response enabled by FTS5 indexing
+- **Instant search pre-filter** — client-side filtering of visible clips while waiting for backend results, zero perceived latency
+- **Search debounce 200ms → 80ms** — faster response with optimized queries
 - **Stale query discard** — generation counter prevents old search results from overwriting newer ones
 
 ### Changed
