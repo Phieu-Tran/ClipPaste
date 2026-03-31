@@ -424,42 +424,42 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
 
     let like_pattern = format!("%{}%", query);
 
-    // Search text_preview only. SELECT excludes content BLOB for speed.
-    let clips: Vec<Clip> = match filter_id.as_deref() {
-        Some(id) => {
-            let folder_id_num = id.parse::<i64>().ok();
-            if let Some(numeric_id) = folder_id_num {
-                sqlx::query_as(r#"
-                    SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
-                           folder_id, is_deleted, source_app, source_icon, metadata,
-                           created_at, last_accessed, last_pasted_at, is_pinned
-                    FROM clips WHERE is_deleted = 0 AND folder_id = ?
-                    AND text_preview LIKE ?
-                    ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
-                "#)
-                .bind(numeric_id)
-                .bind(&like_pattern)
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(pool).await.map_err(|e| e.to_string())?
-            } else {
-                Vec::new()
-            }
+    // Search in-memory cache (instant), then fetch matched rows by UUID
+    let query_lower = query.to_lowercase();
+    let folder_filter: Option<i64> = filter_id.as_deref()
+        .and_then(|id| id.parse::<i64>().ok());
+
+    let matched: Vec<String> = {
+        let cache = crate::clipboard::SEARCH_CACHE.lock();
+        cache.iter()
+            .filter(|(_, preview, fid)| {
+                if let Some(target_fid) = folder_filter {
+                    if *fid != Some(target_fid) { return false; }
+                }
+                preview.contains(&query_lower)
+            })
+            .take(limit as usize)
+            .map(|(uuid, _, _)| uuid.clone())
+            .collect()
+    };
+
+    let clips: Vec<Clip> = if matched.is_empty() {
+        Vec::new()
+    } else {
+        let placeholders: String = matched.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
+                    folder_id, is_deleted, source_app, source_icon, metadata,
+                    created_at, last_accessed, last_pasted_at, is_pinned
+             FROM clips WHERE uuid IN ({})
+             ORDER BY created_at DESC",
+            placeholders
+        );
+        let mut q = sqlx::query_as::<_, Clip>(&sql);
+        for uuid in &matched {
+            q = q.bind(uuid);
         }
-        None => {
-            sqlx::query_as(r#"
-                SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
-                       folder_id, is_deleted, source_app, source_icon, metadata,
-                       created_at, last_accessed, last_pasted_at, is_pinned
-                FROM clips WHERE is_deleted = 0
-                AND text_preview LIKE ?
-                ORDER BY created_at DESC LIMIT ? OFFSET ?
-            "#)
-            .bind(&like_pattern)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(pool).await.map_err(|e| e.to_string())?
-        }
+        q.fetch_all(pool).await.map_err(|e| e.to_string())?
     };
 
     // Search results use text_preview instead of full content for speed.

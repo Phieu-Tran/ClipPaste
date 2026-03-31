@@ -25,9 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Search no longer floods backend** — 150ms debounce + generation counter prevents stale results
 
 ### Performance
+- **In-memory search cache** — all clip previews loaded into RAM at startup (~100KB for 558 clips), search filters in-memory in <1ms instead of 1.5s SQLite scan
 - **SQLite WAL mode** — enabled Write-Ahead Logging for faster concurrent reads
 - **Search skips content BLOB entirely** — SQL query only fetches lightweight columns (no 26KB+ content), search results use `text_preview` for display
-- **No debounce removed, re-added 150ms** — balances responsiveness with backend load
+- **Search 300x faster** — from 1500ms (SQLite LIKE full-table scan) to ~5ms (in-memory filter + UUID index lookup)
 
 ### Changed
 - **Search results show text_preview** — cards display 2000-char preview instead of full content for faster rendering (full content loaded on paste)

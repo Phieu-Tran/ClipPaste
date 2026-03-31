@@ -42,8 +42,40 @@ static IGNORE_HASH: Lazy<parking_lot::Mutex<Option<String>>> = Lazy::new(|| park
 static LAST_STABLE_HASH: Lazy<parking_lot::Mutex<Option<String>>> = Lazy::new(|| parking_lot::Mutex::new(None));
 pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
+/// In-memory search index: (uuid, preview_lowercase, folder_id)
+/// Loaded once at startup, updated on each clipboard change. Avoids slow SQLite full-table scans.
+pub static SEARCH_CACHE: Lazy<parking_lot::Mutex<Vec<(String, String, Option<i64>)>>> =
+    Lazy::new(|| parking_lot::Mutex::new(Vec::new()));
+
 use std::sync::atomic::{AtomicU64, Ordering};
 static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Load all clip previews into memory for instant search
+pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
+    let rows: Vec<(String, String, Option<i64>)> = sqlx::query_as(
+        "SELECT uuid, COALESCE(text_preview, ''), folder_id FROM clips WHERE is_deleted = 0"
+    ).fetch_all(pool).await.unwrap_or_default();
+
+    let entries: Vec<(String, String, Option<i64>)> = rows.into_iter()
+        .map(|(uuid, preview, fid)| (uuid, preview.to_lowercase(), fid))
+        .collect();
+
+    let count = entries.len();
+    *SEARCH_CACHE.lock() = entries;
+    log::info!("SEARCH_CACHE: Loaded {} clip previews into memory", count);
+}
+
+/// Add a single clip to the search cache
+pub fn add_to_search_cache(uuid: &str, preview: &str, folder_id: Option<i64>) {
+    let mut cache = SEARCH_CACHE.lock();
+    cache.push((uuid.to_string(), preview.to_lowercase(), folder_id));
+}
+
+/// Remove a clip from the search cache
+pub fn remove_from_search_cache(uuid: &str) {
+    let mut cache = SEARCH_CACHE.lock();
+    cache.retain(|(u, _, _)| u != uuid);
+}
 
 pub fn set_ignore_hash(hash: String) {
     let mut lock = IGNORE_HASH.lock();
@@ -263,6 +295,9 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
             log::error!("CLIPBOARD: Failed to insert new clip: {}", e);
             return;
         }
+
+        // Update in-memory search cache
+        add_to_search_cache(&clip_uuid, &clip_preview, None);
 
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": clip_uuid,

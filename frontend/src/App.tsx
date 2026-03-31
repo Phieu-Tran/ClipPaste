@@ -239,17 +239,11 @@ function App() {
 
   const handleSearch = useCallback((query: string) => {
     setSearchInput(query);
-    if (query.trim()) {
-      setClips([]);
-      setSearchDone(false);
-      setPreviewFolder(undefined);
-    } else {
-      setSearchDone(false);
-    }
+    setPreviewFolder(undefined);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       setSearchQuery(query);
-    }, 150);
+    }, 100);
   }, []);
 
   useEffect(() => {
@@ -857,7 +851,6 @@ function App() {
               onCardContextMenu={(e, clipId) => handleContextMenu(e, 'card', clipId)}
               isPreviewing={isPreviewing}
               isSearching={!!searchQuery.trim()}
-              isSearchPending={!!searchInput.trim() && !searchDone}
             />
 
 

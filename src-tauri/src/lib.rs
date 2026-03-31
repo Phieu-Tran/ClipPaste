@@ -357,6 +357,12 @@ pub fn run_app() {
             let db_for_clip = db_for_clipboard.clone();
             clipboard::init(&handle_for_clip, db_for_clip);
 
+            // Load search cache into memory for instant search
+            let db_for_cache = db_for_clipboard.clone();
+            tauri::async_runtime::spawn(async move {
+                clipboard::load_search_cache(&db_for_cache.pool).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
