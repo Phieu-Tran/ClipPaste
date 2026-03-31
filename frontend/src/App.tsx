@@ -152,7 +152,8 @@ function App() {
   const loadClips = useCallback(
     async (folderId: string | null, append: boolean = false, searchQuery: string = '') => {
       try {
-        setIsLoading(true);
+        // Only show loading spinner on initial load (no existing clips), not on search/refresh
+        if (clips.length === 0) setIsLoading(true);
 
         const currentOffset = append ? clips.length : 0;
 

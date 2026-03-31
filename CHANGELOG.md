@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unified drag system** — replaced dual mouse-based + HTML5 drag with a single HTML5 Drag API system for both internal folder moves and external drag-copy
 - **Window auto-hide suppression** — app window stays visible during drag operations to external apps (`IS_DRAGGING` flag)
 
+### Performance
+- **FTS5 full-text search** — SQLite FTS5 virtual table for near-instant text search (~1ms vs 100ms+ LIKE scan)
+- **Skip image BLOB scan** — search no longer scans image binary data, only text clips
+- **Expanded text_preview** — increased from 200 to 2000 characters; existing clips auto-migrated on startup
+- **No search flicker** — loading spinner only shows on initial load, not during search/refresh
+
 ---
 
 ## [1.4.3] - 2026-03-30

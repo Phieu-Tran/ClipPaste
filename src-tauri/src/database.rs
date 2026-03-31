@@ -86,6 +86,44 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_pinned INTEGER DEFAULT 0")
             .execute(&self.pool).await;
 
+        // === FTS5 Full-Text Search ===
+        // Create FTS5 virtual table for fast text search
+        sqlx::query(r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS clips_fts USING fts5(
+                uuid UNINDEXED,
+                text_content,
+                content=''
+            )
+        "#).execute(&self.pool).await?;
+
+        // Populate FTS5 from existing text clips (skip if already populated)
+        let fts_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips_fts")
+            .fetch_one(&self.pool).await.unwrap_or(0);
+        let clip_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM clips WHERE clip_type != 'image' AND is_deleted = 0"
+        ).fetch_one(&self.pool).await.unwrap_or(0);
+
+        if fts_count == 0 && clip_count > 0 {
+            log::info!("DB: Populating FTS5 index from {} existing text clips...", clip_count);
+            sqlx::query(r#"
+                INSERT INTO clips_fts(uuid, text_content)
+                SELECT uuid, CAST(content AS TEXT) FROM clips
+                WHERE clip_type != 'image' AND is_deleted = 0
+            "#).execute(&self.pool).await?;
+            log::info!("DB: FTS5 index populated.");
+        }
+
+        // Rebuild text_preview for existing clips that have short previews (< 500 chars)
+        // This upgrades old 200-char previews to 2000-char previews
+        let upgraded: u64 = sqlx::query(r#"
+            UPDATE clips SET text_preview = SUBSTR(CAST(content AS TEXT), 1, 2000)
+            WHERE clip_type != 'image' AND LENGTH(text_preview) < 500
+            AND LENGTH(CAST(content AS TEXT)) > LENGTH(text_preview)
+        "#).execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+        if upgraded > 0 {
+            log::info!("DB: Upgraded text_preview for {} clips (200 → 2000 chars)", upgraded);
+        }
+
        Ok(())
     }
 
