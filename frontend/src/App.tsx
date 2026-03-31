@@ -149,10 +149,14 @@ function App() {
     });
   }, []);
 
+  // Monotonic counter to discard stale responses from older queries
+  const loadGenRef = useRef(0);
+
   const loadClips = useCallback(
     async (folderId: string | null, append: boolean = false, searchQuery: string = '') => {
+      const thisGen = ++loadGenRef.current;
+
       try {
-        // Only show loading spinner on initial load (no existing clips), not on search/refresh
         if (clips.length === 0) setIsLoading(true);
 
         const currentOffset = append ? clips.length : 0;
@@ -175,6 +179,9 @@ function App() {
           });
         }
 
+        // Discard if a newer query has been fired since
+        if (loadGenRef.current !== thisGen) return;
+
         if (append) {
           setClips((prev) => {
             return [...prev, ...data];
@@ -187,12 +194,11 @@ function App() {
           }
         }
 
-        // If we got fewer than limit, no more clips
         setHasMore(data.length === 20);
       } catch (error) {
         console.error('Failed to load clips:', error);
       } finally {
-        setIsLoading(false);
+        if (loadGenRef.current === thisGen) setIsLoading(false);
       }
     },
     [clips.length]
@@ -226,11 +232,11 @@ function App() {
 
   const handleSearch = useCallback((query: string) => {
     setSearchInput(query);
-    // Debounce: wait 200ms after user stops typing
+    // Debounce: wait 80ms after user stops typing (fast with FTS5)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       setSearchQuery(query);
-    }, 200);
+    }, 80);
   }, []);
 
   useEffect(() => {
@@ -603,11 +609,25 @@ function App() {
     return clip.clip_type === filter;
   }, []);
 
-  // Filter clips by content type (client-side)
+  // Filter clips by content type + instant search pre-filter (client-side)
   const filteredClips = useMemo(() => {
-    if (!contentTypeFilter) return clips;
-    return clips.filter((c) => matchesContentType(c, contentTypeFilter));
-  }, [clips, contentTypeFilter, matchesContentType]);
+    let result = clips;
+
+    // Instant pre-filter by search input (while waiting for backend FTS5 results)
+    if (searchInput.trim()) {
+      const q = searchInput.trim().toLowerCase();
+      result = result.filter((c) =>
+        c.content.toLowerCase().includes(q) ||
+        (c.source_app && c.source_app.toLowerCase().includes(q))
+      );
+    }
+
+    if (contentTypeFilter) {
+      result = result.filter((c) => matchesContentType(c, contentTypeFilter));
+    }
+
+    return result;
+  }, [clips, searchInput, contentTypeFilter, matchesContentType]);
 
   const filteredPreviewClips = useMemo(() => {
     if (!contentTypeFilter) return previewClips;
@@ -837,6 +857,7 @@ function App() {
               onNativeDragStart={handleNativeDragStart}
               onCardContextMenu={(e, clipId) => handleContextMenu(e, 'card', clipId)}
               isPreviewing={isPreviewing}
+              isSearching={!!searchQuery.trim()}
             />
 
 

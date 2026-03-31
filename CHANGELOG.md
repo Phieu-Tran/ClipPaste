@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.5] - 2026-03-31
+
+### Performance
+- **Instant search pre-filter** — client-side filtering of visible clips while waiting for backend FTS5 results, zero perceived latency
+- **Search debounce 200ms → 80ms** — faster response enabled by FTS5 indexing
+- **Stale query discard** — generation counter prevents old search results from overwriting newer ones
+
+### Changed
+- **Stagger entrance animation** — clips slide in from left to right when switching folders or reopening window
+- **No animation on search** — search results appear instantly without fade/stagger to avoid flicker
+
+---
+
 ## [1.4.4] - 2026-03-31
 
 ### Added

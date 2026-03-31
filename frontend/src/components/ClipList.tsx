@@ -17,6 +17,7 @@ interface ClipListProps {
   onNativeDragStart?: (e: React.DragEvent, clip: ClipboardItem) => void;
   onCardContextMenu?: (e: React.MouseEvent, clipId: string) => void;
   isPreviewing?: boolean;
+  isSearching?: boolean;
 }
 
 export function ClipList({
@@ -34,18 +35,17 @@ export function ClipList({
   onNativeDragStart,
   onCardContextMenu,
   isPreviewing,
+  isSearching,
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [fadeIn, setFadeIn] = useState(false);
+  const [staggerKey, setStaggerKey] = useState(0);
   const prevClipsKeyRef = useRef('');
 
-  // Detect when the clip list changes entirely (folder switch) and trigger a subtle fade
+  // Detect when the clip list changes entirely and trigger stagger animation
   const clipsKey = clips.slice(0, 5).map(c => c.id).join(',');
   useEffect(() => {
     if (prevClipsKeyRef.current && clipsKey !== prevClipsKeyRef.current) {
-      setFadeIn(true);
-      const t = setTimeout(() => setFadeIn(false), 200);
-      return () => clearTimeout(t);
+      setStaggerKey((k) => k + 1);
     }
     prevClipsKeyRef.current = clipsKey;
   }, [clipsKey]);
@@ -108,26 +108,32 @@ export function ClipList({
   return (
     <div
       ref={containerRef}
-      className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4 transition-opacity duration-200${isPreviewing ? ' opacity-80' : ''}${fadeIn ? ' opacity-0' : ''}`}
+      className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
       style={{
         scrollBehavior: 'auto',
       }}
     >
-      {clips.map((clip) => (
-        <ClipCard
+      {clips.map((clip, index) => (
+        <div
           key={clip.id}
-          clip={clip}
-          isSelected={selectedClipId === clip.id}
-          onSelect={() => onSelectClip(clip.id)}
-          onPaste={() => onPaste(clip.id)}
-          onCopy={() => onCopy(clip.id)}
-          onPin={() => onPin(clip.id)}
-          showPin={showPin}
-          onNativeDragStart={onNativeDragStart}
-          onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
-        />
+          className={isSearching ? undefined : 'animate-stagger-in'}
+          style={isSearching ? undefined : { animationDelay: `${index * 30}ms` }}
+          data-stagger-key={staggerKey}
+        >
+          <ClipCard
+            clip={clip}
+            isSelected={selectedClipId === clip.id}
+            onSelect={() => onSelectClip(clip.id)}
+            onPaste={() => onPaste(clip.id)}
+            onCopy={() => onCopy(clip.id)}
+            onPin={() => onPin(clip.id)}
+            showPin={showPin}
+            onNativeDragStart={onNativeDragStart}
+            onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
+          />
+        </div>
       ))}
 
       {/* Loading indicator at the end */}
