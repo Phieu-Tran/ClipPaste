@@ -11,7 +11,7 @@ pub async fn get_settings(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
     let pool = &db.pool;
 
     let mut settings = serde_json::json!({
-        "max_items": 1000,
+        "max_items": 0,
         "auto_delete_days": 30,
         "startup_with_windows": false, // Default, will override below
         "show_in_taskbar": false,
@@ -198,9 +198,9 @@ pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>
     use tauri::Emitter;
     let pool = &db.pool;
 
-    // Clean up image files before deleting
+    // Clean up image files before deleting (skip pinned)
     let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
-        "SELECT content FROM clips WHERE folder_id IS NULL AND clip_type = 'image'"
+        "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'"
     ).fetch_all(pool).await.map_err(|e| e.to_string())?;
     for (content,) in &image_clips {
         let filename = String::from_utf8_lossy(content).to_string();
@@ -208,7 +208,8 @@ pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>
         if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
     }
 
-    sqlx::query(r#"DELETE FROM clips WHERE folder_id IS NULL"#)
+    // Protect pinned clips from bulk clear
+    sqlx::query("DELETE FROM clips WHERE folder_id IS NULL AND is_pinned = 0")
         .execute(pool).await.map_err(|e| e.to_string())?;
 
     // Notify main window to refresh
@@ -222,15 +223,14 @@ pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>
 pub async fn remove_duplicate_clips(db: tauri::State<'_, Arc<Database>>) -> Result<i64, String> {
     let pool = &db.pool;
 
-    // Only remove duplicates from clips that are NOT in any folder
-    // Folder items are protected and can only be deleted manually
+    // Only remove duplicates from unprotected clips (not in folder, not pinned)
     let result = sqlx::query(r#"
         DELETE FROM clips
-        WHERE folder_id IS NULL
+        WHERE folder_id IS NULL AND is_pinned = 0
         AND id NOT IN (
             SELECT MIN(id)
             FROM clips
-            WHERE folder_id IS NULL
+            WHERE folder_id IS NULL AND is_pinned = 0
             GROUP BY content_hash
         )
     "#)

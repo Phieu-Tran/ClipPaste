@@ -80,12 +80,15 @@ export function ClipList({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClipId]);
 
-  // Scroll to start when window is reopened
+  // Scroll to start when window reopened or clip list changes (search, folder switch)
   useEffect(() => {
-    if (resetScrollKey === undefined || resetScrollKey === 0) return;
-    virtualizer.scrollToIndex(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetScrollKey]);
+    // RAF ensures DOM has rendered before resetting scroll
+    requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollLeft = 0;
+      }
+    });
+  }, [resetScrollKey, clipsKey]);
 
   // Infinite scroll — load more when near the end
   const handleScroll = useCallback(() => {
@@ -194,7 +197,7 @@ export function ClipList({
       className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
-      style={{ scrollSnapType: 'x proximity' }}
+      style={{ scrollSnapType: 'x proximity', scrollPaddingLeft: LAYOUT.SIDE_PADDING }}
     >
       {/* Virtual spacer — the full scrollable width */}
       <div

@@ -119,7 +119,14 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
 pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
-    let clip: Option<Clip> = sqlx::query_as(r#"SELECT * FROM clips WHERE uuid = ?"#)
+    // Only fetch columns needed for paste (skip source_icon, metadata, etc.)
+    let clip: Option<Clip> = sqlx::query_as(
+        "SELECT id, uuid, clip_type, content, text_preview, content_hash,
+                folder_id, is_deleted, source_app, '' as source_icon, metadata,
+                created_at, last_accessed, last_pasted_at, is_pinned,
+                subtype, note, paste_count
+         FROM clips WHERE uuid = ?"
+    )
         .bind(&id)
         .fetch_optional(pool).await.map_err(|e| e.to_string())?;
 
@@ -194,7 +201,14 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
 pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
-    let clip: Option<Clip> = sqlx::query_as(r#"SELECT * FROM clips WHERE uuid = ?"#)
+    // Only fetch columns needed for copy (skip source_icon, metadata, etc.)
+    let clip: Option<Clip> = sqlx::query_as(
+        "SELECT id, uuid, clip_type, content, text_preview, content_hash,
+                folder_id, is_deleted, source_app, '' as source_icon, metadata,
+                created_at, last_accessed, last_pasted_at, is_pinned,
+                subtype, note, paste_count
+         FROM clips WHERE uuid = ?"
+    )
         .bind(&id)
         .fetch_optional(pool).await.map_err(|e| e.to_string())?;
 
@@ -294,7 +308,7 @@ pub async fn paste_text(content: String, app: AppHandle, window: tauri::WebviewW
 pub async fn delete_clip(id: String, hard_delete: bool, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
-    // If hard deleting an image clip, also remove the file from disk
+    // Clean up image file from disk if this is an image clip
     if hard_delete {
         let clip_info: Option<(String, Vec<u8>)> = sqlx::query_as(
             "SELECT clip_type, content FROM clips WHERE uuid = ?"
@@ -309,15 +323,12 @@ pub async fn delete_clip(id: String, hard_delete: bool, db: tauri::State<'_, Arc
                 }
             }
         }
-
-        sqlx::query(r#"DELETE FROM clips WHERE uuid = ?"#)
-            .bind(&id)
-            .execute(pool).await.map_err(|e| e.to_string())?;
-    } else {
-        sqlx::query(r#"DELETE FROM clips WHERE uuid = ?"#)
-            .bind(&id)
-            .execute(pool).await.map_err(|e| e.to_string())?;
     }
+
+    // All deletes are hard deletes now (soft-delete removed)
+    sqlx::query("DELETE FROM clips WHERE uuid = ?")
+        .bind(&id)
+        .execute(pool).await.map_err(|e| e.to_string())?;
 
     // Remove from in-memory search cache
     crate::clipboard::remove_from_search_cache(&id);

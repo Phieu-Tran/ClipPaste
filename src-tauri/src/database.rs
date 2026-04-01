@@ -11,11 +11,26 @@ impl Database {
     pub async fn new(db_path: &str, data_dir: &std::path::Path) -> Self {
         let options = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(db_path)
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+            .busy_timeout(std::time::Duration::from_secs(5));
 
-        let pool = SqlitePool::connect_with(options)
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
             .await
             .expect("Failed to connect to database");
+
+        // Set per-connection PRAGMAs for performance
+        sqlx::query("PRAGMA cache_size = -8000") // 8MB cache
+            .execute(&pool).await.ok();
+        sqlx::query("PRAGMA temp_store = MEMORY")
+            .execute(&pool).await.ok();
+        sqlx::query("PRAGMA mmap_size = 67108864") // 64MB mmap
+            .execute(&pool).await.ok();
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&pool).await.ok();
 
         let images_dir = data_dir.join("images");
         std::fs::create_dir_all(&images_dir).ok();
@@ -84,9 +99,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at);
         "#).execute(&self.pool).await?;
 
-        sqlx::query(r#"
-            CREATE INDEX IF NOT EXISTS idx_clips_deleted_created ON clips(is_deleted, created_at);
-        "#).execute(&self.pool).await?;
+        // idx_clips_deleted_created removed in migration v4 — soft-delete no longer used
 
         sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS settings (
@@ -134,11 +147,18 @@ impl Database {
             log::info!("DB: Applied migration v3 (unique folder names)");
         }
 
-        // Clean up legacy soft-deleted rows (hard delete now)
-        let cleaned: u64 = sqlx::query("DELETE FROM clips WHERE is_deleted = 1")
-            .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
-        if cleaned > 0 {
-            log::info!("DB: Purged {} legacy soft-deleted clips", cleaned);
+        if version < 4 {
+            // Drop unused index — soft-delete no longer used, all deletes are hard deletes
+            let _ = sqlx::query("DROP INDEX IF EXISTS idx_clips_deleted_created")
+                .execute(&self.pool).await;
+            // Final cleanup of any remaining soft-deleted rows
+            let cleaned: u64 = sqlx::query("DELETE FROM clips WHERE is_deleted = 1")
+                .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+            if cleaned > 0 {
+                log::info!("DB: Final purge of {} legacy soft-deleted clips", cleaned);
+            }
+            self.set_schema_version(4).await;
+            log::info!("DB: Applied migration v4 (drop unused is_deleted index)");
         }
 
         // === Migrate image blobs to disk ===
@@ -166,41 +186,66 @@ impl Database {
     }
 
     /// Enforce max_items setting — delete oldest non-folder clips exceeding the limit.
-    /// Also cleans up image files for deleted image clips.
+    /// Uses a transaction to atomically count + collect image filenames + delete.
+    /// Image files are cleaned up after the transaction commits.
     pub async fn enforce_max_items(&self) {
-        let max_items: i64 = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_items'")
+        // Only enforce if user explicitly set max_items in settings
+        let max_items: Option<i64> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_items'")
             .fetch_optional(&self.pool).await.unwrap_or(None)
-            .and_then(|v: String| v.parse().ok())
-            .unwrap_or(1000);
+            .and_then(|v: String| v.parse().ok());
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE folder_id IS NULL")
-            .fetch_one(&self.pool).await.unwrap_or(0);
+        let max_items = match max_items {
+            Some(v) if v > 0 => v,
+            _ => return, // No limit set — unlimited history
+        };
 
-        if count <= max_items { return; }
+        let mut tx = match self.pool.begin().await {
+            Ok(tx) => tx,
+            Err(e) => { log::error!("enforce_max_items: failed to begin tx: {}", e); return; }
+        };
+
+        // Count only unprotected clips (not in folder, not pinned)
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM clips WHERE folder_id IS NULL AND is_pinned = 0"
+        ).fetch_one(&mut *tx).await.unwrap_or(0);
+
+        if count <= max_items {
+            let _ = tx.commit().await;
+            return;
+        }
 
         let excess = count - max_items;
         log::info!("DB: Trimming {} clips exceeding max_items={}", excess, max_items);
 
-        // Get image filenames for clips about to be deleted
+        // Collect image filenames before deleting (within same transaction)
+        // Only from unprotected clips (not in folder, not pinned)
         let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
-            "SELECT content FROM clips WHERE folder_id IS NULL AND clip_type = 'image'
+            "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'
              ORDER BY created_at ASC LIMIT ?"
-        ).bind(excess).fetch_all(&self.pool).await.unwrap_or_default();
+        ).bind(excess).fetch_all(&mut *tx).await.unwrap_or_default();
 
+        // Delete oldest unprotected clips (folder + pinned items are safe)
+        if let Err(e) = sqlx::query(
+            "DELETE FROM clips WHERE id IN (
+                SELECT id FROM clips WHERE folder_id IS NULL AND is_pinned = 0
+                ORDER BY created_at ASC LIMIT ?
+            )"
+        ).bind(excess).execute(&mut *tx).await {
+            log::error!("Failed to trim excess clips: {}", e);
+            let _ = tx.rollback().await;
+            return;
+        }
+
+        if let Err(e) = tx.commit().await {
+            log::error!("enforce_max_items: commit failed: {}", e);
+            return;
+        }
+
+        // Clean up image files after successful commit
         for (content,) in &image_clips {
             let filename = String::from_utf8_lossy(content).to_string();
             let path = self.images_dir.join(&filename);
             if path.exists() { let _ = std::fs::remove_file(&path); }
-        }
-
-        // Delete oldest non-folder clips
-        if let Err(e) = sqlx::query(
-            "DELETE FROM clips WHERE id IN (
-                SELECT id FROM clips WHERE folder_id IS NULL
-                ORDER BY created_at ASC LIMIT ?
-            )"
-        ).bind(excess).execute(&self.pool).await {
-            log::error!("Failed to trim excess clips: {}", e);
         }
     }
 

@@ -422,17 +422,36 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             return Err("Invalid backup: clipboard.db not found in zip".to_string());
         }
 
-        // Extract all files
+        // Extract all files with strict path validation
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let name = entry.name().to_string();
 
-            // Security: reject path traversal
-            if name.contains("..") { continue; }
+            // Security: reject path traversal and suspicious names
+            if name.contains("..") || name.starts_with('/') || name.starts_with('\\') {
+                log::warn!("Import: skipping suspicious entry: {}", name);
+                continue;
+            }
+
+            // Only allow known safe paths: clipboard.db and images/*
+            let is_safe = name == "clipboard.db"
+                || (name.starts_with("images/") && !name.contains(".."));
+            if !is_safe {
+                log::warn!("Import: skipping unexpected entry: {}", name);
+                continue;
+            }
 
             let out_path = data_dir_clone.join(&name);
+
+            // Canonicalize check: resolved path must be inside data_dir
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent).ok();
+            }
+            let canonical = out_path.canonicalize().unwrap_or_else(|_| out_path.clone());
+            let canonical_base = data_dir_clone.canonicalize().unwrap_or_else(|_| data_dir_clone.clone());
+            if !canonical.starts_with(&canonical_base) {
+                log::warn!("Import: path escapes data dir: {:?}", canonical);
+                continue;
             }
 
             let mut buf = Vec::new();

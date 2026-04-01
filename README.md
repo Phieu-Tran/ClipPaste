@@ -263,13 +263,15 @@ sequenceDiagram
 
 | Decision | Reason |
 |:---------|:-------|
-| **SQLite WAL mode** | Concurrent reads (UI) + writes (clipboard monitor) without blocking |
+| **SQLite WAL mode + tuned PRAGMAs** | Concurrent reads/writes, 8MB cache, 64MB mmap, 5s busy_timeout |
 | **Images on disk** | DB stays small (~2MB), images in separate files |
 | **In-memory search cache** | Instant multi-word search (<1ms for 1000+ clips) |
 | **Relevance sorting** | Exact substring matches rank above partial word matches |
 | **Shift+Insert** for paste | Works in terminals (PowerShell, WSL) where Ctrl+V doesn't |
 | **@tanstack/react-virtual** | Horizontal virtual list — constant DOM count regardless of clip count |
 | **Hard delete** (no soft delete) | No DB bloat, no stale rows, simpler queries |
+| **Pinned + folder items protected** | Bulk clear, dedup, and auto-trim never touch pinned or folder clips |
+| **Atomic DB operations** | Transactions for folder delete, max_items trim — crash-safe |
 | **Async image I/O** | `tokio::fs::read` prevents blocking the Tokio runtime |
 | **Modular commands/** | 7 domain files instead of monolithic commands.rs (1500+ lines) |
 
@@ -312,8 +314,8 @@ pnpm tauri dev
 # Production build
 pnpm tauri build
 
-# Run tests
-cd tests && npx vitest run
+# Run Rust tests
+cd src-tauri && cargo test
 ```
 
 ---
