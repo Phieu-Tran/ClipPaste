@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.1] - 2026-04-01
+
+### Fixed
+- **CI build** — bumped version after re-tag caused duplicate release error
+- **README** — added Mermaid architecture diagrams (system overview, data flow, paste flow)
+
+---
+
 ## [1.6.0] - 2026-04-01
 
 ### Added
@@ -477,7 +485,8 @@ Version bump for auto-updater (v1.4.5 was re-tagged, users on old 1.4.5 wouldn't
 ---
 
 <!-- Links -->
-[Unreleased]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.4.8...v1.5.0
 [1.2.6]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.5...v1.2.6
