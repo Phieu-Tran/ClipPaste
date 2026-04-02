@@ -99,13 +99,14 @@ export function ClipList({
     }
   }, [hasMore, isLoading, onLoadMore]);
 
-  // Map vertical mouse wheel to horizontal scroll — damped for control
+  // Convert vertical wheel → horizontal scroll. Trackpad horizontal gestures work natively.
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (containerRef.current && (e.deltaY !== 0 || e.deltaX !== 0)) {
+    if (!containerRef.current) return;
+    // Only intercept vertical scroll (mouse wheel / trackpad vertical swipe)
+    // Let native horizontal trackpad gestures pass through untouched
+    if (e.deltaY !== 0 && e.deltaX === 0) {
       e.preventDefault();
-      // Dampen: ~1 card width per strong scroll notch
-      const delta = (e.deltaY || e.deltaX) * 0.6;
-      containerRef.current.scrollBy({ left: delta, behavior: 'auto' });
+      containerRef.current.scrollLeft += e.deltaY * 0.5;
     }
   }, []);
 
@@ -197,7 +198,7 @@ export function ClipList({
       className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
-      style={{ scrollSnapType: 'x proximity', scrollPaddingLeft: LAYOUT.SIDE_PADDING }}
+      style={{ scrollSnapType: 'x proximity', scrollPaddingLeft: LAYOUT.SIDE_PADDING, scrollBehavior: 'smooth' }}
     >
       {/* Virtual spacer — the full scrollable width */}
       <div

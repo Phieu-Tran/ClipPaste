@@ -639,4 +639,351 @@ mod tests {
             assert_eq!(hashes.len(), 500, "All 500 inputs should produce unique hashes");
         }
     }
+
+    // === Database integration tests ===
+
+    mod database_tests {
+        use crate::database::Database;
+
+        /// Create a temporary in-memory database for testing
+        async fn setup_test_db() -> Database {
+            let temp_dir = std::env::temp_dir().join(format!("clippaste_test_{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&temp_dir).unwrap();
+            let db_path = temp_dir.join("test.db");
+            let db = Database::new(db_path.to_str().unwrap(), &temp_dir).await;
+            db.migrate().await.expect("Migration should succeed");
+            db
+        }
+
+        /// Helper: insert a text clip into the test database
+        async fn insert_clip(db: &Database, uuid: &str, text: &str, folder_id: Option<i64>, is_pinned: bool) {
+            let hash = crate::clipboard::calculate_hash(text.as_bytes());
+            let preview = &text[..text.len().min(2000)];
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES (?, 'text', ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            .bind(uuid)
+            .bind(text.as_bytes())
+            .bind(preview)
+            .bind(&hash)
+            .bind(folder_id)
+            .bind(is_pinned)
+            .execute(&db.pool).await.unwrap();
+        }
+
+        /// Helper: count clips matching a WHERE clause
+        async fn count_clips(db: &Database, where_clause: &str) -> i64 {
+            let sql = format!("SELECT COUNT(*) FROM clips WHERE {}", where_clause);
+            sqlx::query_scalar::<_, i64>(&sql)
+                .fetch_one(&db.pool).await.unwrap()
+        }
+
+        // --- Migration tests ---
+
+        #[tokio::test]
+        async fn migrate_creates_all_tables() {
+            let db = setup_test_db().await;
+
+            // Verify all tables exist
+            let tables: Vec<(String,)> = sqlx::query_as(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetch_all(&db.pool).await.unwrap();
+            let table_names: Vec<&str> = tables.iter().map(|(n,)| n.as_str()).collect();
+
+            assert!(table_names.contains(&"clips"), "clips table should exist");
+            assert!(table_names.contains(&"folders"), "folders table should exist");
+            assert!(table_names.contains(&"settings"), "settings table should exist");
+            assert!(table_names.contains(&"ignored_apps"), "ignored_apps table should exist");
+            assert!(table_names.contains(&"schema_version"), "schema_version table should exist");
+        }
+
+        #[tokio::test]
+        async fn migrate_creates_indexes() {
+            let db = setup_test_db().await;
+
+            let indexes: Vec<(String,)> = sqlx::query_as(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+            ).fetch_all(&db.pool).await.unwrap();
+            let idx_names: Vec<&str> = indexes.iter().map(|(n,)| n.as_str()).collect();
+
+            assert!(idx_names.contains(&"idx_clips_hash"), "content_hash index");
+            assert!(idx_names.contains(&"idx_clips_folder"), "folder_id index");
+            assert!(idx_names.contains(&"idx_clips_created"), "created_at index");
+            assert!(idx_names.contains(&"idx_folders_name"), "unique folder name index");
+            // is_deleted index should NOT exist (dropped in migration v4)
+            assert!(!idx_names.contains(&"idx_clips_deleted_created"), "is_deleted index should be dropped");
+        }
+
+        #[tokio::test]
+        async fn schema_version_is_latest() {
+            let db = setup_test_db().await;
+            let version: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+                .fetch_one(&db.pool).await.unwrap();
+            assert_eq!(version, 4, "Schema version should be 4 after all migrations");
+        }
+
+        // --- CRUD tests ---
+
+        #[tokio::test]
+        async fn insert_and_query_clip() {
+            let db = setup_test_db().await;
+            insert_clip(&db, "test-uuid-1", "Hello World", None, false).await;
+
+            let clip: (String, String) = sqlx::query_as(
+                "SELECT uuid, text_preview FROM clips WHERE uuid = ?"
+            ).bind("test-uuid-1").fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(clip.0, "test-uuid-1");
+            assert_eq!(clip.1, "Hello World");
+        }
+
+        #[tokio::test]
+        async fn insert_and_query_folder() {
+            let db = setup_test_db().await;
+
+            sqlx::query("INSERT INTO folders (name, icon, color) VALUES (?, ?, ?)")
+                .bind("Test Folder")
+                .bind("📁")
+                .bind("blue")
+                .execute(&db.pool).await.unwrap();
+
+            let folder: (String, Option<String>, Option<String>) = sqlx::query_as(
+                "SELECT name, icon, color FROM folders WHERE name = ?"
+            ).bind("Test Folder").fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(folder.0, "Test Folder");
+            assert_eq!(folder.1.as_deref(), Some("📁"));
+            assert_eq!(folder.2.as_deref(), Some("blue"));
+        }
+
+        #[tokio::test]
+        async fn folder_unique_name_constraint() {
+            let db = setup_test_db().await;
+
+            sqlx::query("INSERT INTO folders (name) VALUES (?)")
+                .bind("Unique Name").execute(&db.pool).await.unwrap();
+
+            let result = sqlx::query("INSERT INTO folders (name) VALUES (?)")
+                .bind("Unique Name").execute(&db.pool).await;
+
+            assert!(result.is_err(), "Duplicate folder name should fail");
+            let err_msg = result.unwrap_err().to_string();
+            assert!(err_msg.contains("UNIQUE"), "Error should mention UNIQUE constraint");
+        }
+
+        // --- Settings tests ---
+
+        #[tokio::test]
+        async fn settings_insert_and_read() {
+            let db = setup_test_db().await;
+
+            sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', 'dark')")
+                .execute(&db.pool).await.unwrap();
+
+            let val = db.get_setting("theme").await.unwrap();
+            assert_eq!(val, Some("dark".to_string()));
+        }
+
+        #[tokio::test]
+        async fn settings_missing_key_returns_none() {
+            let db = setup_test_db().await;
+            let val = db.get_setting("nonexistent").await.unwrap();
+            assert_eq!(val, None);
+        }
+
+        // --- Ignored apps tests ---
+
+        #[tokio::test]
+        async fn ignored_apps_add_remove() {
+            let db = setup_test_db().await;
+
+            db.add_ignored_app("notepad.exe").await.unwrap();
+            db.add_ignored_app("calc.exe").await.unwrap();
+
+            let apps = db.get_ignored_apps().await.unwrap();
+            assert_eq!(apps.len(), 2);
+            assert!(apps.contains(&"notepad.exe".to_string()));
+
+            // Duplicate insert should not fail (INSERT OR IGNORE)
+            db.add_ignored_app("notepad.exe").await.unwrap();
+            let apps = db.get_ignored_apps().await.unwrap();
+            assert_eq!(apps.len(), 2, "Duplicate should not create extra row");
+
+            db.remove_ignored_app("notepad.exe").await.unwrap();
+            let apps = db.get_ignored_apps().await.unwrap();
+            assert_eq!(apps.len(), 1);
+            assert!(!apps.contains(&"notepad.exe".to_string()));
+        }
+
+        #[tokio::test]
+        async fn is_app_ignored_case_insensitive() {
+            let db = setup_test_db().await;
+            db.add_ignored_app("Notepad.EXE").await.unwrap();
+
+            assert!(db.is_app_ignored("notepad.exe").await.unwrap(), "Case-insensitive match");
+            assert!(db.is_app_ignored("NOTEPAD.EXE").await.unwrap(), "Case-insensitive match");
+            assert!(!db.is_app_ignored("unknown.exe").await.unwrap(), "Non-ignored app");
+        }
+
+        // --- enforce_max_items tests ---
+
+        #[tokio::test]
+        async fn enforce_max_items_no_limit_does_nothing() {
+            let db = setup_test_db().await;
+
+            // Insert 5 clips, no max_items setting
+            for i in 0..5 {
+                insert_clip(&db, &format!("clip-{}", i), &format!("text {}", i), None, false).await;
+            }
+
+            db.enforce_max_items().await;
+            let count = count_clips(&db, "1=1").await;
+            assert_eq!(count, 5, "No max_items set → no clips deleted");
+        }
+
+        #[tokio::test]
+        async fn enforce_max_items_trims_oldest() {
+            let db = setup_test_db().await;
+
+            // Set max_items = 3
+            sqlx::query("INSERT INTO settings (key, value) VALUES ('max_items', '3')")
+                .execute(&db.pool).await.unwrap();
+
+            // Insert 5 clips with staggered timestamps
+            for i in 0..5 {
+                sqlx::query(
+                    "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                     VALUES (?, 'text', ?, ?, ?, 0, 0, datetime('now', ?), CURRENT_TIMESTAMP)"
+                )
+                .bind(format!("trim-{}", i))
+                .bind(format!("text {}", i).as_bytes().to_vec())
+                .bind(format!("text {}", i))
+                .bind(format!("hash-{}", i))
+                .bind(format!("-{} minutes", 5 - i)) // older clips first
+                .execute(&db.pool).await.unwrap();
+            }
+
+            db.enforce_max_items().await;
+            let count = count_clips(&db, "1=1").await;
+            assert_eq!(count, 3, "Should trim to max_items=3");
+
+            // Verify oldest were deleted (trim-0, trim-1 are oldest)
+            let remaining: Vec<(String,)> = sqlx::query_as("SELECT uuid FROM clips ORDER BY created_at ASC")
+                .fetch_all(&db.pool).await.unwrap();
+            let uuids: Vec<&str> = remaining.iter().map(|(u,)| u.as_str()).collect();
+            assert!(!uuids.contains(&"trim-0"), "Oldest clip should be deleted");
+            assert!(!uuids.contains(&"trim-1"), "Second oldest should be deleted");
+            assert!(uuids.contains(&"trim-4"), "Newest clip should remain");
+        }
+
+        #[tokio::test]
+        async fn enforce_max_items_protects_pinned() {
+            let db = setup_test_db().await;
+
+            sqlx::query("INSERT INTO settings (key, value) VALUES ('max_items', '2')")
+                .execute(&db.pool).await.unwrap();
+
+            // Insert 3 unpinned + 2 pinned
+            for i in 0..3 {
+                insert_clip(&db, &format!("unpin-{}", i), &format!("unpinned {}", i), None, false).await;
+            }
+            for i in 0..2 {
+                insert_clip(&db, &format!("pin-{}", i), &format!("pinned {}", i), None, true).await;
+            }
+
+            db.enforce_max_items().await;
+
+            // Pinned clips should all survive
+            let pinned_count = count_clips(&db, "is_pinned = 1").await;
+            assert_eq!(pinned_count, 2, "All pinned clips must survive");
+
+            // Unpinned should be trimmed to max_items=2
+            let unpinned_count = count_clips(&db, "is_pinned = 0").await;
+            assert_eq!(unpinned_count, 2, "Unpinned clips trimmed to max_items");
+        }
+
+        #[tokio::test]
+        async fn enforce_max_items_protects_folder_clips() {
+            let db = setup_test_db().await;
+
+            sqlx::query("INSERT INTO settings (key, value) VALUES ('max_items', '1')")
+                .execute(&db.pool).await.unwrap();
+
+            // Create a folder
+            sqlx::query("INSERT INTO folders (name) VALUES ('Test')")
+                .execute(&db.pool).await.unwrap();
+            let folder_id: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE name = 'Test'")
+                .fetch_one(&db.pool).await.unwrap();
+
+            // Insert 3 unfiled + 2 in folder
+            for i in 0..3 {
+                insert_clip(&db, &format!("unfiled-{}", i), &format!("unfiled {}", i), None, false).await;
+            }
+            for i in 0..2 {
+                insert_clip(&db, &format!("filed-{}", i), &format!("filed {}", i), Some(folder_id), false).await;
+            }
+
+            db.enforce_max_items().await;
+
+            let folder_count = count_clips(&db, "folder_id IS NOT NULL").await;
+            assert_eq!(folder_count, 2, "Folder clips must survive enforce_max_items");
+
+            let unfiled_count = count_clips(&db, "folder_id IS NULL AND is_pinned = 0").await;
+            assert_eq!(unfiled_count, 1, "Unfiled clips trimmed to max_items=1");
+        }
+
+        // --- WAL mode verification ---
+
+        #[tokio::test]
+        async fn wal_mode_enabled() {
+            let db = setup_test_db().await;
+            let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+                .fetch_one(&db.pool).await.unwrap();
+            assert_eq!(mode.to_lowercase(), "wal", "Database should be in WAL mode");
+        }
+
+        #[tokio::test]
+        async fn foreign_keys_enabled() {
+            let db = setup_test_db().await;
+            let fk: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+                .fetch_one(&db.pool).await.unwrap();
+            assert_eq!(fk, 1, "Foreign keys should be enabled");
+        }
+
+        // --- Cleanup orphan images test ---
+
+        #[tokio::test]
+        async fn cleanup_orphan_images_removes_untracked_files() {
+            let db = setup_test_db().await;
+
+            // Create orphan image file
+            let orphan_path = db.images_dir.join("orphan_image.png");
+            std::fs::write(&orphan_path, b"fake image data").unwrap();
+            assert!(orphan_path.exists());
+
+            db.cleanup_orphan_images().await;
+
+            assert!(!orphan_path.exists(), "Orphan image should be deleted");
+        }
+
+        #[tokio::test]
+        async fn cleanup_orphan_images_preserves_tracked_files() {
+            let db = setup_test_db().await;
+
+            // Insert image clip referencing a file
+            let filename = "tracked_image.png";
+            let file_path = db.images_dir.join(filename);
+            std::fs::write(&file_path, b"real image data").unwrap();
+
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, created_at, last_accessed)
+                 VALUES ('img-1', 'image', ?, '', 'hash123', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ).bind(filename.as_bytes()).execute(&db.pool).await.unwrap();
+
+            db.cleanup_orphan_images().await;
+
+            assert!(file_path.exists(), "Tracked image should NOT be deleted");
+        }
+    }
 }

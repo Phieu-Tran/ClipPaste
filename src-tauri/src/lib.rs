@@ -41,7 +41,6 @@ mod utils;
 #[cfg(test)]
 mod tests;
 
-
 use models::get_runtime;
 use database::Database;
 
