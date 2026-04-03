@@ -88,7 +88,7 @@ pub async fn save_settings(app: AppHandle, settings: serde_json::Value, db: taur
     }
 
     if let Some(mica_effect) = settings.get("mica_effect").and_then(|v| v.as_str()) {
-        if matches!(mica_effect, "clear" | "mica" | "mica_alt") {
+        if matches!(mica_effect, "clear" | "mica" | "mica_alt" | "acrylic" | "blur") {
             sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('mica_effect', ?)"#)
                 .bind(mica_effect)
                 .execute(pool).await.ok();
@@ -214,6 +214,11 @@ pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>
     sqlx::query("DELETE FROM clips WHERE folder_id IS NULL AND is_pinned = 0")
         .execute(pool).await.map_err(|e| e.to_string())?;
 
+    // Rebuild in-memory search cache (deleted clips must be removed)
+    crate::clipboard::load_search_cache(pool).await;
+    // Optimize query planner after bulk delete
+    let _ = sqlx::query("PRAGMA optimize").execute(pool).await;
+
     // Notify main window to refresh
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.emit("clipboard-change", ());
@@ -238,6 +243,12 @@ pub async fn remove_duplicate_clips(db: tauri::State<'_, Arc<Database>>) -> Resu
     "#)
     .execute(pool).await.map_err(|e| e.to_string())?;
 
+    // Rebuild in-memory search cache (deleted duplicates must be removed)
+    if result.rows_affected() > 0 {
+        crate::clipboard::load_search_cache(pool).await;
+        let _ = sqlx::query("PRAGMA optimize").execute(pool).await;
+    }
+
     Ok(result.rows_affected() as i64)
 }
 
@@ -257,13 +268,17 @@ pub async fn register_global_shortcut(hotkey: String, window: tauri::WebviewWind
     let main_window = app.get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
 
-    // Register the new shortcut with the window show handler
+    // Register the new shortcut with toggle behavior (show/hide)
     let win_clone = main_window.clone();
     if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
         if event.state() == ShortcutState::Pressed {
-            crate::position_window_at_bottom(&win_clone);
-            let _ = win_clone.show();
-            let _ = win_clone.set_focus();
+            if win_clone.is_visible().unwrap_or(false) && win_clone.is_focused().unwrap_or(false) {
+                crate::animate_window_hide(&win_clone, None);
+            } else {
+                crate::position_window_at_bottom(&win_clone);
+                let _ = win_clone.show();
+                let _ = win_clone.set_focus();
+            }
         }
     }) {
         return Err(format!("Failed to register hotkey: {:?}", e));

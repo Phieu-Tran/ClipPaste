@@ -12,6 +12,7 @@ export interface ClipboardItem {
   subtype: string | null;
   note: string | null;
   paste_count: number;
+  is_sensitive: boolean;
 }
 
 export interface FolderItem {

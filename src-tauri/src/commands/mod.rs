@@ -1,4 +1,4 @@
-mod clips;
+pub mod clips;
 mod folders;
 mod settings;
 mod data;

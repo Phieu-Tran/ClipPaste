@@ -1,7 +1,6 @@
 import { useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
-import { base64ToBlob } from '../utils';
 import { PAGE_SIZE } from '../constants';
 import { toast } from 'sonner';
 
@@ -134,8 +133,10 @@ export function useClipActions(opts: UseClipActionsOpts) {
       const clip = clips.find((c) => c.id === clipId);
       if (clip && clip.clip_type === 'image') {
         try {
-          // clip.content is Base64 for images (from get_clips in commands.rs)
-          const blob = base64ToBlob(clip.content, 'image/png');
+          // clip.content is now a file path — fetch via asset protocol for clipboard write
+          const assetUrl = convertFileSrc(clip.content);
+          const response = await fetch(assetUrl);
+          const blob = await response.blob();
           await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         } catch (e) {
           console.error('Frontend clipboard write failed', e);
@@ -153,7 +154,10 @@ export function useClipActions(opts: UseClipActionsOpts) {
     try {
       const clip = clipsRef.current.find((c) => c.id === clipId);
       if (clip && clip.clip_type === 'image') {
-        const blob = base64ToBlob(clip.content, 'image/png');
+        // clip.content is a file path — fetch via asset protocol
+        const assetUrl = convertFileSrc(clip.content);
+        const response = await fetch(assetUrl);
+        const blob = await response.blob();
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
       }
 

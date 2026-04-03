@@ -1,10 +1,10 @@
 import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
 import { useMemo, memo, useState, useRef, useEffect } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder } from 'lucide-react';
+import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { base64ToBlob } from '../utils';
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -114,11 +114,13 @@ export const ClipCard = memo(function ClipCard({
   // Memoize the content rendering — now subtype-aware
   const renderedContent = useMemo(() => {
     if (clip.clip_type === 'image') {
+      // clip.content is now an absolute file path — use convertFileSrc for asset protocol
+      const imageSrc = clip.content ? convertFileSrc(clip.content) : '';
       return (
         <div className="flex h-full w-full select-none items-center justify-center rounded-md bg-black/20 p-1">
           {clip.content ? (
             <img
-              src={`data:image/png;base64,${clip.content}`}
+              src={imageSrc}
               alt="Clipboard Image"
               className="max-h-full max-w-full rounded object-contain shadow-md"
             />
@@ -249,13 +251,8 @@ export const ClipCard = memo(function ClipCard({
   const handleNativeDragStart = (e: React.DragEvent) => {
     // Set data for external drop targets (other apps)
     if (clip.clip_type === 'image') {
-      try {
-        const blob = base64ToBlob(clip.content, 'image/png');
-        const file = new File([blob], 'clipboard-image.png', { type: 'image/png' });
-        e.dataTransfer.items.add(file);
-      } catch {
-        e.dataTransfer.setData('text/plain', '[Image]');
-      }
+      // clip.content is a file path — set as URI for native drag
+      e.dataTransfer.setData('text/plain', clip.content);
     } else {
       e.dataTransfer.setData('text/plain', clip.content);
     }
@@ -278,6 +275,9 @@ export const ClipCard = memo(function ClipCard({
   return (
     <div
       data-clip-id={clip.id}
+      role="option"
+      aria-selected={isSelected}
+      aria-label={`${title} clip: ${clip.preview?.substring(0, 50) || clip.clip_type}. ${clip.is_sensitive ? 'Sensitive content.' : ''}`}
       style={{
         width: TOTAL_COLUMN_WIDTH - LAYOUT.CARD_GAP,
         height: LAYOUT.WINDOW_HEIGHT - LAYOUT.CONTROL_BAR_HEIGHT - LAYOUT.CARD_VERTICAL_PADDING * 2,
@@ -292,13 +292,13 @@ export const ClipCard = memo(function ClipCard({
         onDoubleClick={onPaste}
         onContextMenu={handleContextMenu}
         className={clsx(
-          'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border bg-card shadow-lg',
+          'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border bg-card',
           'transition-all duration-200 ease-out',
           isMultiSelected
-            ? 'border-blue-500/70 ring-2 ring-blue-500/40 shadow-blue-500/10'
+            ? 'border-blue-500/70 ring-2 ring-blue-500/40'
             : isSelected
-              ? 'z-10 scale-[1.04] -translate-y-1 border-blue-500 ring-[3px] ring-blue-500/80 shadow-xl shadow-blue-500/20'
-              : 'border-border hover:scale-[1.02] hover:-translate-y-[3px] hover:-rotate-[0.5deg] hover:shadow-xl hover:shadow-primary/10 hover:ring-2 hover:ring-primary/40',
+              ? 'z-10 scale-[1.04] -translate-y-1.5 border-blue-500/80 ring-[3px] ring-blue-500/40'
+              : 'border-white/[0.08] dark:border-white/[0.08] hover:scale-[1.02] hover:-translate-y-[3px] hover:border-white/[0.16] dark:hover:border-white/[0.16]',
           'group'
         )}
       >
@@ -310,7 +310,7 @@ export const ClipCard = memo(function ClipCard({
         )}
 
         {/* Header */}
-        <div className={clsx(headerColor, 'flex flex-shrink-0 items-center gap-1.5 px-2 py-1.5')}>
+        <div className={clsx(headerColor, 'flex flex-shrink-0 items-center gap-1.5 border-b border-black/10 px-2.5 py-2 dark:border-black/20')}>
           {clip.source_icon && (
             <img
               src={`data:image/png;base64,${clip.source_icon}`}
@@ -321,6 +321,11 @@ export const ClipCard = memo(function ClipCard({
           <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-foreground shadow-sm">
             {title}
           </span>
+          {clip.is_sensitive && (
+            <span className="flex items-center gap-0.5 rounded bg-red-500/20 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-400">
+              <ShieldAlert size={9} />
+            </span>
+          )}
           {subtypeBadge}
           {showPin && (
             <button
@@ -351,7 +356,7 @@ export const ClipCard = memo(function ClipCard({
             title="Copy to clipboard"
           >
             {copied ? (
-              <Check size={14} className="text-emerald-500" />
+              <Check size={14} className="animate-copy-pulse text-emerald-500" />
             ) : (
               <Copy size={14} className="text-foreground/70 hover:text-foreground" />
             )}
@@ -359,7 +364,7 @@ export const ClipCard = memo(function ClipCard({
         </div>
 
         {/* Content */}
-        <div className={clsx('relative flex-1 overflow-hidden bg-card p-2', isMultiSelected && 'opacity-75')}>
+        <div className={clsx('relative flex-1 overflow-hidden bg-card p-2', isMultiSelected && 'opacity-75', clip.is_sensitive && 'sensitive-blur')}>
           {renderedContent}
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card/100 to-card/30" />
         </div>
@@ -373,11 +378,11 @@ export const ClipCard = memo(function ClipCard({
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between bg-card/80 px-2.5 py-1">
+        <div className="flex items-center justify-between bg-gradient-to-t from-black/[0.04] to-transparent px-2.5 py-1 dark:from-black/[0.15]">
           <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/40">
             <span>
               {clip.clip_type === 'image'
-                ? (getImageSizeFromMeta(clip.metadata) ?? `${Math.round((clip.content.length * 0.75) / 1024)}KB`)
+                ? (getImageSizeFromMeta(clip.metadata) ?? 'Image')
                 : `${clip.content.length} chars`}
             </span>
             <span className="text-muted-foreground/25">·</span>

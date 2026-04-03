@@ -22,6 +22,7 @@ pub struct Clip {
     pub subtype: Option<String>,
     pub note: Option<String>,
     pub paste_count: i64,
+    pub is_sensitive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -66,6 +67,7 @@ pub struct ClipboardItem {
     pub subtype: Option<String>,
     pub note: Option<String>,
     pub paste_count: i64,
+    pub is_sensitive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

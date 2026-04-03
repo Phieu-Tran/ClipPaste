@@ -16,6 +16,9 @@ import { useClipActions } from './hooks/useClipActions';
 import { useFolderActions } from './hooks/useFolderActions';
 import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderPreview } from './hooks/useFolderPreview';
+import { useContextMenu } from './hooks/useContextMenu';
+import { useFolderModal } from './hooks/useFolderModal';
+import { useBatchActions } from './hooks/useBatchActions';
 import { Toaster, toast } from 'sonner';
 import { LAYOUT } from './constants';
 
@@ -30,10 +33,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
-
-  // Add Folder Modal State
-  const [showAddFolderModal, setShowAddFolderModal] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [windowFocusCount, setWindowFocusCount] = useState(0);
@@ -50,6 +49,21 @@ function App() {
   // Note modal state
   const [noteModalClipId, setNoteModalClipId] = useState<string | null>(null);
   const [noteModalInitial, setNoteModalInitial] = useState('');
+
+  // Incognito mode
+  const [isIncognito, setIsIncognito] = useState(false);
+  useEffect(() => {
+    invoke<boolean>('get_incognito_status').then(setIsIncognito).catch(console.error);
+  }, []);
+  const toggleIncognito = useCallback(async () => {
+    try {
+      const newVal = await invoke<boolean>('toggle_incognito');
+      setIsIncognito(newVal);
+      toast.success(newVal ? 'Incognito mode ON — clipboard not recorded' : 'Incognito mode OFF');
+    } catch (e) {
+      console.error('Failed to toggle incognito:', e);
+    }
+  }, []);
 
   // --- Folder Actions Hook ---
   const {
@@ -186,7 +200,27 @@ function App() {
         setPreviewFolder(undefined);
         autoSelectFirstOnNextLoadRef.current = true;
         setWindowFocusCount((c) => c + 1);
-        loadClipsRef.current(selectedFolderRef.current, false, '');
+        // Use batch IPC when in "All" view with no search — 1 call instead of 3
+        if (!selectedFolderRef.current) {
+          invoke<{ clips: AppClipboardItem[]; folders: any[]; total_count: number }>('get_initial_state', {
+            filterId: null,
+            limit: 20,
+          }).then((state) => {
+            setClips(state.clips);
+            setHasMore(state.clips.length === 20);
+            setIsLoading(false);
+            // Update folders and total count from batch response
+            if (state.folders) {
+              // loadFolders data comes from useFolderActions — update via its setter
+              debouncedFolderRefreshRef.current();
+            }
+          }).catch(() => {
+            // Fallback to individual calls
+            loadClipsRef.current(null, false, '');
+          });
+        } else {
+          loadClipsRef.current(selectedFolderRef.current, false, '');
+        }
       }, 150);
     });
     return () => {
@@ -337,19 +371,15 @@ function App() {
     }
   }, [hasMore, isLoading, selectedFolder, loadClips, searchQuery]);
 
-  // --- Context Menu ---
-  const [contextMenu, setContextMenu] = useState<{
-    type: 'card' | 'folder';
-    x: number;
-    y: number;
-    itemId: string;
-  } | null>(null);
+  // --- Context Menu (extracted hook) ---
+  const { contextMenu, handleContextMenu, handleCloseContextMenu } = useContextMenu();
 
-  // New Folder Modal Rename Mode
-  const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename'>('create');
-  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-  const [editingFolderColor, setEditingFolderColor] = useState<string | null>(null);
-  const [editingFolderIcon, setEditingFolderIcon] = useState<string | null>(null);
+  // --- Folder Modal (extracted hook) ---
+  const {
+    showAddFolderModal, newFolderName, folderModalMode,
+    editingFolderId, editingFolderColor, editingFolderIcon,
+    openCreateModal, openRenameModal, closeModal: closeFolderModal,
+  } = useFolderModal();
 
   // Smart content type matching
   const matchesContentType = useCallback((clip: AppClipboardItem, filter: ClipType): boolean => {
@@ -386,37 +416,30 @@ function App() {
     return map;
   }, [folders]);
 
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent, type: 'card' | 'folder', itemId: string) => {
-      e.preventDefault();
-      setContextMenu({ type, x: e.clientX, y: e.clientY, itemId });
-    },
-    []
-  );
-
-  const handleCloseContextMenu = useCallback(() => {
-    setContextMenu(null);
-  }, []);
-
   const handleCreateOrRenameFolder = async (name: string, color: string | null, icon: string | null) => {
     if (folderModalMode === 'create') {
       await handleCreateFolder(name, color, icon);
       toast.success(`Folder "${name}" created`);
-      setShowAddFolderModal(false);
-      setNewFolderName('');
+      closeFolderModal();
     } else if (folderModalMode === 'rename' && editingFolderId) {
       try {
         await invoke('rename_folder', { id: editingFolderId, name, color, icon });
         await loadFolders();
         toast.success(`Renamed to "${name}"`);
-        setShowAddFolderModal(false);
-        setNewFolderName('');
+        closeFolderModal();
       } catch (error) {
         console.error('Failed to rename folder:', error);
         toast.error('Failed to rename folder');
       }
     }
   };
+
+  // --- Batch Actions (extracted hook) ---
+  const { handleBulkDelete, handleBulkMove, handleBulkPaste } = useBatchActions({
+    selectedClipIds, setSelectedClipIds, setSelectedClipId, setClips,
+    selectedFolder, loadFolders, refreshTotalCount,
+    isPreviewing, filteredPreviewClips: filteredPreviewClips, filteredClips,
+  });
 
   // --- Multi-select ---
   const handleSelectClip = useCallback((clipId: string, e?: React.MouseEvent) => {
@@ -461,74 +484,6 @@ function App() {
 
   const isMultiSelect = selectedClipIds.size > 1;
 
-  const handleBulkDelete = useCallback(async () => {
-    if (selectedClipIds.size === 0) return;
-    const ids = Array.from(selectedClipIds);
-    toast(`Delete ${ids.length} clips?`, {
-      action: {
-        label: 'Delete',
-        onClick: async () => {
-          try {
-            const count = await invoke<number>('bulk_delete_clips', { ids });
-            setClips(prev => prev.filter(c => !selectedClipIds.has(c.id)));
-            setSelectedClipIds(new Set());
-            setSelectedClipId(null);
-            loadFolders();
-            refreshTotalCount();
-            toast.success(`Deleted ${count} clips`);
-          } catch (error) {
-            console.error('Bulk delete failed:', error);
-            toast.error('Failed to delete clips');
-          }
-        },
-      },
-      cancel: { label: 'Cancel', onClick: () => {} },
-      duration: 4000,
-    });
-  }, [selectedClipIds, setClips, loadFolders, refreshTotalCount]);
-
-  const handleBulkMove = useCallback(async (folderId: string | null) => {
-    if (selectedClipIds.size === 0) return;
-    const ids = Array.from(selectedClipIds);
-    try {
-      await invoke('bulk_move_clips', { ids, folderId });
-      if (selectedFolder && folderId !== selectedFolder) {
-        setClips(prev => prev.filter(c => !selectedClipIds.has(c.id)));
-      } else {
-        setClips(prev => prev.map(c => selectedClipIds.has(c.id) ? { ...c, folder_id: folderId } : c));
-      }
-      setSelectedClipIds(new Set());
-      setSelectedClipId(null);
-      loadFolders();
-      refreshTotalCount();
-      toast.success(`Moved ${ids.length} clips`);
-    } catch (error) {
-      console.error('Bulk move failed:', error);
-      toast.error('Failed to move clips');
-    }
-  }, [selectedClipIds, selectedFolder, setClips, loadFolders, refreshTotalCount]);
-
-  const handleBulkPaste = useCallback(async () => {
-    if (selectedClipIds.size === 0) return;
-    const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
-    // Collect selected clips in display order, skip images
-    const textsInOrder = displayedClips
-      .filter(c => selectedClipIds.has(c.id) && c.clip_type !== 'image')
-      .map(c => c.content);
-    if (textsInOrder.length === 0) {
-      toast.error('No text clips selected');
-      return;
-    }
-    const combined = textsInOrder.join('\n');
-    try {
-      await invoke('paste_text', { content: combined });
-      setSelectedClipIds(new Set());
-      setSelectedClipId(null);
-    } catch (error) {
-      console.error('Bulk paste failed:', error);
-      toast.error('Failed to paste');
-    }
-  }, [selectedClipIds, isPreviewing, filteredPreviewClips, filteredClips]);
 
   // --- Render ---
   return (
@@ -578,12 +533,12 @@ function App() {
                         {
                           label: 'Edit folder',
                           onClick: () => {
-                            setFolderModalMode('rename');
-                            setEditingFolderId(contextMenu.itemId);
-                            setNewFolderName(ctxFolder ? ctxFolder.name : '');
-                            setEditingFolderColor(ctxFolder?.color ?? null);
-                            setEditingFolderIcon(ctxFolder?.icon ?? null);
-                            setShowAddFolderModal(true);
+                            openRenameModal(
+                              contextMenu.itemId,
+                              ctxFolder ? ctxFolder.name : '',
+                              ctxFolder?.color ?? null,
+                              ctxFolder?.icon ?? null,
+                            );
                           },
                         },
                         {
@@ -629,11 +584,7 @@ function App() {
               }
               setShowSearch(!showSearch);
             }}
-            onAddClick={() => {
-              setFolderModalMode('create');
-              setNewFolderName('');
-              setShowAddFolderModal(true);
-            }}
+            onAddClick={openCreateModal}
             onMoreClick={openSettings}
             isDragging={!!draggingClipId}
             dragTargetFolderId={dragTargetFolderId}
@@ -649,10 +600,12 @@ function App() {
             theme={effectiveTheme}
             contentTypeFilter={contentTypeFilter}
             onContentTypeFilterChange={setContentTypeFilter}
+            isIncognito={isIncognito}
+            onToggleIncognito={toggleIncognito}
           />
 
           <main
-            className="no-scrollbar relative flex-1"
+            className="no-scrollbar relative flex-1 bg-gradient-to-b from-transparent via-black/[0.02] to-black/[0.05] dark:via-black/[0.08] dark:to-black/[0.15]"
             onMouseEnter={isPreviewing ? handlePreviewListEnter : undefined}
             onMouseLeave={isPreviewing ? handlePreviewListLeave : undefined}
           >
@@ -732,10 +685,7 @@ function App() {
             initialName={newFolderName}
             initialColor={folderModalMode === 'rename' ? editingFolderColor : null}
             initialIcon={folderModalMode === 'rename' ? editingFolderIcon : null}
-            onClose={() => {
-              setShowAddFolderModal(false);
-              setNewFolderName('');
-            }}
+            onClose={closeFolderModal}
             onSubmit={handleCreateOrRenameFolder}
           />
           <Toaster richColors position="bottom-center" theme={effectiveTheme} />

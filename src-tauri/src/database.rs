@@ -18,19 +18,27 @@ impl Database {
 
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(5)
+            .after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    // Per-connection PRAGMAs — applied to every connection in the pool
+                    if let Err(e) = sqlx::query("PRAGMA cache_size = -8000").execute(&mut *conn).await {
+                        log::warn!("PRAGMA cache_size failed: {}", e);
+                    }
+                    if let Err(e) = sqlx::query("PRAGMA temp_store = MEMORY").execute(&mut *conn).await {
+                        log::warn!("PRAGMA temp_store failed: {}", e);
+                    }
+                    if let Err(e) = sqlx::query("PRAGMA mmap_size = 67108864").execute(&mut *conn).await {
+                        log::warn!("PRAGMA mmap_size failed: {}", e);
+                    }
+                    if let Err(e) = sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await {
+                        log::warn!("PRAGMA foreign_keys failed: {}", e);
+                    }
+                    Ok(())
+                })
+            })
             .connect_with(options)
             .await
             .expect("Failed to connect to database");
-
-        // Set per-connection PRAGMAs for performance
-        sqlx::query("PRAGMA cache_size = -8000") // 8MB cache
-            .execute(&pool).await.ok();
-        sqlx::query("PRAGMA temp_store = MEMORY")
-            .execute(&pool).await.ok();
-        sqlx::query("PRAGMA mmap_size = 67108864") // 64MB mmap
-            .execute(&pool).await.ok();
-        sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&pool).await.ok();
 
         let images_dir = data_dir.join("images");
         std::fs::create_dir_all(&images_dir).ok();
@@ -161,6 +169,17 @@ impl Database {
             log::info!("DB: Applied migration v4 (drop unused is_deleted index)");
         }
 
+        if version < 5 {
+            // Covering index for common query pattern: folder listing sorted by created_at
+            let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_clips_folder_created ON clips(folder_id, created_at DESC)")
+                .execute(&self.pool).await;
+            // Add is_sensitive column for sensitive content detection
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_sensitive INTEGER DEFAULT 0")
+                .execute(&self.pool).await;
+            self.set_schema_version(5).await;
+            log::info!("DB: Applied migration v5 (covering index, is_sensitive column)");
+        }
+
         // === Migrate image blobs to disk ===
         // Images previously stored as BLOBs in content column are now stored as files.
         // content column will hold just the filename (e.g. "abc123.png").
@@ -248,9 +267,13 @@ impl Database {
             let path = self.images_dir.join(&filename);
             if path.exists() { let _ = std::fs::remove_file(&path); }
         }
+
+        // Rebuild search cache (trimmed clips must be removed)
+        crate::clipboard::load_search_cache(&self.pool).await;
     }
 
     /// Delete clips older than auto_delete_days (only unprotected: not in folder, not pinned).
+    /// Uses a transaction to atomically collect + delete.
     pub async fn enforce_auto_delete(&self) {
         let days: Option<i64> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'auto_delete_days'")
             .fetch_optional(&self.pool).await.unwrap_or(None)
@@ -261,19 +284,28 @@ impl Database {
             _ => return, // 0 or not set = disabled
         };
 
-        // Collect image filenames before deleting
+        let mut tx = match self.pool.begin().await {
+            Ok(tx) => tx,
+            Err(e) => { log::error!("enforce_auto_delete: failed to begin tx: {}", e); return; }
+        };
+
+        // Collect image filenames before deleting (within same transaction)
         let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
             "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'
              AND created_at < datetime('now', '-' || ? || ' days')"
-        ).bind(days).fetch_all(&self.pool).await.unwrap_or_default();
+        ).bind(days).fetch_all(&mut *tx).await.unwrap_or_default();
 
         let result = sqlx::query(
             "DELETE FROM clips WHERE folder_id IS NULL AND is_pinned = 0
              AND created_at < datetime('now', '-' || ? || ' days')"
-        ).bind(days).execute(&self.pool).await;
+        ).bind(days).execute(&mut *tx).await;
 
         match result {
             Ok(r) if r.rows_affected() > 0 => {
+                if let Err(e) = tx.commit().await {
+                    log::error!("enforce_auto_delete: commit failed: {}", e);
+                    return;
+                }
                 log::info!("DB: Auto-deleted {} clips older than {} days", r.rows_affected(), days);
                 for (content,) in &image_clips {
                     let filename = String::from_utf8_lossy(content).to_string();
@@ -281,8 +313,11 @@ impl Database {
                     if path.exists() { let _ = std::fs::remove_file(&path); }
                 }
             }
-            Err(e) => log::error!("enforce_auto_delete failed: {}", e),
-            _ => {}
+            Ok(_) => { let _ = tx.commit().await; }
+            Err(e) => {
+                log::error!("enforce_auto_delete failed: {}", e);
+                let _ = tx.rollback().await;
+            }
         }
     }
 

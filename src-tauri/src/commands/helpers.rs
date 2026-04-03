@@ -1,22 +1,20 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use tauri::AppHandle;
 use tauri_plugin_clipboard_x::{write_text, stop_listening, start_listening};
 use crate::models::{Clip, ClipboardItem};
 use std::path::Path;
 
 /// Convert a Clip DB row to a ClipboardItem for the frontend.
+/// For images: returns the absolute file path (frontend uses convertFileSrc() / asset protocol).
+/// For text: returns the text_preview.
 /// When `preview_only` is true, image content is omitted (empty string).
-/// Uses async I/O so it doesn't block the Tokio runtime when reading image files.
 pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bool) -> ClipboardItem {
     let content_str = if preview_only && clip.clip_type == "image" {
         String::new()
     } else if clip.clip_type == "image" {
+        // Return absolute file path — frontend uses convertFileSrc() to get asset:// URL
         let filename = String::from_utf8_lossy(&clip.content).to_string();
         let image_path = images_dir.join(&filename);
-        match tokio::fs::read(&image_path).await {
-            Ok(bytes) => BASE64.encode(&bytes),
-            Err(_) => String::new(),
-        }
+        image_path.to_string_lossy().to_string()
     } else {
         clip.text_preview.clone()
     };
@@ -35,6 +33,7 @@ pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bo
         subtype: clip.subtype.clone(),
         note: clip.note.clone(),
         paste_count: clip.paste_count,
+        is_sensitive: clip.is_sensitive,
     }
 }
 

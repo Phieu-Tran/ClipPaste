@@ -44,6 +44,22 @@ pub fn set_dragging(dragging: bool) {
 }
 
 #[tauri::command]
+pub fn toggle_incognito() -> Result<bool, String> {
+    use std::sync::atomic::Ordering;
+    let current = crate::clipboard::IS_INCOGNITO.load(Ordering::SeqCst);
+    let new_val = !current;
+    crate::clipboard::IS_INCOGNITO.store(new_val, Ordering::SeqCst);
+    log::info!("Incognito mode: {}", if new_val { "ON" } else { "OFF" });
+    Ok(new_val)
+}
+
+#[tauri::command]
+pub fn get_incognito_status() -> Result<bool, String> {
+    use std::sync::atomic::Ordering;
+    Ok(crate::clipboard::IS_INCOGNITO.load(Ordering::SeqCst))
+}
+
+#[tauri::command]
 pub fn ping() -> Result<String, String> {
     Ok("pong".to_string())
 }

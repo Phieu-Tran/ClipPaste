@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-04-04
+
+### Added
+- **Incognito mode** — pause clipboard recording with EyeOff toggle button in control bar
+- **Sensitive content detection** — auto-detect API keys (AWS, GitHub, Stripe, Slack), private keys, JWTs, credit cards (Luhn check); shield icon + blur on card content
+- **Fuzzy search** — subsequence matching fallback ("apikey" matches "api_key", "API_KEY")
+- **Search relevance ranking** — exact phrase > all words > note match > fuzzy; relevance before folder priority
+- **Frequently Pasted** smart folder — virtual "Frequent" tab showing clips with paste_count >= 5
+- **Acrylic & Blur window effects** — new options in Settings > Window Effect dropdown
+- **Batch IPC** — `get_initial_state` command fetches clips + folders + count in 1 call via `tokio::join!()`
+- **Asset protocol for images** — images served via `asset://` URL instead of base64 encoding (75% less IPC payload)
+- **ARIA accessibility** — role=listbox, role=option, aria-selected, aria-label on clip list and cards; role=tablist on folder tabs
+- **88 Rust tests** (was 65) — sensitive detection, fuzzy search, LRU cache, schema v5
+- **125 frontend tests** — sensitive UI, incognito button, ARIA, subtype badges, multi-select, empty state
+- **Architecture docs** — comprehensive `docs/architecture.md` with data flow diagrams
+
+### Changed
+- **SEARCH_CACHE** Vec → HashMap for O(1) remove/update, capped at 50,000 entries
+- **ICON_CACHE** HashMap → LRU(100) to prevent unbounded memory growth
+- **Per-connection PRAGMAs** via `after_connect` hook — all 5 pool connections get cache_size, mmap, foreign_keys
+- **Covering index** `idx_clips_folder_created` for faster folder listing (DB migration v5)
+- **Folder tabs** rounded-lg instead of rounded-full for softer corners
+- **Folder drag-drop** improved with left/right drop indicator line
+- **Card depth effects** — inner glow, deeper shadows, blue-tinted dark theme, header separator
+- **App.tsx refactored** — extracted useContextMenu, useFolderModal, useBatchActions hooks (~120 lines removed)
+- **ClipList** stable callback refs via useRef — prevents memo-defeating inline closures
+- **Removed macOS build** from CI release workflow
+
+### Fixed
+- **SEARCH_CACHE not invalidated** after enforce_max_items, clear_all_clips, delete_folder, remove_duplicate_clips — stale search results
+- **import_data overwrites live DB** — now extracts to temp dir first, backs up current DB
+- **register_global_shortcut loses toggle** — hotkey now properly toggles show/hide after changing in Settings
+- **enforce_auto_delete race condition** — wrapped in transaction
+- **reorder_folders not atomic** — wrapped in transaction
+- **Autostart placeholder flags** removed (--flag1, --flag2)
+- **PRAGMA optimize** added after bulk clear/dedup operations
+
+### Removed
+- Dead `react-window` + `@types/react-window` dependencies
+- Stale `SearchBar.test.tsx` for non-existent component
+- macOS build targets from CI workflow
+
 ## [1.6.5] - 2026-04-02
 
 ### Added

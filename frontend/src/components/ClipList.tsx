@@ -15,6 +15,7 @@ interface ClipListProps {
   onPaste: (clipId: string) => void;
   onCopy: (clipId: string) => void;
   onPin: (clipId: string) => void;
+  // Stable callback refs — avoids re-creating closures per card
   showPin?: boolean;
   onLoadMore: () => void;
   resetScrollKey?: number;
@@ -54,6 +55,28 @@ export function ClipList({
   const [staggerKey, setStaggerKey] = useState(0);
   const prevClipsKeyRef = useRef('');
 
+  // Stable callback refs — prevent re-creating inline closures per card on every render
+  const onSelectClipRef = useRef(onSelectClip);
+  onSelectClipRef.current = onSelectClip;
+  const onPasteRef = useRef(onPaste);
+  onPasteRef.current = onPaste;
+  const onCopyRef = useRef(onCopy);
+  onCopyRef.current = onCopy;
+  const onPinRef = useRef(onPin);
+  onPinRef.current = onPin;
+  const onCardContextMenuRef = useRef(onCardContextMenu);
+  onCardContextMenuRef.current = onCardContextMenu;
+  const onNativeDragStartRef = useRef(onNativeDragStart);
+  onNativeDragStartRef.current = onNativeDragStart;
+
+  // Stable callbacks that read from refs — never change identity
+  const stableOnSelect = useCallback((clipId: string, e?: React.MouseEvent) => onSelectClipRef.current(clipId, e), []);
+  const stableOnPaste = useCallback((clipId: string) => onPasteRef.current(clipId), []);
+  const stableOnCopy = useCallback((clipId: string) => onCopyRef.current(clipId), []);
+  const stableOnPin = useCallback((clipId: string) => onPinRef.current(clipId), []);
+  const stableOnContextMenu = useCallback((e: React.MouseEvent, clipId: string) => onCardContextMenuRef.current?.(e, clipId), []);
+  const stableOnDragStart = useCallback((e: React.DragEvent, clip: ClipboardItem) => onNativeDragStartRef.current?.(e, clip), []);
+
   // Detect when the clip list changes entirely and trigger stagger animation
   const clipsKey = clips.slice(0, 5).map(c => c.id).join(',');
   useEffect(() => {
@@ -82,7 +105,7 @@ export function ClipList({
     getScrollElement: () => containerRef.current,
     estimateSize: () => TOTAL_COLUMN_WIDTH,
     horizontal: true,
-    overscan: 3,
+    overscan: 5,
   });
 
   // Scroll selected card into view when navigating with arrow keys
@@ -196,7 +219,7 @@ export function ClipList({
           <>
             <h3 className="mb-2 text-lg font-semibold text-gray-400">No results</h3>
             <p className="max-w-xs text-sm text-gray-500">
-              No clips found matching your search.
+              No clips found matching your search. Try different keywords or use fewer words.
             </p>
           </>
         ) : (
@@ -205,6 +228,10 @@ export function ClipList({
             <p className="max-w-xs text-sm text-gray-500">
               Copy something to your clipboard and it will appear here.
             </p>
+            <div className="mt-4 flex flex-col gap-1.5 text-xs text-gray-500/70">
+              <span><kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd> to paste · <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">↑↓</kbd> navigate</span>
+              <span><kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">E</kbd> edit · <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">P</kbd> pin · <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Ctrl+Del</kbd> delete</span>
+            </div>
           </>
         )}
       </div>
@@ -214,6 +241,9 @@ export function ClipList({
   return (
     <div
       ref={containerRef}
+      role="listbox"
+      aria-label="Clipboard history"
+      aria-orientation="horizontal"
       className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
@@ -248,10 +278,10 @@ export function ClipList({
                 isSelected={selectedClipId === clip.id}
                 isMultiSelected={selectedClipIds?.has(clip.id) ?? false}
                 multiSelectIndex={selectedClipIds?.has(clip.id) ? multiSelectOrder.get(clip.id) : undefined}
-                onSelect={(e) => onSelectClip(clip.id, e)}
-                onPaste={() => onPaste(clip.id)}
-                onCopy={() => onCopy(clip.id)}
-                onPin={() => onPin(clip.id)}
+                onSelect={(e) => stableOnSelect(clip.id, e)}
+                onPaste={() => stableOnPaste(clip.id)}
+                onCopy={() => stableOnCopy(clip.id)}
+                onPin={() => stableOnPin(clip.id)}
                 showPin={showPin}
                 folderName={
                   isSearching && folderMap && selectedFolder
@@ -262,8 +292,8 @@ export function ClipList({
                         ? folderMap[clip.folder_id]
                         : null)
                 }
-                onNativeDragStart={onNativeDragStart}
-                onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
+                onNativeDragStart={stableOnDragStart}
+                onContextMenu={(e: React.MouseEvent) => stableOnContextMenu(e, clip.id)}
                 searchQuery={searchQuery}
               />
             </div>

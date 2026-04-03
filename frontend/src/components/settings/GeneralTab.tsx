@@ -127,6 +127,8 @@ export function GeneralTab({
             >
               <option value="mica_alt">Mica Alt</option>
               <option value="mica">Mica</option>
+              <option value="acrylic">Acrylic</option>
+              <option value="blur">Blur</option>
               <option value="clear">Clear</option>
             </select>
           </div>

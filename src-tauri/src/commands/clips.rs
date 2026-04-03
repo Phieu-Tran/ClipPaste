@@ -1,10 +1,25 @@
 use tauri::{AppHandle, Emitter};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
 use super::helpers::{clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text, clipboard_set_hashes};
+
+/// Simple fuzzy match: checks if all characters of `needle` appear in `haystack` in order.
+/// E.g. "apikey" fuzzy-matches "api_key", "API_KEY", "my_api_key_value".
+pub fn fuzzy_contains(haystack: &str, needle: &str) -> bool {
+    let mut hay_chars = haystack.chars();
+    for nc in needle.chars() {
+        loop {
+            match hay_chars.next() {
+                Some(hc) if hc == nc => break,
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    }
+    true
+}
 
 #[tauri::command]
 pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, preview_only: Option<bool>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
@@ -14,6 +29,23 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
     log::debug!("get_clips called with filter_id: {:?}, preview_only: {}", filter_id, preview_only);
 
     let clips: Vec<Clip> = match filter_id.as_deref() {
+        Some("__frequent__") => {
+            log::debug!("Querying for frequently pasted clips");
+            sqlx::query_as(r#"
+                SELECT id, uuid, clip_type,
+                       CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                       text_preview, content_hash,
+                       folder_id, is_deleted, source_app, source_icon, metadata,
+                       created_at, last_accessed, last_pasted_at, is_pinned,
+                       subtype, note, paste_count, is_sensitive
+                FROM clips WHERE paste_count >= 5
+                ORDER BY paste_count DESC, created_at DESC
+                LIMIT ? OFFSET ?
+            "#)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool).await.map_err(|e| e.to_string())?
+        }
         Some(id) => {
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {
@@ -24,7 +56,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                            text_preview, content_hash,
                            folder_id, is_deleted, source_app, source_icon, metadata,
                            created_at, last_accessed, last_pasted_at, is_pinned,
-                           subtype, note, paste_count
+                           subtype, note, paste_count, is_sensitive
                     FROM clips WHERE folder_id = ?
                     ORDER BY is_pinned DESC,
                              CASE WHEN note IS NOT NULL AND note != '' THEN 0 ELSE 1 END,
@@ -49,7 +81,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                        text_preview, content_hash,
                        folder_id, is_deleted, source_app, source_icon, metadata,
                        created_at, last_accessed, last_pasted_at, is_pinned,
-                       subtype, note, paste_count
+                       subtype, note, paste_count, is_sensitive
                 FROM clips
                 ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
@@ -88,12 +120,10 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
     match clip {
         Some(clip) => {
             let content_str = if clip.clip_type == "image" {
+                // Return absolute file path — frontend uses convertFileSrc()
                 let filename = String::from_utf8_lossy(&clip.content).to_string();
                 let image_path = db.images_dir.join(&filename);
-                match std::fs::read(&image_path) {
-                    Ok(bytes) => BASE64.encode(&bytes),
-                    Err(_) => String::new(),
-                }
+                image_path.to_string_lossy().to_string()
             } else {
                 String::from_utf8_lossy(&clip.content).to_string()
             };
@@ -112,6 +142,7 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
                 subtype: clip.subtype,
                 note: clip.note,
                 paste_count: clip.paste_count,
+                is_sensitive: clip.is_sensitive,
             })
         }
         None => Err("Clip not found".to_string()),
@@ -127,7 +158,7 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
         "SELECT id, uuid, clip_type, content, text_preview, content_hash,
                 folder_id, is_deleted, source_app, '' as source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
-                subtype, note, paste_count
+                subtype, note, paste_count, is_sensitive
          FROM clips WHERE uuid = ?"
     )
         .bind(&id)
@@ -173,7 +204,7 @@ pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Data
         "SELECT id, uuid, clip_type, content, text_preview, content_hash,
                 folder_id, is_deleted, source_app, '' as source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
-                subtype, note, paste_count
+                subtype, note, paste_count, is_sensitive
          FROM clips WHERE uuid = ?"
     )
         .bind(&id)
@@ -254,32 +285,48 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         .collect();
 
     // Search ALL clips (cross-folder), match against preview AND note
-    // Track whether match was in note for priority sorting
-    let matched: Vec<(String, Option<i64>, bool)> = {
+    // Track match quality: exact phrase > all words > fuzzy
+    // Uses HashMap-based SEARCH_CACHE: uuid → (preview, folder_id, note)
+    // match_tier: 0=exact phrase, 1=all words substring, 2=note match, 3=fuzzy
+    let matched: Vec<(String, Option<i64>, u8)> = {
         let cache = crate::clipboard::SEARCH_CACHE.read();
         cache.iter()
-            .filter_map(|(uuid, preview, fid, note)| {
-                let in_preview = query_words.iter().all(|word| preview.contains(word));
-                let in_note = !note.is_empty() && query_words.iter().all(|word| note.contains(word));
-                if in_preview || in_note {
-                    Some((uuid.clone(), *fid, in_note && !in_preview))
-                } else {
-                    None
+            .filter_map(|(uuid, (preview, fid, note))| {
+                // Tier 0: exact phrase match (all words adjacent in original order)
+                let exact_phrase = preview.contains(&query_lower);
+                if exact_phrase {
+                    return Some((uuid.clone(), *fid, 0u8));
                 }
+                // Tier 1: all words present as substrings (AND match)
+                let in_preview = query_words.iter().all(|word| preview.contains(word));
+                if in_preview {
+                    return Some((uuid.clone(), *fid, 1u8));
+                }
+                // Tier 2: match in note
+                let in_note = !note.is_empty() && query_words.iter().all(|word| note.contains(word));
+                if in_note {
+                    return Some((uuid.clone(), *fid, 2u8));
+                }
+                // Tier 3: fuzzy subsequence match
+                let fuzzy = query_words.iter().all(|word| fuzzy_contains(preview, word));
+                if fuzzy {
+                    return Some((uuid.clone(), *fid, 3u8));
+                }
+                None
             })
             .collect()
     };
 
-    // Sort: folder priority → note-only matches last → unfiled last
+    // Sort: relevance FIRST (exact > words > note > fuzzy), folder as tiebreaker
     let mut matched = matched;
-    matched.sort_by_key(|(_, fid, note_only)| {
+    matched.sort_by_key(|(_, fid, tier)| {
         let folder_rank = if let Some(target_fid) = folder_filter {
             if *fid == Some(target_fid) { 0u8 } else if fid.is_some() { 1 } else { 2 }
         } else {
             if fid.is_some() { 0 } else { 1 }
         };
-        let note_rank = if *note_only { 1u8 } else { 0 };
-        (folder_rank, note_rank)
+        // Primary: match tier (0=best), Secondary: folder rank
+        (*tier, folder_rank)
     });
     let matched: Vec<String> = matched.into_iter()
         .take(limit as usize)
@@ -294,7 +341,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             "SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
                     folder_id, is_deleted, source_app, source_icon, metadata,
                     created_at, last_accessed, last_pasted_at, is_pinned,
-                    subtype, note, paste_count
+                    subtype, note, paste_count, is_sensitive
              FROM clips WHERE uuid IN ({})",
             placeholders
         );
@@ -305,9 +352,26 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         q.fetch_all(pool).await.map_err(|e| e.to_string())?
     };
 
-    // Sort by relevance: same-folder > any folder > unfiled > starts_with > exact > created_at DESC
+    // Sort by relevance FIRST, then folder as tiebreaker, then recency
     clips.sort_by(|a, b| {
-        // 1. Folder priority: selected folder > has folder > unfiled
+        let a_preview = a.text_preview.to_lowercase();
+        let b_preview = b.text_preview.to_lowercase();
+
+        // 1. Relevance tier: exact phrase > starts_with > all words > rest
+        let relevance_tier = |preview: &str| -> u8 {
+            if preview.contains(&query_lower) { 0 }              // exact phrase
+            else if preview.starts_with(&query_lower) { 0 }      // starts with full query
+            else if query_words.iter().all(|w| preview.contains(w)) { 1 } // all words present
+            else { 2 }                                            // fuzzy/note only
+        };
+        let a_rel = relevance_tier(&a_preview);
+        let b_rel = relevance_tier(&b_preview);
+
+        // 2. Within same relevance: starts_with bonus
+        let a_starts = a_preview.starts_with(&query_lower);
+        let b_starts = b_preview.starts_with(&query_lower);
+
+        // 3. Folder as tiebreaker (not primary)
         let folder_rank = |clip: &Clip| -> u8 {
             if let Some(target_fid) = folder_filter {
                 if clip.folder_id == Some(target_fid) { 0 } else if clip.folder_id.is_some() { 1 } else { 2 }
@@ -315,18 +379,11 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
                 if clip.folder_id.is_some() { 0 } else { 1 }
             }
         };
-        let a_rank = folder_rank(a);
-        let b_rank = folder_rank(b);
-        // 2. Relevance ranking
-        let a_starts = a.text_preview.to_lowercase().starts_with(&query_lower);
-        let b_starts = b.text_preview.to_lowercase().starts_with(&query_lower);
-        let a_exact = a.text_preview.to_lowercase().contains(&query_lower);
-        let b_exact = b.text_preview.to_lowercase().contains(&query_lower);
 
-        a_rank.cmp(&b_rank)
-            .then(b_starts.cmp(&a_starts))
-            .then(b_exact.cmp(&a_exact))
-            .then(b.created_at.cmp(&a.created_at))
+        a_rel.cmp(&b_rel)                          // relevance first
+            .then(b_starts.cmp(&a_starts))          // starts_with bonus
+            .then(folder_rank(a).cmp(&folder_rank(b))) // folder tiebreaker
+            .then(b.created_at.cmp(&a.created_at))  // newest first
     });
 
     // Search results use text_preview instead of full content for speed.
@@ -337,6 +394,66 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
     }
 
     Ok(items)
+}
+
+#[tauri::command]
+pub async fn get_initial_state(
+    _filter_id: Option<String>,
+    limit: i64,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<serde_json::Value, String> {
+    // Batch: fetch clips + folders + total count in parallel
+    let pool = &db.pool;
+    let images_dir = &db.images_dir;
+
+    let clips_future = async {
+        let clips: Vec<Clip> = sqlx::query_as(r#"
+            SELECT id, uuid, clip_type,
+                   CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                   text_preview, content_hash,
+                   folder_id, is_deleted, source_app, source_icon, metadata,
+                   created_at, last_accessed, last_pasted_at, is_pinned,
+                   subtype, note, paste_count, is_sensitive
+            FROM clips
+            ORDER BY created_at DESC LIMIT ? OFFSET 0
+        "#).bind(limit).fetch_all(pool).await.unwrap_or_default();
+
+        let mut items = Vec::with_capacity(clips.len());
+        for clip in &clips {
+            items.push(clip_to_item_async(clip, images_dir, false).await);
+        }
+        items
+    };
+
+    let folders_future = async {
+        let folders: Vec<crate::models::Folder> = sqlx::query_as(r#"SELECT * FROM folders ORDER BY position, id"#)
+            .fetch_all(pool).await.unwrap_or_default();
+        let counts: Vec<(i64, i64)> = sqlx::query_as(r#"
+            SELECT folder_id, COUNT(*) as count FROM clips WHERE folder_id IS NOT NULL GROUP BY folder_id
+        "#).fetch_all(pool).await.unwrap_or_default();
+        let count_map: std::collections::HashMap<i64, i64> = counts.into_iter().collect();
+        folders.iter().map(|f| serde_json::json!({
+            "id": f.id.to_string(),
+            "name": f.name,
+            "icon": f.icon,
+            "color": f.color,
+            "is_system": f.is_system,
+            "item_count": count_map.get(&f.id).unwrap_or(&0),
+        })).collect::<Vec<_>>()
+    };
+
+    let total_future = async {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM clips")
+            .fetch_one(pool).await.unwrap_or(0)
+    };
+
+    let (clips, folders, total) = tokio::join!(clips_future, folders_future, total_future);
+
+    Ok(serde_json::json!({
+        "clips": clips,
+        "folders": folders,
+        "total_count": total,
+    }))
 }
 
 #[tauri::command]
@@ -393,12 +510,12 @@ pub async fn bulk_move_clips(ids: Vec<String>, folder_id: Option<String>, db: ta
     for id in &ids { q = q.bind(id); }
     q.execute(pool).await.map_err(|e| e.to_string())?;
 
-    // Update search cache
+    // Update search cache (HashMap: uuid → (preview, folder_id, note))
     {
         let mut cache = crate::clipboard::SEARCH_CACHE.write();
-        for entry in cache.iter_mut() {
-            if ids.contains(&entry.0) {
-                entry.2 = folder_id_num;
+        for id in &ids {
+            if let Some(entry) = cache.get_mut(id) {
+                entry.1 = folder_id_num;
             }
         }
     }

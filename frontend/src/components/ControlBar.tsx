@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FolderItem, ClipType } from '../types';
-import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Code, Type, File, Link } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Code, Type, File, Link, EyeOff, Flame } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
@@ -78,6 +78,8 @@ interface ControlBarProps {
   theme?: 'light' | 'dark';
   contentTypeFilter?: ClipType | null;
   onContentTypeFilterChange?: (filter: ClipType | null) => void;
+  isIncognito?: boolean;
+  onToggleIncognito?: () => void;
 }
 
 export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(function ControlBar(
@@ -103,6 +105,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     theme = 'dark',
     contentTypeFilter,
     onContentTypeFilterChange,
+    isIncognito,
+    onToggleIncognito,
   },
   ref
 ) {
@@ -112,6 +116,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   // Simulated folder drag state
   const [folderDragId, setFolderDragId] = useState<string | null>(null);
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null>(null);
+  const [folderDropSide, setFolderDropSide] = useState<'left' | 'right'>('left');
   const [folderDragPos, setFolderDragPos] = useState({ x: 0, y: 0 });
   const folderDragRef = useRef<{
     id: string;
@@ -124,6 +129,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   foldersRef.current = folders;
   const folderDropTargetIdRef = useRef(folderDropTargetId);
   folderDropTargetIdRef.current = folderDropTargetId;
+  const folderDropSideRef = useRef(folderDropSide);
+  folderDropSideRef.current = folderDropSide;
   const onReorderFoldersRef = useRef(onReorderFolders);
   onReorderFoldersRef.current = onReorderFolders;
 
@@ -148,13 +155,17 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       if (!container) return;
       const buttons = container.querySelectorAll('[data-folder-id]');
       let hoveredId: string | null = null;
+      let side: 'left' | 'right' = 'left';
       buttons.forEach((btn) => {
         const rect = btn.getBoundingClientRect();
         if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
           hoveredId = btn.getAttribute('data-folder-id');
+          // Determine if cursor is on left or right half of the button
+          side = e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
         }
       });
       setFolderDropTargetId(hoveredId && hoveredId !== drag.id ? hoveredId : null);
+      setFolderDropSide(side);
     };
 
     const handleMouseUp = () => {
@@ -166,7 +177,10 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         if (dragIdx !== -1 && dropIdx !== -1) {
           const reordered = [...folderIds];
           const [dragged] = reordered.splice(dragIdx, 1);
-          reordered.splice(dropIdx, 0, dragged);
+          // Insert after if dropping on right side, before if left side
+          const adjustedIdx = dragIdx < dropIdx ? dropIdx - 1 : dropIdx;
+          const insertIdx = folderDropSideRef.current === 'right' ? adjustedIdx + 1 : adjustedIdx;
+          reordered.splice(insertIdx, 0, dragged);
           onReorderFoldersRef.current(reordered);
         }
       }
@@ -201,8 +215,9 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   }, [selectedFolder]);
 
   const allCategories = useMemo(() => {
-    const raw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null }[] = [
+    const raw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null; isVirtual?: boolean }[] = [
       { id: null, name: 'All', count: totalClipCount, icon: null },
+      { id: '__frequent__', name: 'Frequent', count: 0, icon: null, color: null, isVirtual: true },
       ...folders.map((f) => ({ ...f, count: f.item_count })),
     ];
     if (!searchQuery.trim()) return raw;
@@ -318,6 +333,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       {/* Category Pills (Always visible) */}
       <div
         ref={scrollContainerRef}
+        role="tablist"
+        aria-label="Clip folders"
         className="no-scrollbar mask-gradient-right flex flex-1 items-center gap-2 overflow-x-auto p-1"
         style={{ WebkitAppRegion: 'no-drag' } as any}
         onWheel={(e) => {
@@ -344,6 +361,14 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 ? 'bg-indigo-500/20 text-white ring-1 ring-indigo-500/50 font-bold shadow-sm'
                 : 'bg-indigo-500/10 text-white/80 hover:bg-indigo-500/20 hover:text-white shadow-sm';
             }
+          } else if (cat.id === '__frequent__') {
+            colorClass = isActive
+              ? (theme === 'light'
+                ? 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm'
+                : 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm')
+              : (theme === 'light'
+                ? 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm'
+                : 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm');
           } else {
             const style = getFolderColor(cat.name, cat.color);
             colorClass = isActive ? style.active : style.inactive;
@@ -360,7 +385,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 onSelectFolder(cat.id);
               }}
               onMouseDown={(e) => {
-                if (e.button !== 0 || !cat.id) return;
+                if (e.button !== 0 || !cat.id || cat.id === '__frequent__') return;
                 folderDragRef.current = { id: cat.id, startX: e.clientX, started: false };
               }}
               onMouseEnter={() => handleMouseEnter(cat.id)}
@@ -380,7 +405,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 // Drop is handled by App.tsx finishDrag via dragStateRef
               }}
               onContextMenu={(e) => {
-                if (onFolderContextMenu && cat.id) {
+                if (onFolderContextMenu && cat.id && cat.id !== '__frequent__') {
                   onFolderContextMenu(e, cat.id);
                 }
               }}
@@ -393,15 +418,22 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 } as any
               }
               className={clsx(
-                'whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all',
+                'whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all duration-200',
                 colorClass,
                 isDragging && cat.id === dragTargetFolderId && 'bg-accent ring-2 ring-primary',
-                folderDragId === cat.id && 'opacity-40 scale-95',
-                folderDropTargetId === cat.id && folderDragId && 'ring-2 ring-white/60 scale-105'
+                folderDragId === cat.id && 'opacity-30 scale-90',
+                // Drop target: highlight with indicator line on the side where item will be inserted
+                folderDropTargetId === cat.id && folderDragId && (
+                  folderDropSide === 'left'
+                    ? 'border-l-[3px] border-l-white/80 scale-[1.02]'
+                    : 'border-r-[3px] border-r-white/80 scale-[1.02]'
+                )
               )}
             >
               {cat.id === null ? (
                 <Layers size={14} className="mr-1 inline-block opacity-80" />
+              ) : cat.id === '__frequent__' ? (
+                <Flame size={14} className="mr-1 inline-block text-orange-400" />
               ) : cat.icon && FOLDER_ICON_MAP[cat.icon] ? (
                 (() => {
                   const { Icon: FolderIcon, color } = FOLDER_ICON_MAP[cat.icon];
@@ -437,7 +469,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         return (
           <div
             className={clsx(
-              'pointer-events-none fixed z-[9999] rounded-full px-4 py-1.5 text-sm font-bold shadow-xl',
+              'pointer-events-none fixed z-[9999] rounded-lg px-3.5 py-1.5 text-sm font-bold shadow-2xl',
               colorClass,
               'opacity-90 scale-105'
             )}
@@ -460,6 +492,20 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         style={{ WebkitAppRegion: 'no-drag' } as any}
         onDoubleClick={(e) => e.stopPropagation()}
       >
+        {onToggleIncognito && (
+          <button
+            onClick={onToggleIncognito}
+            className={clsx(
+              'rounded-lg p-2 transition-colors',
+              isIncognito
+                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                : 'text-muted-foreground/40 hover:bg-accent hover:text-foreground'
+            )}
+            title={isIncognito ? 'Incognito ON — clipboard not recorded' : 'Enable incognito mode'}
+          >
+            <EyeOff size={18} />
+          </button>
+        )}
         <button
           onClick={onAddClick}
           className="rounded-lg p-2 text-emerald-400 transition-colors hover:bg-emerald-500/10"

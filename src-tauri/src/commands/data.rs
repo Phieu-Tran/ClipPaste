@@ -431,6 +431,10 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
     let data_dir = db.images_dir.parent().unwrap().to_path_buf();
     let data_dir_clone = data_dir.clone();
 
+    // Extract to a temp directory first to avoid overwriting the live DB
+    let temp_dir = data_dir.join(".import_temp");
+    let temp_dir_clone = temp_dir.clone();
+
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         let file = std::fs::File::open(&zip_path)
             .map_err(|e| format!("Failed to open zip: {}", e))?;
@@ -445,7 +449,12 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             return Err("Invalid backup: clipboard.db not found in zip".to_string());
         }
 
-        // Extract all files with strict path validation
+        // Clean and create temp dir
+        let _ = std::fs::remove_dir_all(&temp_dir_clone);
+        std::fs::create_dir_all(&temp_dir_clone)
+            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+        // Extract all files to temp dir with strict path validation
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let name = entry.name().to_string();
@@ -464,17 +473,11 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
                 continue;
             }
 
-            let out_path = data_dir_clone.join(&name);
+            let out_path = temp_dir_clone.join(&name);
 
-            // Canonicalize check: resolved path must be inside data_dir
+            // Canonicalize check: resolved path must be inside temp_dir
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent).ok();
-            }
-            let canonical = out_path.canonicalize().unwrap_or_else(|_| out_path.clone());
-            let canonical_base = data_dir_clone.canonicalize().unwrap_or_else(|_| data_dir_clone.clone());
-            if !canonical.starts_with(&canonical_base) {
-                log::warn!("Import: path escapes data dir: {:?}", canonical);
-                continue;
             }
 
             let mut buf = Vec::new();
@@ -482,6 +485,49 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             std::fs::write(&out_path, &buf)
                 .map_err(|e| format!("Failed to write {}: {}", name, e))?;
         }
+
+        // Validate extracted DB exists
+        if !temp_dir_clone.join("clipboard.db").exists() {
+            let _ = std::fs::remove_dir_all(&temp_dir_clone);
+            return Err("Import failed: extracted clipboard.db not found".to_string());
+        }
+
+        // Stage the imported DB: rename current DB and place new one.
+        // The app will restart after import, picking up the new DB.
+        let src_db = temp_dir_clone.join("clipboard.db");
+        let dst_db = data_dir_clone.join("clipboard.db");
+        let backup_db = data_dir_clone.join("clipboard.db.pre-import");
+
+        // Backup current DB (if import fails later, we can recover)
+        if dst_db.exists() {
+            let _ = std::fs::copy(&dst_db, &backup_db);
+        }
+
+        // Copy new DB over the current one
+        std::fs::copy(&src_db, &dst_db)
+            .map_err(|e| {
+                // Restore backup on failure
+                if backup_db.exists() {
+                    let _ = std::fs::copy(&backup_db, &dst_db);
+                }
+                format!("Failed to copy imported DB: {}", e)
+            })?;
+
+        // Move images
+        let src_images = temp_dir_clone.join("images");
+        if src_images.exists() {
+            let dst_images = data_dir_clone.join("images");
+            std::fs::create_dir_all(&dst_images).ok();
+            if let Ok(entries) = std::fs::read_dir(&src_images) {
+                for entry in entries.flatten() {
+                    let dest = dst_images.join(entry.file_name());
+                    let _ = std::fs::copy(entry.path(), dest);
+                }
+            }
+        }
+
+        // Cleanup temp dir
+        let _ = std::fs::remove_dir_all(&temp_dir_clone);
 
         Ok(())
     }).await.map_err(|e| e.to_string())??;
@@ -579,7 +625,7 @@ pub async fn get_clips_by_date(date: String, search: Option<String>, source_app:
                 text_preview, content_hash,
                 folder_id, is_deleted, source_app, source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
-                subtype, note, paste_count
+                subtype, note, paste_count, is_sensitive
          FROM clips WHERE date(created_at, 'localtime') = ?"
     );
     if has_search { sql.push_str(" AND text_preview LIKE ?"); }

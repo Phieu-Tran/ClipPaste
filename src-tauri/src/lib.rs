@@ -133,7 +133,7 @@ pub fn run_app() {
     builder
         .plugin(log_builder.build())
         .plugin(tauri_plugin_clipboard_x::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--flag1", "--flag2"])))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -440,7 +440,10 @@ pub fn run_app() {
             commands::import_data,
             commands::get_dashboard_stats,
             commands::get_clips_by_date,
-            commands::get_clip_dates
+            commands::get_clip_dates,
+            commands::toggle_incognito,
+            commands::get_incognito_status,
+            commands::get_initial_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -790,13 +793,21 @@ pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &
                 let _ = clear_all_effects(window);
                 log::info!("THEME:All effects cleared");
             },
-            "mica" | "dark" => {
+            "mica" => {
                 let _ = switch_effect(window, Effect::Mica, dark, None);
                 log::info!("THEME:Applied Mica effect (Theme: {})", theme);
             },
-            "mica_alt" | "auto" | _ => {
+            "acrylic" => {
+                let _ = switch_effect(window, Effect::Acrylic, dark, None);
+                log::info!("THEME:Applied Acrylic effect (Theme: {})", theme);
+            },
+            "blur" => {
+                let _ = switch_effect(window, Effect::Blur, dark, None);
+                log::info!("THEME:Applied Blur effect (Theme: {})", theme);
+            },
+            "mica_alt" | _ => {
                 let _ = switch_effect(window, Effect::Tabbed, dark, None);
-                log::info!("THEME:Applied Tabbed effect (Theme: {})", theme);
+                log::info!("THEME:Applied Tabbed/Mica Alt effect (Theme: {})", theme);
             }
         }
 

@@ -7,7 +7,7 @@
 </h1>
 
 <p align="center">
-    <strong>A beautiful clipboard history manager for Windows, macOS &amp; Linux</strong>
+    <strong>A beautiful clipboard history manager for Windows &amp; Linux</strong>
 </p>
 
 <p align="center">
@@ -42,8 +42,10 @@
 |:---:|:---|:---|
 | 🔒 | **Private & Local** | All data stored locally — never leaves your machine |
 | ⚡ | **Fast & Lightweight** | Rust backend, ~50MB RAM, instant search |
-| 🔍 | **Smart Search** | Multi-word AND search with relevance ranking (exact match first) |
+| 🔍 | **Smart Search** | Multi-word AND search + fuzzy matching, relevance-ranked (exact phrase first) |
 | 🏷️ | **Content Detection** | Auto-detect URLs, emails, color codes, file paths — styled cards |
+| 🛡️ | **Sensitive Detection** | Auto-detect API keys, tokens, credit cards — blurred + shield icon |
+| 👁️ | **Incognito Mode** | Pause clipboard recording with one click |
 | 📌 | **Per-Folder Pin** | Pin clips to the top within each folder |
 | ✏️ | **Edit Before Paste** | Modify text content before pasting |
 | 📋 | **Paste as Plain Text** | Strip formatting and paste clean text |
@@ -58,6 +60,7 @@
 | 👀 | **Hover Preview** | Preview folder contents without switching |
 | 🗂️ | **Folder Protection** | Folder items survive bulk clear operations |
 | 🔢 | **Paste Count** | Track how many times each clip is pasted |
+| 🔥 | **Frequently Pasted** | Smart folder showing clips pasted 5+ times |
 
 ### Dashboard & History
 
@@ -73,7 +76,7 @@
 
 | | Feature | Description |
 |:---:|:---|:---|
-| 🎨 | **Themes & Effects** | Dark / Light / System + Mica, Mica Alt effects |
+| 🎨 | **Themes & Effects** | Dark / Light / System + Mica, Mica Alt, Acrylic, Blur effects |
 | 🖥️ | **Multi-Monitor** | Window appears on the active display |
 | 🚫 | **Ignore Apps** | Exclude password managers, banking apps, etc. |
 | ⌨️ | **Custom Hotkey** | Default: `Ctrl+Shift+V` |
@@ -91,19 +94,18 @@
 | Platform | Architecture | Format |
 |:---------|:-------------|:-------|
 | **Windows** | x64, ARM64 | `.exe` (NSIS), `.msi` |
-| **macOS** | Apple Silicon (M1+), Intel | `.dmg` |
 | **Linux** | x64 | `.deb`, `.AppImage`, `.rpm` |
 
 ### Platform Support
 
-| Feature | Windows | macOS | Linux |
-|:--------|:-------:|:-----:|:-----:|
-| Clipboard monitoring | ✅ | ✅ | ✅ |
-| Auto-paste | ✅ (Shift+Insert) | ✅ (Cmd+V) | ❌ |
-| Source app detection | ✅ | ✅ | ❌ |
-| Source app icon | ✅ | ❌ | ❌ |
-| Window effects | Mica / Mica Alt | Vibrancy | ❌ |
-| Drag-copy to apps | ✅ | ✅ | ✅ |
+| Feature | Windows | Linux |
+|:--------|:-------:|:-----:|
+| Clipboard monitoring | ✅ | ✅ |
+| Auto-paste | ✅ (Shift+Insert) | ❌ |
+| Source app detection | ✅ | ❌ |
+| Source app icon | ✅ | ❌ |
+| Window effects | Mica / Mica Alt / Acrylic / Blur | ❌ |
+| Drag-copy to apps | ✅ | ✅ |
 
 ---
 
@@ -137,7 +139,10 @@ graph TB
             useFolderActions["useFolderActions<br/><small>CRUD, reorder, move clip</small>"]
             useDragDrop["useDragDrop<br/><small>card → folder drag</small>"]
             useFolderPreview["useFolderPreview<br/><small>hover preview + cache</small>"]
-            useKeyboard["useKeyboard<br/><small>Esc, Ctrl+F, Ctrl+1..9</small>"]
+            useKeyboard["useKeyboard<br/><small>Esc, Ctrl+F, arrows, Enter</small>"]
+            useBatchActions["useBatchActions<br/><small>bulk delete, move, paste</small>"]
+            useContextMenu["useContextMenu<br/><small>right-click menu state</small>"]
+            useFolderModal["useFolderModal<br/><small>create/rename modal</small>"]
         end
 
         subgraph Components["UI Components"]
@@ -160,9 +165,9 @@ graph TB
             window["window.rs<br/><small>show, hide, focus, dragging</small>"]
         end
 
-        clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect</small>"]
-        database["database.rs<br/><small>SQLite pool, migrations</small>"]
-        caches["In-Memory Caches<br/><small>SEARCH_CACHE, SETTINGS_CACHE, ICON_CACHE</small>"]
+        clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect,<br/>sensitive detect, incognito mode</small>"]
+        database["database.rs<br/><small>SQLite pool, migrations v1-v5</small>"]
+        caches["In-Memory Caches<br/><small>SEARCH_CACHE (HashMap 50K cap)<br/>SETTINGS_CACHE · ICON_CACHE (LRU 100)</small>"]
     end
 
     subgraph Storage["Storage (local disk)"]
@@ -199,6 +204,11 @@ sequenceDiagram
 
     OS->>Plugin: clipboard_changed event
     Plugin->>Monitor: event listener fires
+
+    alt Incognito mode ON
+        Monitor-->>Monitor: Skip (return immediately)
+    end
+
     Note over Monitor: Capture source app<br/>BEFORE debounce
     Monitor->>Monitor: Debounce 150ms
     Monitor->>Monitor: SHA256 hash
@@ -207,11 +217,12 @@ sequenceDiagram
         Monitor->>DB: UPDATE created_at (bump to top)
     else New clip
         Monitor->>Monitor: Detect subtype (url/email/color/path)
+        Monitor->>Monitor: Detect sensitive (API keys/CC/JWT)
         alt Image
             Monitor->>Disk: Save {hash}.png
-            Monitor->>DB: INSERT (filename in content)
+            Monitor->>DB: INSERT (filename + is_sensitive)
         else Text
-            Monitor->>DB: INSERT (text in content)
+            Monitor->>DB: INSERT (text + is_sensitive)
         end
         Monitor->>Cache: add_to_search_cache()
     end
@@ -265,14 +276,16 @@ sequenceDiagram
 |:---------|:-------|
 | **SQLite WAL mode + tuned PRAGMAs** | Concurrent reads/writes, 8MB cache, 64MB mmap, 5s busy_timeout |
 | **Images on disk** | DB stays small (~2MB), images in separate files |
-| **In-memory search cache** | Instant multi-word search (<1ms for 1000+ clips) |
-| **Relevance sorting** | Exact substring matches rank above partial word matches |
+| **In-memory search cache** | HashMap capped at 50K entries, instant multi-word + fuzzy search (<1ms) |
+| **Relevance sorting** | Exact phrase > all words > note match > fuzzy; folder as tiebreaker |
+| **Sensitive content detection** | Regex-based (no AI), auto-blur on card, is_sensitive column in DB |
+| **Asset protocol for images** | `asset://` URL instead of base64 — 75% less IPC payload |
 | **Shift+Insert** for paste | Works in terminals (PowerShell, WSL) where Ctrl+V doesn't |
 | **@tanstack/react-virtual** | Horizontal virtual list — constant DOM count regardless of clip count |
 | **Hard delete** (no soft delete) | No DB bloat, no stale rows, simpler queries |
 | **Pinned + folder items protected** | Bulk clear, dedup, and auto-trim never touch pinned or folder clips |
 | **Atomic DB operations** | Transactions for folder delete, max_items trim — crash-safe |
-| **Async image I/O** | `tokio::fs::read` prevents blocking the Tokio runtime |
+| **ICON_CACHE LRU(100)** | Bounded app icon cache prevents memory leak on long sessions |
 | **Modular commands/** | 7 domain files instead of monolithic commands.rs (1500+ lines) |
 
 ---

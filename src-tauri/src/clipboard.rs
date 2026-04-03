@@ -51,54 +51,62 @@ static HASH_STATE: Lazy<parking_lot::Mutex<ClipboardHashState>> = Lazy::new(|| {
 });
 pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
-/// In-memory search index: (uuid, preview_lowercase, folder_id, note_lowercase)
-/// Loaded once at startup, updated on each clipboard change. Avoids slow SQLite full-table scans.
-pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<Vec<(String, String, Option<i64>, String)>>> =
-    Lazy::new(|| parking_lot::RwLock::new(Vec::new()));
+/// In-memory search index: uuid → (preview_lowercase, folder_id, note_lowercase)
+/// Loaded once at startup, updated on each clipboard change. HashMap for O(1) remove/update.
+pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, (String, Option<i64>, String)>>> =
+    Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
 
 /// In-memory settings cache: avoids DB round-trips for hot-path settings like auto_paste, ignore_ghost_clips.
 pub static SETTINGS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, String>>> =
     Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
 
 #[cfg(target_os = "windows")]
-pub static ICON_CACHE: Lazy<parking_lot::Mutex<std::collections::HashMap<String, Option<String>>>> =
-    Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+pub static ICON_CACHE: Lazy<parking_lot::Mutex<lru::LruCache<String, Option<String>>>> =
+    Lazy::new(|| parking_lot::Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(100).unwrap())));
+
+/// Incognito mode: when true, clipboard changes are not captured
+pub static IS_INCOGNITO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 use std::sync::atomic::{AtomicU64, Ordering};
 static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Load all clip previews into memory for instant search
+/// Maximum entries in the search cache. Clips beyond this are still in DB but not instant-searchable.
+const SEARCH_CACHE_MAX: usize = 50_000;
+
+/// Load all clip previews into memory for instant search.
+/// Capped at SEARCH_CACHE_MAX entries (most recent first) to bound memory usage.
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
     let rows: Vec<(String, String, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note FROM clips"
-    ).fetch_all(pool).await.unwrap_or_default();
+        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note FROM clips ORDER BY created_at DESC LIMIT ?"
+    ).bind(SEARCH_CACHE_MAX as i64).fetch_all(pool).await.unwrap_or_default();
 
-    let entries: Vec<(String, String, Option<i64>, String)> = rows.into_iter()
-        .map(|(uuid, preview, fid, note)| (uuid, preview.to_lowercase(), fid, note.unwrap_or_default().to_lowercase()))
-        .collect();
+    let mut map = std::collections::HashMap::with_capacity(rows.len());
+    for (uuid, preview, fid, note) in rows {
+        map.insert(uuid, (preview.to_lowercase(), fid, note.unwrap_or_default().to_lowercase()));
+    }
 
-    let count = entries.len();
-    *SEARCH_CACHE.write() = entries;
-    log::info!("SEARCH_CACHE: Loaded {} clip previews into memory", count);
+    let count = map.len();
+    *SEARCH_CACHE.write() = map;
+    log::info!("SEARCH_CACHE: Loaded {} clip previews into memory (max {})", count, SEARCH_CACHE_MAX);
 }
 
 /// Add a single clip to the search cache
 pub fn add_to_search_cache(uuid: &str, preview: &str, folder_id: Option<i64>) {
     let mut cache = SEARCH_CACHE.write();
-    cache.push((uuid.to_string(), preview.to_lowercase(), folder_id, String::new()));
+    cache.insert(uuid.to_string(), (preview.to_lowercase(), folder_id, String::new()));
 }
 
-/// Remove a clip from the search cache
+/// Remove a clip from the search cache — O(1) with HashMap
 pub fn remove_from_search_cache(uuid: &str) {
     let mut cache = SEARCH_CACHE.write();
-    cache.retain(|(u, _, _, _)| u != uuid);
+    cache.remove(uuid);
 }
 
-/// Update a clip's note in the search cache
+/// Update a clip's note in the search cache — O(1) with HashMap
 pub fn update_note_in_search_cache(uuid: &str, note: Option<&str>) {
     let mut cache = SEARCH_CACHE.write();
-    if let Some(entry) = cache.iter_mut().find(|(u, _, _, _)| u == uuid) {
-        entry.3 = note.unwrap_or_default().to_lowercase();
+    if let Some(entry) = cache.get_mut(uuid) {
+        entry.2 = note.unwrap_or_default().to_lowercase();
     }
 }
 
@@ -235,7 +243,73 @@ pub fn init(app: &AppHandle, db: Arc<Database>) {
 
 type SourceAppInfo = (Option<String>, Option<String>, Option<String>, Option<String>, bool);
 
+/// Detect if text content contains sensitive information (API keys, passwords, credit cards, etc.)
+pub fn detect_sensitive(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() { return None; }
+
+    // AWS access key
+    if trimmed.contains("AKIA") && trimmed.len() >= 20 {
+        return Some("aws_key".to_string());
+    }
+    // GitHub personal access token
+    if trimmed.starts_with("ghp_") || trimmed.starts_with("gho_") || trimmed.starts_with("ghs_") {
+        return Some("github_token".to_string());
+    }
+    // Stripe secret key
+    if trimmed.starts_with("sk_live_") || trimmed.starts_with("sk_test_") {
+        return Some("stripe_key".to_string());
+    }
+    // Slack tokens
+    if trimmed.starts_with("xoxb-") || trimmed.starts_with("xoxp-") || trimmed.starts_with("xoxa-") {
+        return Some("slack_token".to_string());
+    }
+    // Private keys
+    if trimmed.contains("-----BEGIN") && trimmed.contains("PRIVATE KEY-----") {
+        return Some("private_key".to_string());
+    }
+    // JWT tokens (3 base64 segments separated by dots)
+    if trimmed.starts_with("eyJ") && trimmed.matches('.').count() == 2
+        && !trimmed.contains(char::is_whitespace)
+    {
+        return Some("jwt".to_string());
+    }
+    // Credit card numbers (13-19 digits, possibly with spaces/dashes)
+    let digits_only: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits_only.len() >= 13 && digits_only.len() <= 19
+        && trimmed.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '-')
+        && luhn_check(&digits_only)
+    {
+        return Some("credit_card".to_string());
+    }
+
+    None
+}
+
+/// Luhn algorithm for credit card validation
+fn luhn_check(digits: &str) -> bool {
+    let mut sum = 0u32;
+    let mut double = false;
+    for c in digits.chars().rev() {
+        if let Some(d) = c.to_digit(10) {
+            let mut val = if double { d * 2 } else { d };
+            if val > 9 { val -= 9; }
+            sum += val;
+            double = !double;
+        } else {
+            return false;
+        }
+    }
+    sum % 10 == 0
+}
+
 async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_info: SourceAppInfo) {
+    // Check incognito mode — skip capture entirely
+    if IS_INCOGNITO.load(Ordering::SeqCst) {
+        log::debug!("CLIPBOARD: Incognito mode active, skipping capture");
+        return;
+    }
+
     let _guard = CLIPBOARD_SYNC.lock().await;
 
     let mut clip_type = "text";
@@ -296,7 +370,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
                  clip_preview = truncate_utf8(text, 2000).to_string();
                  clip_subtype = detect_subtype(text);
                  found_content = true;
-                log::trace!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
+                 log::trace!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
              }
         }
     }
@@ -381,9 +455,16 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
     } else {
         let clip_uuid = Uuid::new_v4().to_string();
 
+        // Detect sensitive content in text clips
+        let is_sensitive = if clip_type == "text" {
+            detect_sensitive(&clip_preview).is_some()
+        } else {
+            false
+        };
+
         if let Err(e) = sqlx::query(r#"
-            INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, subtype, created_at, last_accessed)
-            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, subtype, is_sensitive, created_at, last_accessed)
+            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#)
         .bind(&clip_uuid)
         .bind(clip_type)
@@ -394,6 +475,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         .bind(&source_icon)
         .bind(if clip_type == "image" { Some(metadata) } else { None })
         .bind(&clip_subtype)
+        .bind(is_sensitive)
         .execute(pool)
         .await
         {
@@ -483,7 +565,7 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
                     cached.clone()
                 } else {
                     let extracted = extract_icon(&full_path_str);
-                    cache.insert(full_path_str.clone(), extracted.clone());
+                    cache.put(full_path_str.clone(), extracted.clone());
                     extracted
                 }
             };

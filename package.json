@@ -1,6 +1,6 @@
 {
   "name": "clippaste",
-  "version": "1.6.5",
+  "version": "1.7.0",
   "description": "A beautiful clipboard history manager for Windows",
   "license": "GPL-3.0",
   "scripts": {
@@ -29,7 +29,6 @@
     "lucide-react": "^0.294.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-window": "^2.2.7",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.1",
     "use-shortcut-recorder": "^2.2.0"
@@ -38,7 +37,6 @@
     "@tauri-apps/cli": "^2.10.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
-    "@types/react-window": "^2.0.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.24",
     "postcss": "^8.5.6",

@@ -100,6 +100,9 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
         if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
     }
 
+    // Rebuild search cache (deleted folder clips must be removed)
+    crate::clipboard::load_search_cache(pool).await;
+
     let _ = window.emit("clipboard-change", ());
     Ok(())
 }
@@ -146,11 +149,11 @@ pub async fn move_to_folder(clip_id: String, folder_id: Option<String>, db: taur
         .bind(&clip_id)
         .execute(pool).await.map_err(|e| e.to_string())?;
 
-    // Update in-memory search cache with new folder_id
+    // Update in-memory search cache with new folder_id (HashMap: uuid → (preview, folder_id, note))
     {
         let mut cache = crate::clipboard::SEARCH_CACHE.write();
-        if let Some(entry) = cache.iter_mut().find(|(uuid, _, _, _)| uuid == &clip_id) {
-            entry.2 = folder_id;
+        if let Some(entry) = cache.get_mut(&clip_id) {
+            entry.1 = folder_id;
         }
     }
 
@@ -160,12 +163,14 @@ pub async fn move_to_folder(clip_id: String, folder_id: Option<String>, db: taur
 #[tauri::command]
 pub async fn reorder_folders(folder_ids: Vec<String>, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     for (idx, id) in folder_ids.iter().enumerate() {
         let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
         sqlx::query("UPDATE folders SET position = ? WHERE id = ?")
             .bind(idx as i64)
             .bind(folder_id)
-            .execute(pool).await.map_err(|e| e.to_string())?;
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
