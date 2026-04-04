@@ -440,6 +440,21 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
                 std::fs::create_dir_all(parent).ok();
             }
 
+            // Verify resolved path is actually inside temp_dir (prevents symlink escape)
+            let canonical_out = out_path.canonicalize().unwrap_or_else(|_| out_path.clone());
+            let canonical_temp = temp_dir_clone.canonicalize().unwrap_or_else(|_| temp_dir_clone.clone());
+            if !canonical_out.starts_with(&canonical_temp) {
+                log::warn!("Import: path escape detected, skipping: {}", name);
+                continue;
+            }
+
+            // Limit individual file size to 500MB to prevent zip bombs
+            let size = entry.size();
+            if size > 500 * 1024 * 1024 {
+                log::warn!("Import: file too large ({}MB), skipping: {}", size / 1024 / 1024, name);
+                continue;
+            }
+
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
             std::fs::write(&out_path, &buf)

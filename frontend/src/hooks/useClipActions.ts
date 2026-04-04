@@ -132,6 +132,9 @@ export function useClipActions(opts: UseClipActionsOpts) {
     try {
       const clip = clips.find((c) => c.id === clipId);
       if (clip && clip.clip_type === 'image') {
+        // Call paste_clip FIRST so backend sets ignore_hash before clipboard write
+        // This prevents the clipboard listener from capturing our own write as a new clip
+        await invoke('paste_clip', { id: clipId });
         try {
           const assetUrl = convertFileSrc(clip.content);
           const response = await fetch(assetUrl);
@@ -139,10 +142,9 @@ export function useClipActions(opts: UseClipActionsOpts) {
           const blob = await response.blob();
           await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         } catch (e) {
-          console.error('Frontend clipboard write failed, skipping paste', e);
-          toast.error('Failed to load image for paste');
-          return;
+          console.error('Frontend clipboard write failed', e);
         }
+        return;
       }
 
       await invoke('paste_clip', { id: clipId });

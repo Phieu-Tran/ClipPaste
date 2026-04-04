@@ -32,11 +32,12 @@ impl Drop for AnimatingGuard {
 }
 
 mod clipboard;
+pub mod cli;
 mod database;
 mod models;
 mod commands;
 mod constants;
-mod utils;
+pub mod utils;
 
 #[cfg(test)]
 mod tests;
@@ -395,6 +396,8 @@ pub fn run_app() {
                 db_for_cache.enforce_max_items().await;
                 db_for_cache.enforce_auto_delete().await;
                 db_for_cache.cleanup_orphan_images().await;
+                // Re-scan sensitive detection on all existing clips (picks up new patterns)
+                db_for_cache.rescan_sensitive().await;
             });
 
             Ok(())
@@ -445,7 +448,8 @@ pub fn run_app() {
             commands::get_clip_dates,
             commands::toggle_incognito,
             commands::get_incognito_status,
-            commands::get_initial_state
+            commands::get_initial_state,
+            commands::rescan_sensitive
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

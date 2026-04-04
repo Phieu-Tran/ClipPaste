@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.4] - 2026-04-04
+
+### Added
+- **Password detection** — auto-detect and blur random password-like strings (8-64 chars, 3+ character classes: upper/lower/digit/special)
+- **Sensitive rescan on startup** — re-evaluates all existing clips with latest detection rules
+- **CLI automation hooks** — `--list`, `--search`, `--get`, `--stats`, `--count`, `--clear`, `--help-cli`
+- **`rescan_sensitive` command** — manually trigger re-scan from frontend or CLI
+
+### Fixed
+- **Sensitive detection on re-copy** — dedup now re-checks `is_sensitive` when bumping existing clips
+- **Image paste duplicate** — reorder clipboard write to prevent listener capturing self-paste as new clip
+- **Path traversal hardened** — `canonicalize()` verification + 500MB file size limit in import
+
+---
+
 ## [1.7.3] - 2026-04-04
 
 ### Fixed

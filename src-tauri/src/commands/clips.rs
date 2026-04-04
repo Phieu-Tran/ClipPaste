@@ -556,3 +556,28 @@ pub async fn update_note(id: String, note: Option<String>, db: tauri::State<'_, 
 
     Ok(())
 }
+
+/// Re-scan all text clips and update is_sensitive flag based on current detection rules.
+/// Useful after adding new detection patterns (e.g. password heuristic).
+#[tauri::command]
+pub async fn rescan_sensitive(db: tauri::State<'_, Arc<Database>>) -> Result<u64, String> {
+    let pool = &db.pool;
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    let mut updated = 0u64;
+    for (id, preview) in &rows {
+        let is_sensitive = crate::clipboard::detect_sensitive(preview).is_some();
+        let result = sqlx::query("UPDATE clips SET is_sensitive = ? WHERE id = ? AND is_sensitive != ?")
+            .bind(is_sensitive)
+            .bind(id)
+            .bind(is_sensitive)
+            .execute(pool).await;
+        if let Ok(r) = result {
+            updated += r.rows_affected();
+        }
+    }
+    log::info!("RESCAN: Updated is_sensitive on {} clips out of {}", updated, rows.len());
+    Ok(updated)
+}

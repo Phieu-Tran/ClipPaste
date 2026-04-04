@@ -46,6 +46,26 @@ impl Database {
         Self { pool, images_dir }
     }
 
+    /// Re-scan all text clips and update is_sensitive based on current detection rules.
+    pub async fn rescan_sensitive(&self) {
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
+        ).fetch_all(&self.pool).await.unwrap_or_default();
+
+        let mut updated = 0u64;
+        for (id, preview) in &rows {
+            let is_sensitive = crate::clipboard::detect_sensitive(preview).is_some();
+            if let Ok(r) = sqlx::query("UPDATE clips SET is_sensitive = ? WHERE id = ? AND is_sensitive != ?")
+                .bind(is_sensitive).bind(id).bind(is_sensitive)
+                .execute(&self.pool).await {
+                updated += r.rows_affected();
+            }
+        }
+        if updated > 0 {
+            log::info!("RESCAN: Updated is_sensitive on {} clips", updated);
+        }
+    }
+
     /// Graceful shutdown: optimize query planner and close all connections.
     pub async fn shutdown(&self) {
         sqlx::query("PRAGMA optimize").execute(&self.pool).await.ok();

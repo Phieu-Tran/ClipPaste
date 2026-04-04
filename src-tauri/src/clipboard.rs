@@ -315,6 +315,19 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
         return Some("credit_card".to_string());
     }
 
+    // Password-like strings: 8-64 chars, no spaces, mix of 3+ character classes
+    // (uppercase, lowercase, digits, special chars) — high entropy random strings
+    if trimmed.len() >= 8 && trimmed.len() <= 64 && !trimmed.contains(char::is_whitespace) {
+        let has_upper = trimmed.chars().any(|c| c.is_ascii_uppercase());
+        let has_lower = trimmed.chars().any(|c| c.is_ascii_lowercase());
+        let has_digit = trimmed.chars().any(|c| c.is_ascii_digit());
+        let has_special = trimmed.chars().any(|c| !c.is_alphanumeric() && c.is_ascii());
+        let classes = [has_upper, has_lower, has_digit, has_special].iter().filter(|&&x| x).count();
+        if classes >= 3 {
+            return Some("password".to_string());
+        }
+    }
+
     None
 }
 
@@ -466,8 +479,14 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         .unwrap_or(None);
 
     if let Some(existing_id) = existing_uuid {
-        // Bump created_at so re-copied clip moves back to top of the list
-        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
+        // Bump created_at + re-evaluate is_sensitive (detection rules may have changed)
+        let is_sensitive = if clip_type == "text" {
+            detect_sensitive(&clip_preview).is_some()
+        } else {
+            false
+        };
+        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, is_sensitive = ? WHERE uuid = ?"#)
+            .bind(is_sensitive)
             .bind(&existing_id)
             .execute(pool)
             .await
