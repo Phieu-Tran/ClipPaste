@@ -45,7 +45,7 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
     {
       section: 'Actions',
       items: [
-        { keys: ['E'], description: 'Edit note on selected clip' },
+        { keys: ['E'], description: 'Edit before paste (text only)' },
         { keys: ['P'], description: 'Pin / Unpin selected clip' },
         { keys: ['Ctrl', 'Delete'], description: 'Delete selected clip' },
       ],
