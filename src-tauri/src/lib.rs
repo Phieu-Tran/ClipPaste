@@ -98,6 +98,7 @@ pub fn run_app() {
         if let Err(e) = db.migrate().await {
             log::error!("Database migration failed: {}", e);
         }
+        db.cleanup_missing_image_clips().await;
     });
 
     let db_arc = Arc::new(db);
@@ -389,6 +390,7 @@ pub fn run_app() {
             tauri::async_runtime::spawn(async move {
                 clipboard::load_search_cache(&db_for_cache.pool).await;
                 clipboard::load_settings_cache(&db_for_cache.pool).await;
+                clipboard::load_app_icons_cache(&db_for_cache.pool).await;
                 // Enforce max_items + auto_delete_days + clean up orphan images on startup
                 db_for_cache.enforce_max_items().await;
                 db_for_cache.enforce_auto_delete().await;
@@ -445,8 +447,18 @@ pub fn run_app() {
             commands::get_incognito_status,
             commands::get_initial_state
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                let db = app_handle.state::<Arc<Database>>().inner().clone();
+                if let Ok(rt) = get_runtime() {
+                    rt.block_on(async move {
+                        db.shutdown().await;
+                    });
+                }
+            }
+        });
 }
 
 pub fn position_window_at_bottom(window: &tauri::WebviewWindow) {

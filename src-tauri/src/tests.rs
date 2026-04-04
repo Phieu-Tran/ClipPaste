@@ -834,6 +834,7 @@ mod tests {
             assert!(table_names.contains(&"settings"), "settings table should exist");
             assert!(table_names.contains(&"ignored_apps"), "ignored_apps table should exist");
             assert!(table_names.contains(&"schema_version"), "schema_version table should exist");
+            assert!(table_names.contains(&"app_icons"), "app_icons table should exist");
         }
 
         #[tokio::test]
@@ -858,7 +859,7 @@ mod tests {
             let db = setup_test_db().await;
             let version: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
                 .fetch_one(&db.pool).await.unwrap();
-            assert_eq!(version, 5, "Schema version should be 5 after all migrations");
+            assert_eq!(version, 6, "Schema version should be 6 after all migrations");
         }
 
         // --- CRUD tests ---

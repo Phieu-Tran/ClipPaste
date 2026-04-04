@@ -17,7 +17,7 @@ impl Database {
             .busy_timeout(std::time::Duration::from_secs(5));
 
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(5)
+            .max_connections(1)
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     // Per-connection PRAGMAs — applied to every connection in the pool
@@ -44,6 +44,12 @@ impl Database {
         std::fs::create_dir_all(&images_dir).ok();
 
         Self { pool, images_dir }
+    }
+
+    /// Graceful shutdown: optimize query planner and close all connections.
+    pub async fn shutdown(&self) {
+        sqlx::query("PRAGMA optimize").execute(&self.pool).await.ok();
+        self.pool.close().await;
     }
 
     async fn get_schema_version(&self) -> i64 {
@@ -178,6 +184,24 @@ impl Database {
                 .execute(&self.pool).await;
             self.set_schema_version(5).await;
             log::info!("DB: Applied migration v5 (covering index, is_sensitive column)");
+        }
+
+        if version < 6 {
+            // Create app_icons lookup table — deduplicate source_icon (one per app instead of per clip)
+            let _ = sqlx::query("CREATE TABLE IF NOT EXISTS app_icons (app_name TEXT PRIMARY KEY, icon TEXT NOT NULL)")
+                .execute(&self.pool).await;
+            // Populate from existing clips (one icon per app)
+            let migrated: u64 = sqlx::query(
+                "INSERT OR IGNORE INTO app_icons (app_name, icon)
+                 SELECT source_app, source_icon FROM clips
+                 WHERE source_app IS NOT NULL AND source_icon IS NOT NULL AND source_icon != ''
+                 GROUP BY source_app"
+            ).execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+            // Clear duplicate icons from clips (now served from app_icons cache)
+            let cleared: u64 = sqlx::query("UPDATE clips SET source_icon = NULL WHERE source_app IN (SELECT app_name FROM app_icons)")
+                .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+            self.set_schema_version(6).await;
+            log::info!("DB: Applied migration v6 (app_icons: {} apps migrated, {} clip icons cleared)", migrated, cleared);
         }
 
         // === Migrate image blobs to disk ===
@@ -344,6 +368,27 @@ impl Database {
 
         if orphans > 0 {
             log::info!("DB: Cleaned up {} orphan image files", orphans);
+        }
+    }
+
+    /// Remove image clips whose file has been manually deleted from disk.
+    pub async fn cleanup_missing_image_clips(&self) {
+        let clips: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT id, CAST(content AS TEXT) FROM clips WHERE clip_type = 'image'"
+        ).fetch_all(&self.pool).await.unwrap_or_default();
+
+        let mut removed = 0u64;
+        for (id, filename) in &clips {
+            let path = self.images_dir.join(filename);
+            if !path.exists() {
+                let _ = sqlx::query("DELETE FROM clips WHERE id = ?")
+                    .bind(id).execute(&self.pool).await;
+                removed += 1;
+            }
+        }
+
+        if removed > 0 {
+            log::info!("DB: Removed {} image clips with missing files", removed);
         }
     }
 

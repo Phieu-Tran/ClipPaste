@@ -64,6 +64,10 @@ pub static SETTINGS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<St
 pub static ICON_CACHE: Lazy<parking_lot::Mutex<lru::LruCache<String, Option<String>>>> =
     Lazy::new(|| parking_lot::Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(100).unwrap())));
 
+/// App icon lookup: app_name → base64 icon. New clips use this instead of per-clip source_icon.
+pub static APP_ICONS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, String>>> =
+    Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
+
 /// Incognito mode: when true, clipboard changes are not captured
 pub static IS_INCOGNITO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -125,6 +129,31 @@ pub async fn load_settings_cache(pool: &sqlx::SqlitePool) {
 /// Get a setting from the in-memory cache (no DB round-trip)
 pub fn get_cached_setting(key: &str) -> Option<String> {
     SETTINGS_CACHE.read().get(key).cloned()
+}
+
+/// Load all app icons into memory for instant lookup
+pub async fn load_app_icons_cache(pool: &sqlx::SqlitePool) {
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT app_name, icon FROM app_icons")
+        .fetch_all(pool).await.unwrap_or_default();
+    let count = rows.len();
+    let mut cache = APP_ICONS_CACHE.write();
+    cache.clear();
+    for (name, icon) in rows {
+        cache.insert(name, icon);
+    }
+    log::info!("APP_ICONS_CACHE: Loaded {} app icons into memory", count);
+}
+
+/// Get an app icon from the in-memory cache
+pub fn get_app_icon(app_name: &str) -> Option<String> {
+    APP_ICONS_CACHE.read().get(app_name).cloned()
+}
+
+/// Save app icon to DB + cache (deduplicated per app_name)
+async fn save_app_icon(pool: &sqlx::SqlitePool, app_name: &str, icon: &str) {
+    APP_ICONS_CACHE.write().insert(app_name.to_string(), icon.to_string());
+    sqlx::query("INSERT OR REPLACE INTO app_icons (app_name, icon) VALUES (?, ?)")
+        .bind(app_name).bind(icon).execute(pool).await.ok();
 }
 
 pub fn truncate_utf8(s: &str, max_chars: usize) -> &str {
@@ -462,9 +491,16 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
             false
         };
 
+        // Save icon to app_icons lookup (deduplicated per app)
+        if let (Some(ref app_name), Some(ref icon)) = (&source_app, &source_icon) {
+            if !icon.is_empty() {
+                save_app_icon(pool, app_name, icon).await;
+            }
+        }
+
         if let Err(e) = sqlx::query(r#"
             INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, subtype, is_sensitive, created_at, last_accessed)
-            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#)
         .bind(&clip_uuid)
         .bind(clip_type)
@@ -472,7 +508,6 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         .bind(&clip_preview)
         .bind(&clip_hash)
         .bind(&source_app)
-        .bind(&source_icon)
         .bind(if clip_type == "image" { Some(metadata) } else { None })
         .bind(&clip_subtype)
         .bind(is_sensitive)
@@ -496,6 +531,14 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
             "source_icon": source_icon,
             "created_at": chrono::Utc::now().to_rfc3339()
         }));
+
+        // Enforce limits after each insert (cache check is O(1), returns early if not configured)
+        if get_cached_setting("max_items").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) > 0 {
+            db.enforce_max_items().await;
+        }
+        if get_cached_setting("auto_delete_days").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) > 0 {
+            db.enforce_auto_delete().await;
+        }
     }
 }
 

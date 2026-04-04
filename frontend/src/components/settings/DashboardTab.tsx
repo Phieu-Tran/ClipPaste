@@ -6,6 +6,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface DashboardStats {
   total: number;
@@ -184,7 +185,7 @@ export function DashboardTab({
                 {/* Type badge */}
                 {clip.clip_type === 'image' ? (
                   <div className="flex h-8 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded border border-border/30">
-                    <img src={`data:image/png;base64,${clip.content.substring(0, 200)}`} alt="" className="h-full w-full object-cover" />
+                    <img src={clip.content ? convertFileSrc(clip.content) : ''} alt="" className="h-full w-full object-cover" />
                   </div>
                 ) : (
                   <div className={clsx(

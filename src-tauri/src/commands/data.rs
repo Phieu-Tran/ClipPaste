@@ -73,36 +73,8 @@ pub async fn set_data_directory(
         utils::get_default_data_dir()
     };
 
-    let current_db_path = current_data_dir.join("clipboard.db");
-    let new_db_path = new_path_buf.join("clipboard.db");
-
-    // If DB exists in current location and new location is different, migrate it
-    if current_db_path.exists() && current_db_path != new_db_path {
-        log::info!("Migrating DB from {:?} to {:?}", current_db_path, new_db_path);
-
-        // Ensure new directory exists
-        std::fs::create_dir_all(&new_path_buf).map_err(|e| format!("Cannot create directory: {}", e))?;
-
-        // Copy DB file
-        std::fs::copy(&current_db_path, &new_db_path)
-            .map_err(|e| format!("Failed to copy database: {}", e))?;
-
-        // Also migrate images directory
-        let current_images_dir = current_data_dir.join("images");
-        let new_images_dir = new_path_buf.join("images");
-        if current_images_dir.exists() {
-            std::fs::create_dir_all(&new_images_dir).ok();
-            if let Ok(entries) = std::fs::read_dir(&current_images_dir) {
-                for entry in entries.flatten() {
-                    let dest = new_images_dir.join(entry.file_name());
-                    let _ = std::fs::copy(entry.path(), dest);
-                }
-            }
-            log::info!("Images directory migrated successfully");
-        }
-
-        log::info!("Database migrated successfully");
-    }
+    // Ensure new directory exists — a fresh DB will be created on next restart
+    std::fs::create_dir_all(&new_path_buf).map_err(|e| format!("Cannot create directory: {}", e))?;
 
     // Save config
     let config_path = utils::get_config_path();

@@ -25,7 +25,9 @@ pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bo
         folder_id: clip.folder_id.map(|id| id.to_string()),
         created_at: clip.created_at.to_rfc3339(),
         source_app: clip.source_app.clone(),
-        source_icon: clip.source_icon.clone(),
+        source_icon: clip.source_icon.clone().or_else(|| {
+            clip.source_app.as_ref().and_then(|app| crate::clipboard::get_app_icon(app))
+        }),
         metadata: clip.metadata.clone(),
         is_pinned: clip.is_pinned,
         subtype: clip.subtype.clone(),
