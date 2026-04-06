@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.6] - 2026-04-06
+
+### Fixed
+- **Image paste race condition** — images now written to clipboard by backend (via `write_image` plugin API) instead of frontend `navigator.clipboard.write`, fixing bug where pasting an image would paste old/wrong clipboard content due to timing mismatch between clipboard write and Shift+Insert
+- **Image copy uses backend** — `copy_clip` for images also moved to backend, eliminating stale state and silent failure issues
+
+---
+
 ## [1.7.5] - 2026-04-05
 
 ### Added

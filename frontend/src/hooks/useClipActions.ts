@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
 import { PAGE_SIZE } from '../constants';
 import { toast } from 'sonner';
@@ -130,23 +130,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
 
   const handlePaste = async (clipId: string) => {
     try {
-      const clip = clips.find((c) => c.id === clipId);
-      if (clip && clip.clip_type === 'image') {
-        // Call paste_clip FIRST so backend sets ignore_hash before clipboard write
-        // This prevents the clipboard listener from capturing our own write as a new clip
-        await invoke('paste_clip', { id: clipId });
-        try {
-          const assetUrl = convertFileSrc(clip.content);
-          const response = await fetch(assetUrl);
-          if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-          const blob = await response.blob();
-          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        } catch (e) {
-          console.error('Frontend clipboard write failed', e);
-        }
-        return;
-      }
-
+      // Backend handles both text and image clipboard writes + auto-paste
       await invoke('paste_clip', { id: clipId });
     } catch (error) {
       console.error('Failed to paste clip:', error);
@@ -156,16 +140,8 @@ export function useClipActions(opts: UseClipActionsOpts) {
 
   const handleCopy = async (clipId: string) => {
     try {
-      const clip = clipsRef.current.find((c) => c.id === clipId);
-      if (clip && clip.clip_type === 'image') {
-        const assetUrl = convertFileSrc(clip.content);
-        const response = await fetch(assetUrl);
-        const blob = await response.blob();
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-      }
-
+      // Backend handles both text and image clipboard writes
       await invoke('copy_clip', { id: clipId });
-
       toast.success('Copied to clipboard');
     } catch (error) {
       console.error('Failed to copy clip:', error);

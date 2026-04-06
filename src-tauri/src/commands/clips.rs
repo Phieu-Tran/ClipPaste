@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
-use super::helpers::{clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text, clipboard_set_hashes};
+use super::helpers::{clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text, clipboard_write_image};
 
 /// Simple fuzzy match: checks if all characters of `needle` appear in `haystack` in order.
 /// E.g. "apikey" fuzzy-matches "api_key", "API_KEY", "my_api_key_value".
@@ -174,9 +174,10 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
             let uuid = clip.uuid.clone();
 
             let final_res = if clip.clip_type == "image" {
-                clipboard_set_hashes(&content_hash).await;
-                log::debug!("Frontend handled image. Skipping backend write.");
-                Ok(())
+                let filename = String::from_utf8_lossy(&clip.content).to_string();
+                let image_path = db.images_dir.join(&filename);
+                let path_str = image_path.to_string_lossy().to_string();
+                clipboard_write_image(&app, &path_str, &content_hash).await
             } else {
                 let content_str = String::from_utf8_lossy(&clip.content).to_string();
                 clipboard_write_text(&app, &content_str, &content_hash).await
@@ -218,11 +219,14 @@ pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Data
         Some(clip) => {
             let content_hash = clip.content_hash.clone();
 
-            if clip.clip_type != "image" {
+            if clip.clip_type == "image" {
+                let filename = String::from_utf8_lossy(&clip.content).to_string();
+                let image_path = db.images_dir.join(&filename);
+                let path_str = image_path.to_string_lossy().to_string();
+                clipboard_write_image(&app, &path_str, &content_hash).await?;
+            } else {
                 let content_str = String::from_utf8_lossy(&clip.content).to_string();
                 clipboard_write_text(&app, &content_str, &content_hash).await?;
-            } else {
-                clipboard_set_hashes(&content_hash).await;
             }
 
             // Does NOT hide window or simulate paste
