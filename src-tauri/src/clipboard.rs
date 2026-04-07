@@ -366,18 +366,46 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
         return Some("credit_card".to_string());
     }
 
-    // Password-like strings: 8-64 chars, no spaces, mix of 3+ character classes
-    // (uppercase, lowercase, digits, special chars) — high entropy random strings
-    // Skip URLs — they naturally mix char classes (https://Example.com/path123) but are not sensitive
-    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://")
-        && trimmed.len() >= 8 && trimmed.len() <= 64 && !trimmed.contains(char::is_whitespace) {
-        let has_upper = trimmed.chars().any(|c| c.is_ascii_uppercase());
-        let has_lower = trimmed.chars().any(|c| c.is_ascii_lowercase());
-        let has_digit = trimmed.chars().any(|c| c.is_ascii_digit());
-        let has_special = trimmed.chars().any(|c| !c.is_alphanumeric() && c.is_ascii());
-        let classes = [has_upper, has_lower, has_digit, has_special].iter().filter(|&&x| x).count();
-        if classes >= 3 {
-            return Some("password".to_string());
+    // Password-like strings: high-entropy random strings that look like secrets.
+    // Must pass ALL checks to reduce false positives on normal text like domain names,
+    // container names, file paths, emails, etc.
+    if trimmed.len() >= 8 && trimmed.len() <= 64 && !trimmed.contains(char::is_whitespace) {
+        // Skip common non-password patterns
+        let dominated_by_separators = trimmed.starts_with("http://") || trimmed.starts_with("https://")
+            || trimmed.contains('@')        // emails
+            || trimmed.contains("://")      // URIs
+            || trimmed.contains('/')        // paths
+            || trimmed.contains('\\')       // Windows paths
+            || trimmed.contains('=')        // env vars (KEY=value)
+            || trimmed.starts_with(':')     // config tokens (:_authToken)
+            || trimmed.starts_with('.')     // dotfiles
+            || trimmed.ends_with(".com") || trimmed.ends_with(".net") || trimmed.ends_with(".org")
+            || trimmed.ends_with(".io") || trimmed.ends_with(".log") || trimmed.ends_with(".conf")
+            || trimmed.contains(".log");     // log filenames
+
+        if !dominated_by_separators {
+            let has_upper = trimmed.chars().any(|c| c.is_ascii_uppercase());
+            let has_lower = trimmed.chars().any(|c| c.is_ascii_lowercase());
+            let has_digit = trimmed.chars().any(|c| c.is_ascii_digit());
+            let has_special = trimmed.chars().any(|c| !c.is_alphanumeric() && c.is_ascii());
+            let classes = [has_upper, has_lower, has_digit, has_special].iter().filter(|&&x| x).count();
+
+            // Require ALL 4 character classes, or 3 classes with min length 12 for high-entropy strings
+            // This filters out things like "worker-1" (too short) and "camel-service-worker-2" (too long/readable)
+            if classes == 4 || (classes >= 3 && trimmed.len() >= 12 && trimmed.len() <= 20) {
+                // Final check: must have enough "randomness"
+                // 1) At least 25% non-lowercase chars (filters out "worker-1" style names)
+                let non_lower = trimmed.chars().filter(|c| !c.is_ascii_lowercase()).count();
+                if non_lower * 4 < trimmed.len() {
+                    // Too few non-lowercase chars — looks like a readable name, not a password
+                } else {
+                    // 2) Must not be a simple word-separator-word pattern (e.g. "Service-Name1")
+                    let separator_count = trimmed.chars().filter(|c| *c == '-' || *c == '_' || *c == '.').count();
+                    if separator_count <= 1 || trimmed.len() > 20 {
+                        return Some("password".to_string());
+                    }
+                }
+            }
         }
     }
 
