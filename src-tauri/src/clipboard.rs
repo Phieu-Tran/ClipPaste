@@ -81,9 +81,16 @@ const SEARCH_CACHE_MAX: usize = 50_000;
 /// Load all clip previews into memory for instant search.
 /// Capped at SEARCH_CACHE_MAX entries (most recent first) to bound memory usage.
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
-    let rows: Vec<(String, String, Option<i64>, Option<String>)> = sqlx::query_as(
+    let result = sqlx::query_as::<_, (String, String, Option<i64>, Option<String>)>(
         "SELECT uuid, COALESCE(text_preview, ''), folder_id, note FROM clips ORDER BY created_at DESC LIMIT ?"
-    ).bind(SEARCH_CACHE_MAX as i64).fetch_all(pool).await.unwrap_or_default();
+    ).bind(SEARCH_CACHE_MAX as i64).fetch_all(pool).await;
+    let rows = match result {
+        Ok(r) => r,
+        Err(e) => {
+            log::error!("SEARCH_CACHE: Failed to load: {}", e);
+            Vec::new()
+        }
+    };
 
     let mut map = std::collections::HashMap::with_capacity(rows.len());
     for (uuid, preview, fid, note) in rows {

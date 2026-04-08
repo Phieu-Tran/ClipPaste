@@ -33,7 +33,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             log::debug!("Querying for frequently pasted clips");
             sqlx::query_as(r#"
                 SELECT id, uuid, clip_type,
-                       CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                       CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
                        text_preview, content_hash,
                        folder_id, is_deleted, source_app, source_icon, metadata,
                        created_at, last_accessed, last_pasted_at, is_pinned,
@@ -52,7 +52,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                 log::debug!("Querying for folder_id: {}", numeric_id);
                 sqlx::query_as(r#"
                     SELECT id, uuid, clip_type,
-                           CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                           CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
                            text_preview, content_hash,
                            folder_id, is_deleted, source_app, source_icon, metadata,
                            created_at, last_accessed, last_pasted_at, is_pinned,
@@ -77,7 +77,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             log::debug!("Querying for items, offset: {}, limit: {}", offset, limit);
             sqlx::query_as(r#"
                 SELECT id, uuid, clip_type,
-                       CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                       CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
                        text_preview, content_hash,
                        folder_id, is_deleted, source_app, source_icon, metadata,
                        created_at, last_accessed, last_pasted_at, is_pinned,
@@ -289,13 +289,20 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         .map(|w| w.to_string())
         .collect();
 
-    // Search ALL clips (cross-folder), match against preview AND note
-    // Track match quality: exact phrase > all words > fuzzy
+    // Search clips, match against preview AND note
+    // When a folder is selected, restrict results to that folder
     // Uses HashMap-based SEARCH_CACHE: uuid → (preview, folder_id, note)
     // match_tier: 0=exact phrase, 1=all words substring, 2=note match, 3=fuzzy
     let matched: Vec<(String, Option<i64>, u8)> = {
         let cache = crate::clipboard::SEARCH_CACHE.read();
         cache.iter()
+            .filter(|(_, (_, fid, _))| {
+                // When folder is selected, only search within that folder
+                match folder_filter {
+                    Some(target_fid) => *fid == Some(target_fid),
+                    None => true,
+                }
+            })
             .filter_map(|(uuid, (preview, fid, note))| {
                 // Tier 0: exact phrase match (all words adjacent in original order)
                 let exact_phrase = preview.contains(&query_lower);
@@ -345,7 +352,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
     } else {
         let placeholders: String = matched.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
+            "SELECT id, uuid, clip_type, X'' as content, text_preview, content_hash,
                     folder_id, is_deleted, source_app, source_icon, metadata,
                     created_at, last_accessed, last_pasted_at, is_pinned,
                     subtype, note, paste_count, is_sensitive
@@ -415,16 +422,20 @@ pub async fn get_initial_state(
     let images_dir = &db.images_dir;
 
     let clips_future = async {
-        let clips: Vec<Clip> = sqlx::query_as(r#"
+        let result = sqlx::query_as::<_, Clip>(r#"
             SELECT id, uuid, clip_type,
-                   CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                   CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
                    text_preview, content_hash,
                    folder_id, is_deleted, source_app, source_icon, metadata,
                    created_at, last_accessed, last_pasted_at, is_pinned,
                    subtype, note, paste_count, is_sensitive
             FROM clips
             ORDER BY created_at DESC LIMIT ? OFFSET 0
-        "#).bind(limit).fetch_all(pool).await.unwrap_or_default();
+        "#).bind(limit).fetch_all(pool).await;
+        let clips: Vec<Clip> = match result {
+            Ok(c) => c,
+            Err(e) => { log::error!("get_initial_state clips query failed: {}", e); Vec::new() }
+        };
 
         let mut items = Vec::with_capacity(clips.len());
         for clip in &clips {
