@@ -47,13 +47,16 @@ impl Database {
     }
 
     /// Re-scan all text clips and update is_sensitive based on current detection rules.
-    /// Uses batched transactions (500 per batch) instead of individual updates.
-    pub async fn rescan_sensitive(&self) {
+    /// Uses batched SQL updates (500 per batch) instead of individual UPDATE per row.
+    /// Returns (rows_updated, total_scanned).
+    pub async fn rescan_sensitive(&self) -> (u64, usize) {
         let rows: Vec<(i64, String)> = sqlx::query_as(
             "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
         ).fetch_all(&self.pool).await.unwrap_or_default();
 
-        // Classify all clips first, then batch-update in a transaction
+        let total = rows.len();
+
+        // Classify all clips first, then batch-update
         let mut to_sensitive: Vec<i64> = Vec::new();
         let mut to_not_sensitive: Vec<i64> = Vec::new();
         for (id, preview) in &rows {
@@ -98,6 +101,7 @@ impl Database {
         if updated > 0 {
             log::info!("RESCAN: Updated is_sensitive on {} clips", updated);
         }
+        (updated, total)
     }
 
     /// Graceful shutdown: checkpoint WAL, optimize query planner, and close all connections.
@@ -714,10 +718,13 @@ impl Database {
 
     /// Re-scan all text clips and update subtype based on current detection rules.
     /// Groups clips by detected subtype and batch-updates each group.
-    pub async fn rescan_subtypes(&self) {
+    /// Returns (rows_updated, total_scanned).
+    pub async fn rescan_subtypes(&self) -> (u64, usize) {
         let rows: Vec<(i64, String)> = sqlx::query_as(
             "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
         ).fetch_all(&self.pool).await.unwrap_or_default();
+
+        let total = rows.len();
 
         // Group IDs by their detected subtype
         let mut by_subtype: std::collections::HashMap<Option<String>, Vec<i64>> = std::collections::HashMap::new();
@@ -747,6 +754,7 @@ impl Database {
         if updated > 0 {
             log::info!("RESCAN: Updated subtype on {} clips", updated);
         }
+        (updated, total)
     }
 
     /// Generate JPEG thumbnails for existing images that don't have one yet.

@@ -572,51 +572,19 @@ pub async fn update_note(id: String, note: Option<String>, db: tauri::State<'_, 
 }
 
 /// Re-scan all text clips and update is_sensitive flag based on current detection rules.
-/// Useful after adding new detection patterns (e.g. password heuristic).
+/// Delegates to Database::rescan_sensitive() which uses batched SQL updates.
 #[tauri::command]
 pub async fn rescan_sensitive(db: tauri::State<'_, Arc<Database>>) -> Result<u64, String> {
-    let pool = &db.pool;
-    let rows: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
-    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
-
-    let mut updated = 0u64;
-    for (id, preview) in &rows {
-        let is_sensitive = crate::clipboard::detect_sensitive(preview).is_some();
-        let result = sqlx::query("UPDATE clips SET is_sensitive = ? WHERE id = ? AND is_sensitive != ?")
-            .bind(is_sensitive)
-            .bind(id)
-            .bind(is_sensitive)
-            .execute(pool).await;
-        if let Ok(r) = result {
-            updated += r.rows_affected();
-        }
-    }
-    log::info!("RESCAN: Updated is_sensitive on {} clips out of {}", updated, rows.len());
+    let (updated, total) = db.rescan_sensitive().await;
+    log::info!("RESCAN (command): Updated is_sensitive on {} clips out of {}", updated, total);
     Ok(updated)
 }
 
 /// Re-scan all text clips and update subtype based on current detection rules.
-/// Useful after adding new subtype detections (e.g. code, json, phone).
+/// Delegates to Database::rescan_subtypes() which uses batched SQL updates.
 #[tauri::command]
 pub async fn rescan_subtypes(db: tauri::State<'_, Arc<Database>>) -> Result<u64, String> {
-    let pool = &db.pool;
-    let rows: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
-    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
-
-    let mut updated = 0u64;
-    for (id, preview) in &rows {
-        let subtype = crate::clipboard::detect_subtype(preview);
-        let result = sqlx::query("UPDATE clips SET subtype = ? WHERE id = ? AND COALESCE(subtype, '') != COALESCE(?, '')")
-            .bind(&subtype)
-            .bind(id)
-            .bind(&subtype)
-            .execute(pool).await;
-        if let Ok(r) = result {
-            updated += r.rows_affected();
-        }
-    }
-    log::info!("RESCAN: Updated subtype on {} clips out of {}", updated, rows.len());
+    let (updated, total) = db.rescan_subtypes().await;
+    log::info!("RESCAN (command): Updated subtype on {} clips out of {}", updated, total);
     Ok(updated)
 }
