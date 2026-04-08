@@ -94,12 +94,33 @@ export function useFolderPreview(opts: UseFolderPreviewOpts) {
     clearPreview();
   }, [clearPreview]);
 
-  // Invalidate preview cache only when clip/folder structure changes (not count updates)
-  const clipIdsKey = useMemo(() => clips.map(c => c.id).join(','), [clips]);
+  // Invalidate only the affected folder's cache entry when clips change,
+  // instead of clearing the entire cache on every clip list change.
+  const prevClipIdsRef = useRef<Set<string>>(new Set());
+  const prevFolderIdsRef = useRef<string>('');
+
+  useEffect(() => {
+    const currentIds = new Set(clips.map(c => c.id));
+    const prev = prevClipIdsRef.current;
+
+    // If clip IDs changed, invalidate the currently-viewed folder (or __all__)
+    if (currentIds.size !== prev.size || clips.some(c => !prev.has(c.id))) {
+      // Find which folder the current clips belong to (all share the same view)
+      const folderOfView = clips.length > 0 ? clips[0].folder_id : null;
+      const cacheKey = folderOfView ?? '__all__';
+      previewCacheRef.current.delete(cacheKey);
+    }
+    prevClipIdsRef.current = currentIds;
+  }, [clips]);
+
+  // Clear entire cache when folder structure changes (add/remove/rename)
   const folderIdsKey = useMemo(() => folders.map(f => f.id).join(','), [folders]);
   useEffect(() => {
-    previewCacheRef.current.clear();
-  }, [clipIdsKey, folderIdsKey]);
+    if (prevFolderIdsRef.current && prevFolderIdsRef.current !== folderIdsKey) {
+      previewCacheRef.current.clear();
+    }
+    prevFolderIdsRef.current = folderIdsKey;
+  }, [folderIdsKey]);
 
   const isPreviewing = previewFolder !== undefined;
 

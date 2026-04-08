@@ -10,7 +10,7 @@ pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bo
     let content_str = if preview_only && clip.clip_type == "image" {
         String::new()
     } else if clip.clip_type == "image" {
-        let filename = String::from_utf8_lossy(&clip.content).to_string();
+        let filename = String::from_utf8_lossy(&clip.content).into_owned();
         let image_path = images_dir.join(&filename);
         image_path.to_string_lossy().to_string()
     } else {
@@ -19,7 +19,7 @@ pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bo
 
     // For images, check if a thumbnail exists ({hash}_thumb.jpg)
     let thumbnail = if clip.clip_type == "image" {
-        let filename = String::from_utf8_lossy(&clip.content).to_string();
+        let filename = String::from_utf8_lossy(&clip.content).into_owned();
         let hash = filename.trim_end_matches(".png");
         let thumb_filename = format!("{}_thumb.jpg", hash);
         let thumb_path = images_dir.join(&thumb_filename);

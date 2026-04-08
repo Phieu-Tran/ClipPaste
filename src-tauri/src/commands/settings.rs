@@ -203,7 +203,7 @@ pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>
         "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'"
     ).fetch_all(pool).await.map_err(|e| e.to_string())?;
     for (content,) in &image_clips {
-        let filename = String::from_utf8_lossy(content).to_string();
+        let filename = String::from_utf8_lossy(content).into_owned();
         let image_path = db.images_dir.join(&filename);
         if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
     }

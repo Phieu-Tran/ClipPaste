@@ -121,14 +121,14 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
         Some(clip) => {
             let content_str = if clip.clip_type == "image" {
                 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-                let filename = String::from_utf8_lossy(&clip.content).to_string();
+                let filename = String::from_utf8_lossy(&clip.content).into_owned();
                 let image_path = db.images_dir.join(&filename);
                 match std::fs::read(&image_path) {
                     Ok(bytes) => BASE64.encode(&bytes),
                     Err(_) => String::new(),
                 }
             } else {
-                String::from_utf8_lossy(&clip.content).to_string()
+                String::from_utf8_lossy(&clip.content).into_owned()
             };
 
             Ok(ClipboardItem {
@@ -174,12 +174,12 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
             let uuid = clip.uuid.clone();
 
             let final_res = if clip.clip_type == "image" {
-                let filename = String::from_utf8_lossy(&clip.content).to_string();
+                let filename = String::from_utf8_lossy(&clip.content).into_owned();
                 let image_path = db.images_dir.join(&filename);
                 let path_str = image_path.to_string_lossy().to_string();
                 clipboard_write_image(&app, &path_str, &content_hash).await
             } else {
-                let content_str = String::from_utf8_lossy(&clip.content).to_string();
+                let content_str = String::from_utf8_lossy(&clip.content).into_owned();
                 clipboard_write_text(&app, &content_str, &content_hash).await
             };
 
@@ -190,7 +190,7 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                 .await;
 
             if final_res.is_ok() {
-                let content = if clip.clip_type == "image" { "[Image]".to_string() } else { String::from_utf8_lossy(&clip.content).to_string() };
+                let content = if clip.clip_type == "image" { "[Image]".to_string() } else { String::from_utf8_lossy(&clip.content).into_owned() };
                 let _ = window.emit("clipboard-write", &content);
                 check_auto_paste_and_hide(&window);
             }
@@ -220,12 +220,12 @@ pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Data
             let content_hash = clip.content_hash.clone();
 
             if clip.clip_type == "image" {
-                let filename = String::from_utf8_lossy(&clip.content).to_string();
+                let filename = String::from_utf8_lossy(&clip.content).into_owned();
                 let image_path = db.images_dir.join(&filename);
                 let path_str = image_path.to_string_lossy().to_string();
                 clipboard_write_image(&app, &path_str, &content_hash).await?;
             } else {
-                let content_str = String::from_utf8_lossy(&clip.content).to_string();
+                let content_str = String::from_utf8_lossy(&clip.content).into_owned();
                 clipboard_write_text(&app, &content_str, &content_hash).await?;
             }
 
@@ -261,7 +261,7 @@ pub async fn delete_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Res
 
     if let Some((clip_type, content)) = &clip_info {
         if clip_type == "image" {
-            let filename = String::from_utf8_lossy(content).to_string();
+            let filename = String::from_utf8_lossy(content).into_owned();
             db.remove_image_and_thumb(&filename);
         }
     }
@@ -287,10 +287,8 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
     let folder_filter: Option<i64> = filter_id.as_deref()
         .and_then(|id| id.parse::<i64>().ok());
 
-    // Split query into words for multi-word matching
-    let query_words: Vec<String> = query_lower.split_whitespace()
-        .map(|w| w.to_string())
-        .collect();
+    // Split query into words for multi-word matching — collect as &str slices to avoid allocations
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
     // Search clips, match against preview AND note
     // When a folder is selected, restrict results to that folder
@@ -502,7 +500,7 @@ pub async fn bulk_delete_clips(ids: Vec<String>, db: tauri::State<'_, Arc<Databa
 
     // Clean up image files + thumbnails
     for (_, content) in &image_clips {
-        let filename = String::from_utf8_lossy(content).to_string();
+        let filename = String::from_utf8_lossy(content).into_owned();
         db.remove_image_and_thumb(&filename);
     }
 

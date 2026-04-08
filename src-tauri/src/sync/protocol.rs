@@ -185,7 +185,7 @@ async fn get_all_clips(db: &Database, sync_images: bool) -> Result<Vec<SyncClip>
 
         let folder_uuid = resolve_folder_uuid(db, folder_id).await?;
         let text_content = if clip_type != "image" {
-            Some(String::from_utf8_lossy(&content).to_string())
+            Some(String::from_utf8_lossy(&content).into_owned())
         } else { None };
 
         clips.push(SyncClip {
@@ -217,7 +217,7 @@ async fn get_changed_clips(db: &Database, since: &str, sync_images: bool) -> Res
 
         let folder_uuid = resolve_folder_uuid(db, folder_id).await?;
         let text_content = if clip_type != "image" {
-            Some(String::from_utf8_lossy(&content).to_string())
+            Some(String::from_utf8_lossy(&content).into_owned())
         } else { None };
 
         clips.push(SyncClip {
@@ -466,7 +466,7 @@ async fn push_new_images(
     for (hash, content) in &local_images {
         if remote_hashes.contains(hash) { continue; }
 
-        let filename = String::from_utf8_lossy(content).to_string();
+        let filename = String::from_utf8_lossy(content).into_owned();
         let path = db.images_dir.join(&filename);
         if !path.exists() { continue; }
 

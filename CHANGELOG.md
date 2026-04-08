@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.1] - 2026-04-08
+
+### Fixed
+- **Fix unwrap panics** — replaced 5 `.unwrap()` calls in `lib.rs` and `data.rs` with proper error handling to prevent crashes when window or data directory is unavailable
+- **Batch database rescans** — `rescan_sensitive()` and `rescan_subtypes()` now use batched SQL updates (500 per batch) instead of individual UPDATE per row, significantly faster on large clip histories
+- **Reduce string allocations** — replaced ~25 occurrences of `from_utf8_lossy().to_string()` with `.into_owned()` across the Rust backend, and search words use `&str` slices instead of owned `String`
+
+### Added
+- **React Error Boundary** — wraps the entire app to catch render crashes and show a recovery UI instead of a blank screen
+- **Image loading queue** — fallback image loads (when asset protocol fails) now go through a concurrency-limited queue (max 3 simultaneous) to prevent UI stutter
+- **WAL checkpoint on shutdown** — ensures all data is flushed from WAL to main DB file before closing, preventing data loss on unexpected exits
+- **Periodic WAL checkpoint** — background task checkpoints WAL every 5 minutes, reducing the window of data loss if the process is force-killed
+- **Startup integrity check** — checks database integrity on launch; if corrupt, automatically backs up the bad file and creates a fresh DB with the original schema
+
+### Improved
+- **Smarter preview cache invalidation** — folder preview cache now only invalidates the affected folder's entry instead of clearing the entire cache on every clip change
+
+---
+
 ## [1.7.6] - 2026-04-06
 
 ### Fixed

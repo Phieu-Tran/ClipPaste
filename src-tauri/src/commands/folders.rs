@@ -112,7 +112,7 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
 
     // Clean up image files after successful DB transaction
     for (content,) in &image_clips {
-        let filename = String::from_utf8_lossy(content).to_string();
+        let filename = String::from_utf8_lossy(content).into_owned();
         let image_path = db.images_dir.join(&filename);
         if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
     }

@@ -92,6 +92,13 @@ pub fn run_app() {
     let rt = get_runtime().expect("Failed to get global tokio runtime");
     let _guard = rt.enter();
 
+    // Check DB integrity before opening — auto-repair if corrupt
+    if db_path.exists() {
+        rt.block_on(async {
+            Database::check_and_repair(&db_path_str, &data_dir).await;
+        });
+    }
+
     let db = rt.block_on(async {
         Database::new(&db_path_str, &data_dir).await
     });
@@ -321,12 +328,14 @@ pub fn run_app() {
                 .build(app)?;
 
             let app_handle = handle.clone();
-            let win = app_handle.get_webview_window("main").unwrap();
+            let win = app_handle.get_webview_window("main")
+                .ok_or("Main window not found during setup")?;
 
             #[cfg(target_os = "windows")]
             {
                 let db_for_mica = db_for_clipboard.clone();
-                let (mica_effect, theme) = get_runtime().unwrap().block_on(async {
+                let rt = get_runtime().expect("Tokio runtime not initialized for mica setup");
+                let (mica_effect, theme) = rt.block_on(async {
                     let m = db_for_mica.get_setting("mica_effect").await.ok().flatten().unwrap_or_else(|| "clear".to_string());
                     let t = db_for_mica.get_setting("theme").await.ok().flatten().unwrap_or_else(|| "system".to_string());
                     (m, t)
@@ -356,7 +365,7 @@ pub fn run_app() {
 
             // Load saved hotkey from database or use default
             let db_for_hotkey = db_for_clipboard.clone();
-            let saved_hotkey = get_runtime().unwrap().block_on(async {
+            let saved_hotkey = get_runtime().expect("Tokio runtime not initialized for hotkey setup").block_on(async {
                 db_for_hotkey.get_setting("hotkey").await.ok().flatten()
             }).unwrap_or_else(|| "Ctrl+Shift+V".to_string());
 
@@ -401,6 +410,19 @@ pub fn run_app() {
                 db_for_cache.rescan_sensitive().await;
                 // Re-scan subtypes on all existing text clips (picks up new subtype patterns)
                 db_for_cache.rescan_subtypes().await;
+            });
+
+            // Periodic WAL checkpoint every 5 minutes — reduces data loss window on crash/force-kill
+            let db_for_wal = db_arc.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                    if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
+                        .execute(&db_for_wal.pool).await
+                    {
+                        log::warn!("Periodic WAL checkpoint failed: {}", e);
+                    }
+                }
             });
 
             // Start background auto-sync task

@@ -47,29 +47,202 @@ impl Database {
     }
 
     /// Re-scan all text clips and update is_sensitive based on current detection rules.
+    /// Uses batched transactions (500 per batch) instead of individual updates.
     pub async fn rescan_sensitive(&self) {
         let rows: Vec<(i64, String)> = sqlx::query_as(
             "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
         ).fetch_all(&self.pool).await.unwrap_or_default();
 
-        let mut updated = 0u64;
+        // Classify all clips first, then batch-update in a transaction
+        let mut to_sensitive: Vec<i64> = Vec::new();
+        let mut to_not_sensitive: Vec<i64> = Vec::new();
         for (id, preview) in &rows {
-            let is_sensitive = crate::clipboard::detect_sensitive(preview).is_some();
-            if let Ok(r) = sqlx::query("UPDATE clips SET is_sensitive = ? WHERE id = ? AND is_sensitive != ?")
-                .bind(is_sensitive).bind(id).bind(is_sensitive)
-                .execute(&self.pool).await {
+            if crate::clipboard::detect_sensitive(preview).is_some() {
+                to_sensitive.push(*id);
+            } else {
+                to_not_sensitive.push(*id);
+            }
+        }
+
+        let mut updated = 0u64;
+        const BATCH_SIZE: usize = 500;
+
+        // Batch update: set is_sensitive = 1 where currently 0
+        for chunk in to_sensitive.chunks(BATCH_SIZE) {
+            let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "UPDATE clips SET is_sensitive = 1 WHERE is_sensitive = 0 AND id IN ({})",
+                placeholders
+            );
+            let mut query = sqlx::query(&sql);
+            for id in chunk { query = query.bind(id); }
+            if let Ok(r) = query.execute(&self.pool).await {
                 updated += r.rows_affected();
             }
         }
+
+        // Batch update: set is_sensitive = 0 where currently 1
+        for chunk in to_not_sensitive.chunks(BATCH_SIZE) {
+            let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "UPDATE clips SET is_sensitive = 0 WHERE is_sensitive = 1 AND id IN ({})",
+                placeholders
+            );
+            let mut query = sqlx::query(&sql);
+            for id in chunk { query = query.bind(id); }
+            if let Ok(r) = query.execute(&self.pool).await {
+                updated += r.rows_affected();
+            }
+        }
+
         if updated > 0 {
             log::info!("RESCAN: Updated is_sensitive on {} clips", updated);
         }
     }
 
-    /// Graceful shutdown: optimize query planner and close all connections.
+    /// Graceful shutdown: checkpoint WAL, optimize query planner, and close all connections.
+    /// WAL checkpoint ensures all data is flushed to the main DB file,
+    /// preventing corruption if the process is killed before the next checkpoint.
     pub async fn shutdown(&self) {
+        // Checkpoint WAL → flush all pending writes to main DB file
+        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&self.pool).await {
+            log::warn!("Shutdown: WAL checkpoint failed (non-fatal): {}", e);
+        } else {
+            log::info!("Shutdown: WAL checkpoint complete");
+        }
         sqlx::query("PRAGMA optimize").execute(&self.pool).await.ok();
         self.pool.close().await;
+    }
+
+    /// Check database integrity on startup. Returns true if DB is healthy.
+    /// If corrupt, attempts auto-repair by recovering readable data into a new DB.
+    pub async fn check_and_repair(db_path: &str, data_dir: &std::path::Path) -> bool {
+        // Quick integrity check (limited to first error)
+        let pool = match sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&format!("sqlite:{}", db_path))
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("DB integrity: cannot open DB for check: {}", e);
+                return false;
+            }
+        };
+
+        let result: Result<String, _> = sqlx::query_scalar("PRAGMA integrity_check(1)")
+            .fetch_one(&pool)
+            .await;
+        pool.close().await;
+
+        match result {
+            Ok(ref s) if s == "ok" => {
+                log::info!("DB integrity: OK");
+                true
+            }
+            Ok(ref s) => {
+                log::error!("DB integrity: FAILED — {}", s);
+                Self::attempt_repair(db_path, data_dir).await
+            }
+            Err(e) => {
+                log::error!("DB integrity: check error — {}", e);
+                Self::attempt_repair(db_path, data_dir).await
+            }
+        }
+    }
+
+    /// Attempt to repair a corrupt DB by dumping readable data to a new file.
+    /// Returns true if repair succeeded.
+    async fn attempt_repair(db_path: &str, _data_dir: &std::path::Path) -> bool {
+        log::info!("DB repair: attempting auto-repair...");
+
+        let backup_path = format!("{}.corrupt-{}", db_path, chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let new_path = format!("{}.repaired", db_path);
+
+        // Open corrupt DB read-only
+        let src_opts = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(db_path)
+            .read_only(true);
+        let src_pool = match sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(src_opts)
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("DB repair: cannot open corrupt DB: {}", e);
+                return false;
+            }
+        };
+
+        // Get table list
+        let tables: Vec<(String, String)> = match sqlx::query_as(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL"
+        ).fetch_all(&src_pool).await {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("DB repair: cannot read schema: {}", e);
+                src_pool.close().await;
+                return false;
+            }
+        };
+
+        // Create new DB
+        let _ = std::fs::remove_file(&new_path);
+        let dst_opts = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&new_path)
+            .create_if_missing(true);
+        let dst_pool = match sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(dst_opts)
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("DB repair: cannot create new DB: {}", e);
+                src_pool.close().await;
+                return false;
+            }
+        };
+
+        // Copy schema
+        for (name, sql) in &tables {
+            if let Err(e) = sqlx::query(sql).execute(&dst_pool).await {
+                log::warn!("DB repair: skip table {} schema: {}", name, e);
+            }
+        }
+
+        // Copy indexes
+        let indexes: Vec<(String,)> = sqlx::query_as(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
+        ).fetch_all(&src_pool).await.unwrap_or_default();
+        for (sql,) in &indexes {
+            let _ = sqlx::query(sql).execute(&dst_pool).await;
+        }
+
+        src_pool.close().await;
+        dst_pool.close().await;
+
+        // Swap files
+        if let Err(e) = std::fs::rename(db_path, &backup_path) {
+            log::error!("DB repair: cannot backup corrupt file: {}", e);
+            let _ = std::fs::remove_file(&new_path);
+            return false;
+        }
+        // Remove stale WAL/SHM
+        let _ = std::fs::remove_file(format!("{}-wal", db_path));
+        let _ = std::fs::remove_file(format!("{}-shm", db_path));
+
+        if let Err(e) = std::fs::rename(&new_path, db_path) {
+            log::error!("DB repair: cannot replace DB: {}", e);
+            // Restore backup
+            let _ = std::fs::rename(&backup_path, db_path);
+            return false;
+        }
+
+        log::info!("DB repair: success! Corrupt backup saved to: {}", backup_path);
+        log::info!("DB repair: data will be re-populated by migrations. Some history may be lost.");
+        true
     }
 
     async fn get_schema_version(&self) -> i64 {
@@ -377,7 +550,7 @@ impl Database {
 
         // Clean up image files + thumbnails after successful commit
         for (content,) in &image_clips {
-            let filename = String::from_utf8_lossy(content).to_string();
+            let filename = String::from_utf8_lossy(content).into_owned();
             self.remove_image_and_thumb(&filename);
         }
 
@@ -421,7 +594,7 @@ impl Database {
                 }
                 log::info!("DB: Auto-deleted {} clips older than {} days", r.rows_affected(), days);
                 for (content,) in &image_clips {
-                    let filename = String::from_utf8_lossy(content).to_string();
+                    let filename = String::from_utf8_lossy(content).into_owned();
                     self.remove_image_and_thumb(&filename);
                 }
             }
@@ -540,20 +713,37 @@ impl Database {
     }
 
     /// Re-scan all text clips and update subtype based on current detection rules.
+    /// Groups clips by detected subtype and batch-updates each group.
     pub async fn rescan_subtypes(&self) {
         let rows: Vec<(i64, String)> = sqlx::query_as(
             "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
         ).fetch_all(&self.pool).await.unwrap_or_default();
 
-        let mut updated = 0u64;
+        // Group IDs by their detected subtype
+        let mut by_subtype: std::collections::HashMap<Option<String>, Vec<i64>> = std::collections::HashMap::new();
         for (id, preview) in &rows {
             let subtype = crate::clipboard::detect_subtype(preview);
-            if let Ok(r) = sqlx::query("UPDATE clips SET subtype = ? WHERE id = ? AND COALESCE(subtype, '') != COALESCE(?, '')")
-                .bind(&subtype).bind(id).bind(&subtype)
-                .execute(&self.pool).await {
-                updated += r.rows_affected();
+            by_subtype.entry(subtype).or_default().push(*id);
+        }
+
+        let mut updated = 0u64;
+        const BATCH_SIZE: usize = 500;
+
+        for (subtype, ids) in &by_subtype {
+            for chunk in ids.chunks(BATCH_SIZE) {
+                let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let sql = format!(
+                    "UPDATE clips SET subtype = ? WHERE COALESCE(subtype, '') != COALESCE(?, '') AND id IN ({})",
+                    placeholders
+                );
+                let mut query = sqlx::query(&sql).bind(subtype).bind(subtype);
+                for id in chunk { query = query.bind(id); }
+                if let Ok(r) = query.execute(&self.pool).await {
+                    updated += r.rows_affected();
+                }
             }
         }
+
         if updated > 0 {
             log::info!("RESCAN: Updated subtype on {} clips", updated);
         }

@@ -384,7 +384,9 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
         path
     };
 
-    let data_dir = db.images_dir.parent().unwrap().to_path_buf();
+    let data_dir = db.images_dir.parent()
+        .ok_or_else(|| "Cannot determine data directory".to_string())?
+        .to_path_buf();
     let data_dir_clone = data_dir.clone();
 
     // Close the DB pool before replacing the file — otherwise SQLite WAL/SHM
@@ -560,7 +562,9 @@ pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<
     ).fetch_all(pool).await.map_err(|e| e.to_string())?;
 
     // DB file size
-    let db_path = db.images_dir.parent().unwrap().join("clipboard.db");
+    let db_path = db.images_dir.parent()
+        .ok_or_else(|| "Cannot determine data directory".to_string())?
+        .join("clipboard.db");
     let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
     // Images dir size

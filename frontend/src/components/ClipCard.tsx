@@ -5,15 +5,17 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
 import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert, Phone, Braces, Code2 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { enqueue } from '../imageQueue';
 
-/** Image component that tries asset protocol first, falls back to base64 via get_clip */
+/** Image component that tries asset protocol first, falls back to base64 via get_clip.
+ *  Fallback requests go through a concurrency-limited queue (max 3) to avoid UI stutter. */
 function ImageWithFallback({ src, clipId, alt, className }: { src: string; clipId: string; alt: string; className: string }) {
   const [imgSrc, setImgSrc] = useState(src);
   const [failed, setFailed] = useState(false);
   const handleError = useCallback(() => {
     if (failed) return;
     setFailed(true);
-    invoke<{ content: string; clip_type: string }>('get_clip', { id: clipId })
+    enqueue(() => invoke<{ content: string; clip_type: string }>('get_clip', { id: clipId }))
       .then((clip) => {
         if (clip.clip_type === 'image' && clip.content) {
           setImgSrc(`data:image/png;base64,${clip.content}`);
