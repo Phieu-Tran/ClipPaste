@@ -224,6 +224,62 @@ impl Database {
             log::info!("DB: Applied migration v6 (app_icons: {} apps migrated, {} clip icons cleared)", migrated, cleared);
         }
 
+        if version < 7 {
+            // --- Sync support: updated_at tracking, folder UUIDs, sync metadata ---
+
+            // Add updated_at to clips (tracks last mutation for sync delta detection)
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN updated_at DATETIME DEFAULT NULL")
+                .execute(&self.pool).await;
+            // Backfill: set updated_at = created_at for existing clips
+            let _ = sqlx::query("UPDATE clips SET updated_at = created_at WHERE updated_at IS NULL")
+                .execute(&self.pool).await;
+
+            // Add uuid + updated_at to folders (folders previously had no UUID)
+            let _ = sqlx::query("ALTER TABLE folders ADD COLUMN uuid TEXT DEFAULT NULL")
+                .execute(&self.pool).await;
+            let _ = sqlx::query("ALTER TABLE folders ADD COLUMN updated_at DATETIME DEFAULT NULL")
+                .execute(&self.pool).await;
+            // Generate UUIDs for existing folders
+            let folder_ids: Vec<(i64,)> = sqlx::query_as("SELECT id FROM folders WHERE uuid IS NULL")
+                .fetch_all(&self.pool).await.unwrap_or_default();
+            for (fid,) in &folder_ids {
+                let uuid = uuid::Uuid::new_v4().to_string();
+                let _ = sqlx::query("UPDATE folders SET uuid = ?, updated_at = created_at WHERE id = ?")
+                    .bind(&uuid).bind(fid).execute(&self.pool).await;
+            }
+            // Unique index on folder uuid
+            let _ = sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_uuid ON folders(uuid)")
+                .execute(&self.pool).await;
+
+            // Sync metadata key-value store (device_id, last_sync_at, encryption_salt, etc.)
+            let _ = sqlx::query(
+                "CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            ).execute(&self.pool).await;
+
+            // Deletion tombstones — propagate deletes to other devices
+            let _ = sqlx::query(
+                "CREATE TABLE IF NOT EXISTS sync_tombstones (
+                    uuid TEXT PRIMARY KEY,
+                    entity_type TEXT NOT NULL,
+                    deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )"
+            ).execute(&self.pool).await;
+
+            // Indexes for efficient sync queries (find what changed since last sync)
+            let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_clips_updated ON clips(updated_at)")
+                .execute(&self.pool).await;
+            let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_folders_updated ON folders(updated_at)")
+                .execute(&self.pool).await;
+
+            // Generate device_id for this installation
+            let device_id = uuid::Uuid::new_v4().to_string();
+            let _ = sqlx::query("INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('device_id', ?)")
+                .bind(&device_id).execute(&self.pool).await;
+
+            self.set_schema_version(7).await;
+            log::info!("DB: Applied migration v7 (sync: updated_at, folder UUIDs, sync_meta, tombstones, device_id={})", device_id);
+        }
+
         // === Migrate image blobs to disk ===
         // Images previously stored as BLOBs in content column are now stored as files.
         // content column will hold just the filename (e.g. "abc123.png").

@@ -859,7 +859,7 @@ mod tests {
             let db = setup_test_db().await;
             let version: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
                 .fetch_one(&db.pool).await.unwrap();
-            assert_eq!(version, 6, "Schema version should be 6 after all migrations");
+            assert_eq!(version, 7, "Schema version should be 7 after all migrations");
         }
 
         // --- CRUD tests ---

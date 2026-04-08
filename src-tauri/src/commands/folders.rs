@@ -43,10 +43,12 @@ pub async fn create_folder(name: String, icon: Option<String>, color: Option<Str
     let pool = &db.pool;
 
     // Atomic insert — UNIQUE index on folders.name prevents duplicates without check-then-insert race
-    let result = sqlx::query(r#"INSERT INTO folders (name, icon, color) VALUES (?, ?, ?)"#)
+    let folder_uuid = uuid::Uuid::new_v4().to_string();
+    let result = sqlx::query(r#"INSERT INTO folders (name, icon, color, uuid, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)"#)
         .bind(&name)
         .bind(icon.as_ref())
         .bind(color.as_ref())
+        .bind(&folder_uuid)
         .execute(pool).await;
 
     let id = match result {
@@ -78,10 +80,17 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
 
     let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
 
-    // Collect image filenames before transaction (for filesystem cleanup after)
+    // Collect clip UUIDs + image filenames before transaction (for tombstones + filesystem cleanup)
+    let clip_uuids: Vec<(String,)> = sqlx::query_as(
+        "SELECT uuid FROM clips WHERE folder_id = ?"
+    ).bind(folder_id).fetch_all(pool).await.map_err(|e| e.to_string())?;
     let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
         "SELECT content FROM clips WHERE folder_id = ? AND clip_type = 'image'"
     ).bind(folder_id).fetch_all(pool).await.map_err(|e| e.to_string())?;
+    // Get folder UUID for tombstone
+    let folder_uuid: Option<String> = sqlx::query_scalar(
+        "SELECT uuid FROM folders WHERE id = ?"
+    ).bind(folder_id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
 
     // Atomic: delete clips + folder in a single transaction
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -92,6 +101,14 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
         .bind(folder_id)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Record tombstones for sync propagation
+    for (uuid,) in &clip_uuids {
+        crate::sync::record_tombstone(&db, uuid, "clip").await.ok();
+    }
+    if let Some(ref fuuid) = folder_uuid {
+        crate::sync::record_tombstone(&db, fuuid, "folder").await.ok();
+    }
 
     // Clean up image files after successful DB transaction
     for (content,) in &image_clips {
@@ -123,7 +140,7 @@ pub async fn rename_folder(id: String, name: String, color: Option<String>, icon
         return Err("A folder with this name already exists".to_string());
     }
 
-    sqlx::query(r#"UPDATE folders SET name = ?, color = ?, icon = ? WHERE id = ?"#)
+    sqlx::query(r#"UPDATE folders SET name = ?, color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"#)
         .bind(name)
         .bind(color)
         .bind(icon)
@@ -144,7 +161,7 @@ pub async fn move_to_folder(clip_id: String, folder_id: Option<String>, db: taur
         None => None,
     };
 
-    sqlx::query(r#"UPDATE clips SET folder_id = ? WHERE uuid = ?"#)
+    sqlx::query(r#"UPDATE clips SET folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
         .bind(folder_id)
         .bind(&clip_id)
         .execute(pool).await.map_err(|e| e.to_string())?;
@@ -166,7 +183,7 @@ pub async fn reorder_folders(folder_ids: Vec<String>, db: tauri::State<'_, Arc<D
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     for (idx, id) in folder_ids.iter().enumerate() {
         let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
-        sqlx::query("UPDATE folders SET position = ? WHERE id = ?")
+        sqlx::query("UPDATE folders SET position = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
             .bind(idx as i64)
             .bind(folder_id)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;

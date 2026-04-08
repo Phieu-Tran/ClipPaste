@@ -37,7 +37,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                        text_preview, content_hash,
                        folder_id, is_deleted, source_app, source_icon, metadata,
                        created_at, last_accessed, last_pasted_at, is_pinned,
-                       subtype, note, paste_count, is_sensitive
+                       subtype, note, paste_count, is_sensitive, updated_at
                 FROM clips WHERE paste_count >= 5
                 ORDER BY paste_count DESC, created_at DESC
                 LIMIT ? OFFSET ?
@@ -56,7 +56,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                            text_preview, content_hash,
                            folder_id, is_deleted, source_app, source_icon, metadata,
                            created_at, last_accessed, last_pasted_at, is_pinned,
-                           subtype, note, paste_count, is_sensitive
+                           subtype, note, paste_count, is_sensitive, updated_at
                     FROM clips WHERE folder_id = ?
                     ORDER BY is_pinned DESC,
                              CASE WHEN note IS NOT NULL AND note != '' THEN 0 ELSE 1 END,
@@ -81,7 +81,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                        text_preview, content_hash,
                        folder_id, is_deleted, source_app, source_icon, metadata,
                        created_at, last_accessed, last_pasted_at, is_pinned,
-                       subtype, note, paste_count, is_sensitive
+                       subtype, note, paste_count, is_sensitive, updated_at
                 FROM clips
                 ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
@@ -162,7 +162,7 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
         "SELECT id, uuid, clip_type, content, text_preview, content_hash,
                 folder_id, is_deleted, source_app, '' as source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
-                subtype, note, paste_count, is_sensitive
+                subtype, note, paste_count, is_sensitive, updated_at
          FROM clips WHERE uuid = ?"
     )
         .bind(&id)
@@ -184,7 +184,7 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
             };
 
             // Track when this clip was last pasted + increment paste count
-            let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1 WHERE uuid = ?"#)
+            let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
                 .bind(&uuid)
                 .execute(pool)
                 .await;
@@ -209,7 +209,7 @@ pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Data
         "SELECT id, uuid, clip_type, content, text_preview, content_hash,
                 folder_id, is_deleted, source_app, '' as source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
-                subtype, note, paste_count, is_sensitive
+                subtype, note, paste_count, is_sensitive, updated_at
          FROM clips WHERE uuid = ?"
     )
         .bind(&id)
@@ -269,6 +269,9 @@ pub async fn delete_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Res
     sqlx::query("DELETE FROM clips WHERE uuid = ?")
         .bind(&id)
         .execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Record tombstone for sync propagation
+    crate::sync::record_tombstone(&db, &id, "clip").await.ok();
 
     // Remove from in-memory search cache
     crate::clipboard::remove_from_search_cache(&id);
@@ -355,7 +358,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             "SELECT id, uuid, clip_type, X'' as content, text_preview, content_hash,
                     folder_id, is_deleted, source_app, source_icon, metadata,
                     created_at, last_accessed, last_pasted_at, is_pinned,
-                    subtype, note, paste_count, is_sensitive
+                    subtype, note, paste_count, is_sensitive, updated_at
              FROM clips WHERE uuid IN ({})",
             placeholders
         );
@@ -428,7 +431,7 @@ pub async fn get_initial_state(
                    text_preview, content_hash,
                    folder_id, is_deleted, source_app, source_icon, metadata,
                    created_at, last_accessed, last_pasted_at, is_pinned,
-                   subtype, note, paste_count, is_sensitive
+                   subtype, note, paste_count, is_sensitive, updated_at
             FROM clips
             ORDER BY created_at DESC LIMIT ? OFFSET 0
         "#).bind(limit).fetch_all(pool).await;
@@ -503,8 +506,9 @@ pub async fn bulk_delete_clips(ids: Vec<String>, db: tauri::State<'_, Arc<Databa
         db.remove_image_and_thumb(&filename);
     }
 
-    // Remove from search cache
+    // Record tombstones + remove from search cache
     for id in &ids {
+        crate::sync::record_tombstone(&db, id, "clip").await.ok();
         crate::clipboard::remove_from_search_cache(id);
     }
 
@@ -523,7 +527,7 @@ pub async fn bulk_move_clips(ids: Vec<String>, folder_id: Option<String>, db: ta
     };
 
     let placeholders: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("UPDATE clips SET folder_id = ? WHERE uuid IN ({})", placeholders);
+    let sql = format!("UPDATE clips SET folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid IN ({})", placeholders);
     let mut q = sqlx::query(&sql).bind(folder_id_num);
     for id in &ids { q = q.bind(id); }
     q.execute(pool).await.map_err(|e| e.to_string())?;
@@ -544,7 +548,7 @@ pub async fn bulk_move_clips(ids: Vec<String>, folder_id: Option<String>, db: ta
 #[tauri::command]
 pub async fn toggle_pin(id: String, db: tauri::State<'_, Arc<Database>>) -> Result<bool, String> {
     let pool = &db.pool;
-    sqlx::query("UPDATE clips SET is_pinned = CASE WHEN is_pinned = 0 THEN 1 ELSE 0 END WHERE uuid = ?")
+    sqlx::query("UPDATE clips SET is_pinned = CASE WHEN is_pinned = 0 THEN 1 ELSE 0 END, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?")
         .bind(&id)
         .execute(pool).await.map_err(|e| e.to_string())?;
 
@@ -558,7 +562,7 @@ pub async fn toggle_pin(id: String, db: tauri::State<'_, Arc<Database>>) -> Resu
 #[tauri::command]
 pub async fn update_note(id: String, note: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
-    sqlx::query("UPDATE clips SET note = ? WHERE uuid = ?")
+    sqlx::query("UPDATE clips SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?")
         .bind(&note)
         .bind(&id)
         .execute(pool).await.map_err(|e| e.to_string())?;

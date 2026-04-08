@@ -603,7 +603,7 @@ pub async fn get_clips_by_date(date: String, search: Option<String>, source_app:
                 text_preview, content_hash,
                 folder_id, is_deleted, source_app, source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
-                subtype, note, paste_count, is_sensitive
+                subtype, note, paste_count, is_sensitive, updated_at
          FROM clips WHERE date(created_at, 'localtime') = ?"
     );
     if has_search { sql.push_str(" AND text_preview LIKE ?"); }

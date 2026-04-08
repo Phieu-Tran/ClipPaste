@@ -584,7 +584,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         } else {
             false
         };
-        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, is_sensitive = ? WHERE uuid = ?"#)
+        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, is_sensitive = ? WHERE uuid = ?"#)
             .bind(is_sensitive)
             .bind(&existing_id)
             .execute(pool)
@@ -620,8 +620,8 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         }
 
         if let Err(e) = sqlx::query(r#"
-            INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, subtype, is_sensitive, created_at, last_accessed)
-            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, subtype, is_sensitive, created_at, last_accessed, updated_at)
+            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#)
         .bind(&clip_uuid)
         .bind(clip_type)

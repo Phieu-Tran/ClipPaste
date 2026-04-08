@@ -72,6 +72,16 @@
 | 🏆 | **Top Apps** | Most used source apps with visual bar chart |
 | 💾 | **Export / Import** | Backup & restore as zip (DB + images) |
 
+### Sync
+
+| | Feature | Description |
+|:---:|:---|:---|
+| ☁️ | **Google Drive Sync** | Sync clips & folders across devices via Google Drive |
+| ⚡ | **Delta Sync** | Only uploads changes — not the entire history every time |
+| 🔄 | **Auto & Manual Sync** | Configurable interval (1m–1h) + manual sync button |
+| 🖼️ | **Image Sync** | Optionally sync image clips (toggle on/off, 10MB limit) |
+| 🗑️ | **Deletion Propagation** | Deletes sync across devices via tombstones (30-day TTL) |
+
 ### Appearance & System
 
 | | Feature | Description |
@@ -165,13 +175,24 @@ graph TB
         end
 
         clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect,<br/>sensitive detect, incognito mode</small>"]
-        database["database.rs<br/><small>SQLite pool, migrations v1-v5</small>"]
+        database["database.rs<br/><small>SQLite pool, migrations v1-v7</small>"]
         caches["In-Memory Caches<br/><small>SEARCH_CACHE (HashMap 50K cap)<br/>SETTINGS_CACHE · ICON_CACHE (LRU 100)</small>"]
+
+        subgraph Sync["sync/"]
+            oauth["oauth.rs<br/><small>Google OAuth2 loopback</small>"]
+            drive["drive.rs<br/><small>Drive API (appDataFolder)</small>"]
+            protocol["protocol.rs<br/><small>push/pull/merge</small>"]
+            encryption["encryption.rs<br/><small>XChaCha20-Poly1305 + Argon2id</small>"]
+        end
     end
 
     subgraph Storage["Storage (local disk)"]
         db[("clipboard.db<br/><small>SQLite WAL</small>")]
         images["images/<br/><small>{sha256}.png</small>"]
+    end
+
+    subgraph Cloud["Google Drive (appDataFolder)"]
+        driveFiles["clip_*.enc / folder_*.enc<br/><small>encrypted sync data</small>"]
     end
 
     Components -- "invoke()" --> Commands
@@ -180,6 +201,8 @@ graph TB
     clipboard --> caches
     database --> db
     database --> images
+    Sync --> driveFiles
+    Sync --> database
 
     style Frontend fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
     style Backend fill:#1e293b,stroke:#f59e0b,color:#e2e8f0
@@ -187,6 +210,8 @@ graph TB
     style Hooks fill:#0f172a,stroke:#6366f1,color:#c7d2fe
     style Components fill:#0f172a,stroke:#6366f1,color:#c7d2fe
     style Commands fill:#0f172a,stroke:#d97706,color:#fde68a
+    style Sync fill:#0f172a,stroke:#8b5cf6,color:#ddd6fe
+    style Cloud fill:#1e293b,stroke:#6366f1,color:#e2e8f0
 ```
 
 ### Clipboard Data Flow
@@ -329,6 +354,83 @@ pnpm tauri build
 # Run Rust tests
 cd src-tauri && cargo test
 ```
+
+---
+
+## Google Drive Sync Setup
+
+ClipPaste can sync your clipboard history across devices using Google Drive.
+
+### How It Works
+
+```
+Device A                     Google Drive (hidden app folder)           Device B
+┌──────────┐    delta       ┌──────────────────────────────┐   delta   ┌──────────┐
+│ SQLite   │───────────────►│  sync_state.json (full)      │──────────►│ SQLite   │
+│ + images │                │  delta_{device}.json (small)  │           │ + images │
+└──────────┘◄───────────────│  img_{hash}.png              │◄──────────└──────────┘
+                            └──────────────────────────────┘
+```
+
+- Uses Google Drive's **appDataFolder** — a hidden folder that doesn't clutter your Drive
+- **Delta sync** — only uploads changes, not the entire history every time
+- **Last-writer-wins** conflict resolution by `updated_at` timestamp
+- Deletions propagate via **tombstones** (auto-cleaned after 30 days)
+- Auto-compact every 50 deltas into a fresh full state
+- Images over 10MB are skipped; image sync can be disabled entirely
+
+### Step 1: Create Google Cloud Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select an existing one)
+3. Enable the **Google Drive API**:
+   - Navigate to **APIs & Services > Library**
+   - Search for "Google Drive API" and click **Enable**
+4. Create OAuth credentials:
+   - Go to **APIs & Services > Credentials**
+   - Click **Create Credentials > OAuth client ID**
+   - Application type: **Desktop app**
+   - Name: `ClipPaste`
+   - Click **Create** — note your **Client ID** and **Client Secret**
+5. Configure the consent screen:
+   - Go to **APIs & Services > OAuth consent screen**
+   - User type: **External** (or Internal if using Google Workspace)
+   - Fill in app name: `ClipPaste`
+   - Add scope: `https://www.googleapis.com/auth/drive.appdata`
+   - Add your email as a test user (required while in "Testing" status)
+
+### Step 2: Configure ClipPaste
+
+If you are building from source, set your credentials in `src-tauri/src/sync/oauth.rs`:
+
+```rust
+const CLIENT_ID: &str = "your-client-id.apps.googleusercontent.com";
+const CLIENT_SECRET: &str = "your-client-secret";
+```
+
+Then rebuild the app.
+
+### Step 3: Connect & Sync
+
+1. Open **Settings > Sync**
+2. Click **Connect Google Drive** — your browser opens for Google sign-in
+3. After authorizing, your email appears in the Sync tab
+4. Toggle **Auto-sync** on and choose an interval (default: 5 minutes)
+5. Click **Sync Now** for an immediate sync
+
+### Setting Up a Second Device
+
+1. Install ClipPaste and open **Settings > Sync**
+2. Click **Connect Google Drive** with the **same Google account**
+3. Click **Sync Now** — all your clips and folders will sync down
+
+### Sync Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| Auto-sync | Off | Automatically sync on a schedule |
+| Interval | 5 minutes | How often to auto-sync (1m / 5m / 15m / 30m / 1h) |
+| Sync images | On | Include image clips in sync (disable to save bandwidth) |
 
 ---
 

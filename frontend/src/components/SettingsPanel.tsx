@@ -5,6 +5,7 @@ import {
   Folder as FolderIcon,
   BarChart3,
   Keyboard,
+  Cloud,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../hooks/useTheme';
@@ -23,13 +24,14 @@ import { DashboardTab } from './settings/DashboardTab';
 import { GeneralTab } from './settings/GeneralTab';
 import { FoldersTab } from './settings/FoldersTab';
 import { HotkeysTab } from './settings/HotkeysTab';
+import { SyncTab } from './settings/SyncTab';
 
 interface SettingsPanelProps {
   settings: Settings;
   onClose: () => void;
 }
 
-type Tab = 'dashboard' | 'general' | 'folders' | 'hotkeys';
+type Tab = 'dashboard' | 'general' | 'folders' | 'hotkeys' | 'sync';
 
 interface DashboardStats {
   total: number;
@@ -386,6 +388,18 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                 <Keyboard size={16} />
                 Hotkeys
               </button>
+              <button
+                onClick={() => setActiveTab('sync')}
+                className={clsx(
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  activeTab === 'sync'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )}
+              >
+                <Cloud size={16} />
+                Sync
+              </button>
             </div>
           </div>
 
@@ -446,6 +460,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
               )}
 
               {activeTab === 'hotkeys' && <HotkeysTab currentHotkey={settings.hotkey} />}
+
+              {activeTab === 'sync' && <SyncTab />}
             </div>
           </div>
         </div>

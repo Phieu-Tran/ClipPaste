@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ClipPaste** is a cross-platform clipboard history manager for **Windows and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.7.6`.
+**ClipPaste** is a cross-platform clipboard history manager for **Windows and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.8.0`.
 
 ### Platform Support
 
@@ -32,6 +32,8 @@ Platform-specific code is gated behind `#[cfg(target_os = "...")]`. macOS auto-p
 | Global shortcut | tauri-plugin-global-shortcut |
 | Auto-start | tauri-plugin-autostart |
 | Analytics | tauri-plugin-aptabase |
+| Sync transport | Google Drive API (appDataFolder, delta-based) |
+| HTTP client | reqwest (rustls-tls) |
 
 ## Directory Structure
 
@@ -53,7 +55,8 @@ ClipPaste/
 │   │       ├── GeneralTab.tsx
 │   │       ├── FoldersTab.tsx
 │   │       ├── DashboardTab.tsx
-│   │       └── HotkeysTab.tsx
+│   │       ├── HotkeysTab.tsx
+│   │       └── SyncTab.tsx    # Google Drive sync settings
 │   ├── hooks/
 │   │   ├── useKeyboard.ts    # Keyboard shortcuts (Esc, Ctrl+F, arrows, Enter, E, P, Ctrl+Delete)
 │   │   ├── useTheme.ts       # Theme management
@@ -79,14 +82,23 @@ ClipPaste/
 │   │   ├── folders.rs     # get/create/delete/rename/move/reorder
 │   │   ├── settings.rs    # get/save settings, ignored apps, hotkey, cleanup
 │   │   ├── data.rs        # export/import, dashboard, timeline, file/folder picker
-│   │   │   ├── window.rs      # show/hide/focus, dragging, ping, incognito toggle
-│   │   └── helpers.rs     # clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text
+│   │   ├── window.rs      # show/hide/focus, dragging, ping, incognito toggle
+│   │   ├── helpers.rs     # clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text
+│   │   └── sync.rs        # Google Drive sync commands
+│   ├── sync/              # Google Drive sync module
+│   │   ├── mod.rs         # Sync orchestration, token management, background auto-sync
+│   │   ├── oauth.rs       # OAuth2 loopback flow, token exchange/refresh
+│   │   ├── drive.rs       # Google Drive API client (appDataFolder)
+│   │   ├── protocol.rs    # Push/pull/merge algorithm, conflict resolution
+│   │   ├── encryption.rs  # XChaCha20-Poly1305 + Argon2id encryption
+│   │   ├── models.rs      # SyncStatus, SyncSettings, SyncClip, SyncFolder, SyncIndex
+│   │   └── error.rs       # SyncError enum
 │   ├── clipboard.rs       # Clipboard monitoring, caches, sensitive detection, incognito mode
-│   ├── database.rs        # SQLite pool + migrations (v1-v5)
+│   ├── database.rs        # SQLite pool + migrations (v1-v7)
 │   ├── models.rs          # Rust structs (Clip, Folder, ClipboardItem, etc.)
 │   ├── constants.rs       # WINDOW_HEIGHT=330.0, WINDOW_MARGIN=0.0
 │   ├── utils.rs           # Path helpers (config, data dir)
-│   └── tests.rs           # 88 unit + integration tests
+│   └── tests.rs           # 93 unit + integration tests
 │
 └── src-tauri/
     ├── Cargo.toml         # Rust dependencies
@@ -101,27 +113,44 @@ ClipPaste/
 clips (id, uuid, clip_type, content BLOB, text_preview, content_hash,
        folder_id, is_deleted, source_app, source_icon, metadata,
        subtype, note, paste_count, is_pinned, is_sensitive,
-       created_at, last_accessed, last_pasted_at)
-folders (id, name, icon, color, is_system, position, created_at)
+       created_at, last_accessed, last_pasted_at, updated_at)
+folders (id, name, icon, color, is_system, position, created_at, uuid, updated_at)
 settings (key TEXT PK, value TEXT)
 ignored_apps (id, app_name UNIQUE)
+sync_meta (key TEXT PK, value TEXT)          -- device_id, encryption_salt, etc.
+sync_tombstones (uuid TEXT PK, entity_type TEXT, deleted_at DATETIME)
 ```
 
 ## Tauri Commands (invoked from frontend)
 
 ```
+# Clips
 get_clips, get_clip, get_initial_state, paste_clip, copy_clip, delete_clip, search_clips
-get_folders, create_folder, rename_folder, delete_folder, move_to_folder
+toggle_pin, update_note, paste_text, bulk_delete_clips, bulk_move_clips
+rescan_sensitive, rescan_subtypes
+
+# Folders
+get_folders, create_folder, rename_folder, delete_folder, move_to_folder, reorder_folders
+
+# Settings
 get_settings, save_settings
-get_clipboard_history_size, clear_clipboard_history, clear_all_clips, remove_duplicate_clips
-register_global_shortcut, show_window, hide_window, focus_window
 add_ignored_app, remove_ignored_app, get_ignored_apps
-pick_file, pick_folder, get_layout_config
+register_global_shortcut, get_layout_config
 get_data_directory, set_data_directory
-set_dragging, reorder_folders, toggle_pin, paste_text
-bulk_delete_clips, bulk_move_clips
+
+# Window
+show_window, hide_window, focus_window, set_dragging, ping, test_log
+toggle_incognito, get_incognito_status
+
+# Data
+get_clipboard_history_size, clear_clipboard_history, clear_all_clips, remove_duplicate_clips
 export_data, import_data, get_dashboard_stats, get_clips_by_date, get_clip_dates
-update_note, toggle_incognito, get_incognito_status, ping, test_log
+pick_file, pick_folder
+
+# Sync (Google Drive)
+get_sync_status, get_sync_settings, save_sync_settings
+gdrive_authorize, gdrive_disconnect
+sync_now
 ```
 
 ## Core Flows
@@ -132,6 +161,48 @@ update_note, toggle_incognito, get_incognito_status, ping, test_log
 4. **Window effects (Windows)**: Mica / Mica Alt (Tabbed) / Acrylic / Blur / Clear, using `window-vibrancy` fork
 5. **Search**: Client-side pre-filter (instant) + backend LIKE query (skip image BLOBs, 2000-char text_preview). Debounce 80ms. Generation counter discards stale responses
 6. **Drag-copy**: HTML5 Drag API — cards are `draggable`, `dataTransfer` carries text/plain or image file. Works for both internal folder moves and external app drops
+7. **Google Drive sync**: `sync/protocol.rs` — delta-based sync via Google Drive appDataFolder. Full state uploaded on first sync, then only small delta files for changes. Auto-compact when >50 deltas accumulate. Background auto-sync task polls at configurable interval.
+
+## Sync Architecture
+
+```
+Device A → delta JSON → Google Drive appDataFolder → delta JSON → Device B
+```
+
+**Storage on Drive (appDataFolder — hidden, per-user):**
+- `sync_state.json` — full snapshot (all clips + folders), uploaded on first sync and during compaction
+- `delta_{device_id}.json` — small delta per device, contains only changes since last sync
+- `img_{hash}.png` — image files, uploaded separately, deduplicated by content hash
+
+**Sync flow:**
+- **0 changes**: list files → no new deltas → skip (1 lightweight API call)
+- **2 clips new**: list files → upload delta ~500 bytes (2 API calls)
+- **First sync**: upload full state ~2-5MB (2 API calls)
+- **New device**: download state + deltas (2-3 API calls)
+- **Compact** (every 50 deltas): merge all into fresh state, delete old deltas
+
+**Design decisions:**
+- **Delta-based**: only upload what changed, not the entire state every time
+- **Conflict resolution**: Last-writer-wins by `updated_at` timestamp
+- **Deletion propagation**: Tombstones in `sync_tombstones` table, included in deltas, auto-cleaned after 30 days
+- **OAuth2**: Loopback redirect to `127.0.0.1:{random_port}`, Google-recommended for desktop apps
+- **No encryption**: Data stored as plaintext JSON in appDataFolder (hidden, only accessible by ClipPaste)
+- **Image sync**: Optional, content-hash dedup, 10MB size limit, thumbnails regenerated locally
+- **Background task**: Tokio task polls at configurable interval (min 60s), stoppable via watch channel
+- **Smart skip**: No changes detected → no upload, saves bandwidth
+
+### Sync Settings (in `settings` table)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `sync_enabled` | `false` | Enable auto-sync |
+| `sync_interval_seconds` | `300` | Auto-sync interval (min 60s) |
+| `sync_images` | `true` | Include images in sync |
+| `sync_email` | — | Connected Google account email |
+| `sync_access_token` | — | OAuth2 access token |
+| `sync_refresh_token` | — | OAuth2 refresh token |
+| `sync_token_expires_at` | — | Token expiry (Unix timestamp) |
+| `sync_last_sync_at` | — | Last successful sync timestamp |
 
 ## Settings
 
@@ -176,6 +247,12 @@ pnpm format             # Prettier format frontend/src/**
 - Main window auto-hides on blur, unless the settings window is open
 - Tray icon: `src-tauri/icons/tray.png`
 - `bundle.publisher` in `tauri.conf.json` is set to `"Phieu-Tran"` — this controls the **Company** field shown in Windows Add/Remove Programs. Without it, Tauri extracts the middle segment of `identifier` (`me.xueshi.clipboard` → `xueshi`) as the publisher name
+- All clip/folder mutations set `updated_at = CURRENT_TIMESTAMP` for sync delta detection
+- All clip/folder deletes record a tombstone in `sync_tombstones` for sync propagation
+- Folders now have a `uuid` column (generated in migration v7) for cross-device identification
+- Google OAuth2 CLIENT_ID/SECRET are embedded in `sync/oauth.rs` — safe for desktop apps per Google's guidelines
+- Sync uses delta-based approach: full state on first sync, then small delta files for changes. Auto-compact every 50 deltas
+- Each user's sync data is stored in their own Google Drive appDataFolder (hidden, isolated per-user per-app)
 
 ## Folder Protection Rules
 

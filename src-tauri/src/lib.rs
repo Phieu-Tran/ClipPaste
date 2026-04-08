@@ -38,6 +38,7 @@ mod models;
 mod commands;
 mod constants;
 pub mod utils;
+pub mod sync;
 
 #[cfg(test)]
 mod tests;
@@ -402,6 +403,10 @@ pub fn run_app() {
                 db_for_cache.rescan_subtypes().await;
             });
 
+            // Start background auto-sync task
+            let db_for_sync = db_arc.clone();
+            sync::start_auto_sync(db_for_sync);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -452,7 +457,13 @@ pub fn run_app() {
             commands::get_incognito_status,
             commands::get_initial_state,
             commands::rescan_sensitive,
-            commands::rescan_subtypes
+            commands::rescan_subtypes,
+            commands::get_sync_status,
+            commands::get_sync_settings,
+            commands::save_sync_settings,
+            commands::gdrive_authorize,
+            commands::gdrive_disconnect,
+            commands::sync_now
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -23,6 +23,7 @@ pub struct Clip {
     pub note: Option<String>,
     pub paste_count: i64,
     pub is_sensitive: bool,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -33,6 +34,8 @@ pub struct Folder {
     pub color: Option<String>,
     pub is_system: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub uuid: Option<String>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
