@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.2] - 2026-04-09
+## [1.8.3] - 2026-04-09
 
 ### Fixed
-- **Sync no longer creates duplicate folders/clips** — when UUID doesn't match locally (e.g. after DB repair), sync now matches clips by `content_hash` and folders by name, adopting the remote UUID instead of creating duplicates with "(synced)" suffix
+- **Sync no longer creates duplicate folders/clips** — when UUID doesn't match locally (e.g. after DB repair), sync now matches clips by `content_hash` and folders by name, adopting the remote UUID instead of creating duplicates
+- **Auto-cleanup "(synced)" folders** — sync automatically skips artifact folders with "(synced)" suffix from cloud, and merges any existing local "(synced)" folders into their originals
 - **Deduplicated rescan commands** — `rescan_sensitive` and `rescan_subtypes` commands now delegate to the batched database methods instead of using N+1 individual queries
 
 ---

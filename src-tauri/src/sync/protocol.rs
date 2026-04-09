@@ -385,6 +385,12 @@ async fn apply_delta(
 
     // Apply folder changes
     for folder in &delta.folders {
+        // Skip folders with "(synced)" suffix — these are artifacts from a previous bug
+        if folder.name.ends_with(" (synced)") {
+            log::info!("Sync: skipping artifact folder '{}' (uuid={})", folder.name, folder.uuid);
+            continue;
+        }
+
         let should_apply = match local_folders.get(&folder.uuid) {
             None => true,
             Some(local_ts) => folder.updated_at > *local_ts,
@@ -418,6 +424,28 @@ async fn apply_delta(
             }
         }
         report.pulled_folders += 1;
+    }
+
+    // Cleanup: merge any existing "(synced)" folders into their originals
+    let synced_folders: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, name FROM folders WHERE name LIKE '% (synced)'"
+    ).fetch_all(&db.pool).await.unwrap_or_default();
+    for (synced_id, synced_name) in &synced_folders {
+        let orig_name = synced_name.trim_end_matches(" (synced)");
+        let orig_id: Option<i64> = sqlx::query_scalar("SELECT id FROM folders WHERE name = ?")
+            .bind(orig_name).fetch_optional(&db.pool).await.unwrap_or(None);
+        if let Some(oid) = orig_id {
+            let _ = sqlx::query("UPDATE clips SET folder_id = ? WHERE folder_id = ?")
+                .bind(oid).bind(synced_id).execute(&db.pool).await;
+            let _ = sqlx::query("DELETE FROM folders WHERE id = ?")
+                .bind(synced_id).execute(&db.pool).await;
+            log::info!("Sync cleanup: merged '{}' into '{}'", synced_name, orig_name);
+        } else {
+            let _ = sqlx::query("UPDATE folders SET name = ? WHERE id = ?")
+                .bind(orig_name).bind(synced_id).execute(&db.pool).await;
+            log::info!("Sync cleanup: renamed '{}' → '{}'", synced_name, orig_name);
+        }
+        report.deleted += 1;
     }
 
     // Apply tombstones
