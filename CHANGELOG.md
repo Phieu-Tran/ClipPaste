@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.4] - 2026-04-09
+
+### Added
+- **Search persists across window toggles** — search text stays when reopening the window, only clears on Esc
+- **Paste bumps clip to top** — pasting a clip now moves it to the top of the list (updates `created_at`)
+- **Typo-tolerant fuzzy search** — new tier 4 search using edit distance (Levenshtein), allowing 1-2 typos depending on word length
+
+### Fixed
+- **Fuzzy search no longer matches random gibberish** — subsequence matching now requires 30% compactness density, preventing false positives from scattered character matches
+
+---
+
 ## [1.8.3] - 2026-04-09
 
 ### Fixed

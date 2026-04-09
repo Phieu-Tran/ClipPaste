@@ -195,14 +195,13 @@ function App() {
       focusTimerRef.current = setTimeout(() => {
         setSelectedClipId(null);
         setSelectedClipIds(new Set());
-        // Keep selectedFolder — user stays in their folder across window toggles
-        setSearchQuery('');
-        setSearchInput('');
-        setClipFilter(null);
+        // Keep selectedFolder + search — user stays in their context across window toggles
+        // Search is only cleared explicitly via Esc key
         setPreviewFolder(undefined);
         setWindowFocusCount((c) => c + 1);
-        // Use batch IPC when in "All" view with no search — 1 call instead of 3
-        if (!selectedFolderRef.current) {
+        // Reload clips (respecting current search query if any)
+        const currentSearch = searchInputRef.current?.value || '';
+        if (!selectedFolderRef.current && !currentSearch) {
           invoke<{ clips: AppClipboardItem[]; folders: any[]; total_count: number }>('get_initial_state', {
             filterId: null,
             limit: 20,
@@ -210,17 +209,14 @@ function App() {
             setClips(state.clips);
             setHasMore(state.clips.length === 20);
             setIsLoading(false);
-            // Update folders and total count from batch response
             if (state.folders) {
-              // loadFolders data comes from useFolderActions — update via its setter
               debouncedFolderRefreshRef.current();
             }
           }).catch(() => {
-            // Fallback to individual calls
             loadClipsRef.current(null, false, '');
           });
         } else {
-          loadClipsRef.current(selectedFolderRef.current, false, '');
+          loadClipsRef.current(selectedFolderRef.current, false, currentSearch);
         }
       }, 150);
     });

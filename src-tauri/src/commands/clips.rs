@@ -5,20 +5,85 @@ use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
 use super::helpers::{clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text, clipboard_write_image};
 
-/// Simple fuzzy match: checks if all characters of `needle` appear in `haystack` in order.
-/// E.g. "apikey" fuzzy-matches "api_key", "API_KEY", "my_api_key_value".
+/// Fuzzy subsequence match: checks if all characters of `needle` appear in `haystack` in order,
+/// but only matches if the characters are reasonably close together (not scattered across a long string).
+/// Compactness ratio = needle_len / span. Must be >= 0.3 to avoid random garbage matches.
 pub fn fuzzy_contains(haystack: &str, needle: &str) -> bool {
-    let mut hay_chars = haystack.chars();
+    let needle_len = needle.chars().count();
+    if needle_len == 0 { return true; }
+    if needle_len <= 2 { return haystack.contains(needle); } // too short for fuzzy
+
+    let hay_chars: Vec<char> = haystack.chars().collect();
+    let mut hay_idx = 0;
+    let mut first_match: Option<usize> = None;
+    let mut last_match = 0;
+
     for nc in needle.chars() {
-        loop {
-            match hay_chars.next() {
-                Some(hc) if hc == nc => break,
-                Some(_) => continue,
-                None => return false,
+        let mut found = false;
+        while hay_idx < hay_chars.len() {
+            if hay_chars[hay_idx] == nc {
+                if first_match.is_none() { first_match = Some(hay_idx); }
+                last_match = hay_idx;
+                hay_idx += 1;
+                found = true;
+                break;
             }
+            hay_idx += 1;
+        }
+        if !found { return false; }
+    }
+
+    // Compactness check: matched characters shouldn't be too spread out
+    let span = last_match - first_match.unwrap_or(0) + 1;
+    let ratio = needle_len as f64 / span as f64;
+    ratio >= 0.3 // at least 30% density
+}
+
+/// Edit distance between two strings (Levenshtein). Capped at `max_dist` for performance.
+/// Returns None if distance exceeds max_dist (early termination).
+fn edit_distance(a: &str, b: &str, max_dist: usize) -> Option<usize> {
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
+    if a_len.abs_diff(b_len) > max_dist { return None; }
+
+    let b_chars: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0usize; b_len + 1];
+
+    for (i, ac) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        let mut row_min = curr[0];
+        for (j, &bc) in b_chars.iter().enumerate() {
+            let cost = if ac == bc { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost)
+                .min(prev[j + 1] + 1)
+                .min(curr[j] + 1);
+            row_min = row_min.min(curr[j + 1]);
+        }
+        if row_min > max_dist { return None; }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    let dist = prev[b_len];
+    if dist <= max_dist { Some(dist) } else { None }
+}
+
+/// Check if any word in `haystack` approximately matches `needle` within allowed edit distance.
+/// Allowed distance scales with word length: len<=3 → 0, len<=6 → 1, len>6 → 2.
+fn approx_word_match(haystack: &str, needle: &str) -> bool {
+    let max_dist = match needle.len() {
+        0..=3 => 0,   // short words: exact only
+        4..=6 => 1,   // medium: 1 typo
+        _ => 2,        // long: 2 typos
+    };
+    if max_dist == 0 { return haystack.contains(needle); }
+    // Check each word in haystack
+    for word in haystack.split(|c: char| c.is_whitespace() || c == '/' || c == '-' || c == '_' || c == '.' || c == ':') {
+        if word.is_empty() { continue; }
+        if edit_distance(word, needle, max_dist).is_some() {
+            return true;
         }
     }
-    true
+    false
 }
 
 #[tauri::command]
@@ -183,8 +248,8 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                 clipboard_write_text(&app, &content_str, &content_hash).await
             };
 
-            // Track when this clip was last pasted + increment paste count
-            let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
+            // Track paste + bump to top of list (created_at = now moves it to position 1)
+            let _ = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
                 .bind(&uuid)
                 .execute(pool)
                 .await;
@@ -293,37 +358,36 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
     // Search clips, match against preview AND note
     // When a folder is selected, restrict results to that folder
     // Uses HashMap-based SEARCH_CACHE: uuid → (preview, folder_id, note)
-    // match_tier: 0=exact phrase, 1=all words substring, 2=note match, 3=fuzzy
+    // match_tier: 0=exact phrase, 1=all words substring, 2=note match, 3=fuzzy subsequence, 4=approx (typo-tolerant)
     let matched: Vec<(String, Option<i64>, u8)> = {
         let cache = crate::clipboard::SEARCH_CACHE.read();
         cache.iter()
             .filter(|(_, (_, fid, _))| {
-                // When folder is selected, only search within that folder
                 match folder_filter {
                     Some(target_fid) => *fid == Some(target_fid),
                     None => true,
                 }
             })
             .filter_map(|(uuid, (preview, fid, note))| {
-                // Tier 0: exact phrase match (all words adjacent in original order)
-                let exact_phrase = preview.contains(&query_lower);
-                if exact_phrase {
+                // Tier 0: exact phrase match
+                if preview.contains(&query_lower) {
                     return Some((uuid.clone(), *fid, 0u8));
                 }
                 // Tier 1: all words present as substrings (AND match)
-                let in_preview = query_words.iter().all(|word| preview.contains(word));
-                if in_preview {
+                if query_words.iter().all(|word| preview.contains(word)) {
                     return Some((uuid.clone(), *fid, 1u8));
                 }
                 // Tier 2: match in note
-                let in_note = !note.is_empty() && query_words.iter().all(|word| note.contains(word));
-                if in_note {
+                if !note.is_empty() && query_words.iter().all(|word| note.contains(word)) {
                     return Some((uuid.clone(), *fid, 2u8));
                 }
-                // Tier 3: fuzzy subsequence match
-                let fuzzy = query_words.iter().all(|word| fuzzy_contains(preview, word));
-                if fuzzy {
+                // Tier 3: fuzzy subsequence match (characters in order)
+                if query_words.iter().all(|word| fuzzy_contains(preview, word)) {
                     return Some((uuid.clone(), *fid, 3u8));
+                }
+                // Tier 4: approximate match (edit distance — tolerates typos)
+                if query_words.iter().all(|word| approx_word_match(preview, word)) {
+                    return Some((uuid.clone(), *fid, 4u8));
                 }
                 None
             })
