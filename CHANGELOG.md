@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.5] - 2026-04-09
+
+### Added
+- **33 sync protocol tests** — comprehensive unit tests for `apply_delta` (insert, update, skip, hash dedup, tombstone delete, folder reconciliation, "(synced)" cleanup), `build_full_state`, and SyncReport tracking; total Rust tests: 93 → 126
+- **Google Drive API rate limiting** — retry up to 3x on HTTP 429/503 with exponential backoff (1s → 2s → 4s + jitter), respects `Retry-After` header, new `SyncError::RateLimited` variant for UI feedback
+
+### Changed
+- **App.tsx refactored** — extracted 3 new hooks (`useWindowLifecycle`, `useSearch`, `useMultiSelect`), reducing App.tsx from 698 → 554 lines; zero behavioral changes
+- **Sync protocol visibility** — `SyncState`, `SyncDelta`, `apply_delta`, `build_full_state` now `pub(crate)` for testability
+
+---
+
 ## [1.8.4] - 2026-04-09
 
 ### Added

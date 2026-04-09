@@ -1125,4 +1125,936 @@ mod tests {
             assert!(file_path.exists(), "Tracked image should NOT be deleted");
         }
     }
+
+    // === Sync protocol tests ===
+
+    mod sync_protocol_tests {
+        use crate::database::Database;
+        use crate::sync::drive::DriveClient;
+        use crate::sync::models::*;
+        use crate::sync::protocol::{SyncState, SyncDelta, SyncReport, apply_delta, build_full_state};
+
+        /// Create a temporary test database with all migrations applied
+        async fn setup_test_db() -> Database {
+            let temp_dir = std::env::temp_dir().join(format!("clippaste_sync_test_{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&temp_dir).unwrap();
+            let db_path = temp_dir.join("test.db");
+            let db = Database::new(db_path.to_str().unwrap(), &temp_dir).await;
+            db.migrate().await.expect("Migration should succeed");
+            db
+        }
+
+        /// Create a DriveClient with a fake token (no HTTP calls for text-only tests)
+        fn fake_drive() -> DriveClient {
+            DriveClient::new("fake-token-for-testing")
+        }
+
+        /// Helper: insert a text clip with explicit uuid, content, hash, and timestamps
+        async fn insert_clip_full(
+            db: &Database,
+            uuid: &str,
+            text: &str,
+            hash: &str,
+            folder_id: Option<i64>,
+            created_at: &str,
+            updated_at: &str,
+        ) {
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id,
+                        is_deleted, is_pinned, is_sensitive, paste_count, created_at, last_accessed, updated_at)
+                 VALUES (?, 'text', ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?)"
+            )
+            .bind(uuid)
+            .bind(text.as_bytes())
+            .bind(&text[..text.len().min(2000)])
+            .bind(hash)
+            .bind(folder_id)
+            .bind(created_at)
+            .bind(updated_at)
+            .bind(updated_at)
+            .execute(&db.pool).await.unwrap();
+        }
+
+        /// Helper: insert a folder with explicit uuid, name, and timestamps
+        async fn insert_folder_full(
+            db: &Database,
+            uuid: &str,
+            name: &str,
+            position: i64,
+            created_at: &str,
+            updated_at: &str,
+        ) -> i64 {
+            sqlx::query(
+                "INSERT INTO folders (uuid, name, icon, color, position, created_at, updated_at)
+                 VALUES (?, ?, NULL, NULL, ?, ?, ?)"
+            )
+            .bind(uuid)
+            .bind(name)
+            .bind(position)
+            .bind(created_at)
+            .bind(updated_at)
+            .execute(&db.pool).await.unwrap();
+
+            sqlx::query_scalar::<_, i64>("SELECT id FROM folders WHERE uuid = ?")
+                .bind(uuid)
+                .fetch_one(&db.pool).await.unwrap()
+        }
+
+        /// Helper: create a SyncClip for testing (text type)
+        fn make_sync_clip(uuid: &str, text: &str, hash: &str, folder_uuid: Option<&str>, updated_at: &str) -> SyncClip {
+            SyncClip {
+                uuid: uuid.to_string(),
+                clip_type: "text".to_string(),
+                text_preview: text.to_string(),
+                content_hash: hash.to_string(),
+                folder_uuid: folder_uuid.map(|s| s.to_string()),
+                source_app: None,
+                metadata: None,
+                subtype: None,
+                note: None,
+                paste_count: 0,
+                is_pinned: false,
+                is_sensitive: false,
+                created_at: updated_at.to_string(),
+                updated_at: updated_at.to_string(),
+                text_content: Some(text.to_string()),
+            }
+        }
+
+        /// Helper: create a SyncFolder for testing
+        fn make_sync_folder(uuid: &str, name: &str, position: i64, updated_at: &str) -> SyncFolder {
+            SyncFolder {
+                uuid: uuid.to_string(),
+                name: name.to_string(),
+                icon: None,
+                color: None,
+                position,
+                created_at: updated_at.to_string(),
+                updated_at: updated_at.to_string(),
+            }
+        }
+
+        /// Helper: create a SyncDelta for testing
+        fn make_delta(
+            clips: Vec<SyncClip>,
+            folders: Vec<SyncFolder>,
+            tombstones: Vec<Tombstone>,
+        ) -> SyncDelta {
+            SyncDelta {
+                clips,
+                folders,
+                tombstones,
+                device_id: "test-device-remote".to_string(),
+                created_at: "2024-06-01T00:00:00Z".to_string(),
+            }
+        }
+
+        // ──────────────────────────────────────────────
+        // A. Serialization tests
+        // ──────────────────────────────────────────────
+
+        #[test]
+        fn sync_state_round_trip_serialize() {
+            let state = SyncState {
+                clips: vec![make_sync_clip("c1", "hello", "hash1", None, "2024-01-01T00:00:00Z")],
+                folders: vec![make_sync_folder("f1", "Work", 0, "2024-01-01T00:00:00Z")],
+                tombstones: vec![Tombstone {
+                    uuid: "t1".to_string(),
+                    entity_type: "clip".to_string(),
+                    deleted_at: "2024-01-01T00:00:00Z".to_string(),
+                }],
+                device_id: "device-a".to_string(),
+                updated_at: "2024-01-01T12:00:00Z".to_string(),
+            };
+
+            let json = serde_json::to_string(&state).expect("serialize SyncState");
+            let deserialized: SyncState = serde_json::from_str(&json).expect("deserialize SyncState");
+
+            assert_eq!(deserialized.clips.len(), 1);
+            assert_eq!(deserialized.clips[0].uuid, "c1");
+            assert_eq!(deserialized.clips[0].text_preview, "hello");
+            assert_eq!(deserialized.folders.len(), 1);
+            assert_eq!(deserialized.folders[0].name, "Work");
+            assert_eq!(deserialized.tombstones.len(), 1);
+            assert_eq!(deserialized.tombstones[0].uuid, "t1");
+            assert_eq!(deserialized.device_id, "device-a");
+            assert_eq!(deserialized.updated_at, "2024-01-01T12:00:00Z");
+        }
+
+        #[test]
+        fn sync_delta_round_trip_serialize() {
+            let delta = SyncDelta {
+                clips: vec![make_sync_clip("c2", "world", "hash2", Some("f1"), "2024-02-01T00:00:00Z")],
+                folders: vec![],
+                tombstones: vec![],
+                device_id: "device-b".to_string(),
+                created_at: "2024-02-01T00:00:00Z".to_string(),
+            };
+
+            let json = serde_json::to_string(&delta).expect("serialize SyncDelta");
+            let deserialized: SyncDelta = serde_json::from_str(&json).expect("deserialize SyncDelta");
+
+            assert_eq!(deserialized.clips.len(), 1);
+            assert_eq!(deserialized.clips[0].folder_uuid, Some("f1".to_string()));
+            assert_eq!(deserialized.device_id, "device-b");
+        }
+
+        #[test]
+        fn sync_state_empty_collections() {
+            let state = SyncState::default();
+
+            let json = serde_json::to_string(&state).expect("serialize empty SyncState");
+            let deserialized: SyncState = serde_json::from_str(&json).expect("deserialize empty SyncState");
+
+            assert!(deserialized.clips.is_empty());
+            assert!(deserialized.folders.is_empty());
+            assert!(deserialized.tombstones.is_empty());
+            assert!(deserialized.device_id.is_empty());
+        }
+
+        #[test]
+        fn sync_delta_with_tombstones() {
+            let delta = SyncDelta {
+                clips: vec![],
+                folders: vec![],
+                tombstones: vec![
+                    Tombstone { uuid: "del-1".to_string(), entity_type: "clip".to_string(), deleted_at: "2024-03-01T00:00:00Z".to_string() },
+                    Tombstone { uuid: "del-2".to_string(), entity_type: "folder".to_string(), deleted_at: "2024-03-02T00:00:00Z".to_string() },
+                ],
+                device_id: "device-c".to_string(),
+                created_at: "2024-03-01T00:00:00Z".to_string(),
+            };
+
+            let json = serde_json::to_string(&delta).expect("serialize delta with tombstones");
+            let deserialized: SyncDelta = serde_json::from_str(&json).expect("deserialize");
+
+            assert_eq!(deserialized.tombstones.len(), 2);
+            assert_eq!(deserialized.tombstones[0].entity_type, "clip");
+            assert_eq!(deserialized.tombstones[1].entity_type, "folder");
+        }
+
+        // ──────────────────────────────────────────────
+        // B. apply_delta — clip merge tests
+        // ──────────────────────────────────────────────
+
+        #[tokio::test]
+        async fn apply_delta_inserts_new_clip() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            let delta = make_delta(
+                vec![make_sync_clip("new-clip-1", "Hello from remote", "hash-new-1", None, "2024-01-15T00:00:00Z")],
+                vec![],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // Verify clip was inserted
+            let row: Option<(String, String)> = sqlx::query_as(
+                "SELECT uuid, text_preview FROM clips WHERE uuid = 'new-clip-1'"
+            ).fetch_optional(&db.pool).await.unwrap();
+
+            assert!(row.is_some(), "New clip should be inserted");
+            let (uuid, preview) = row.unwrap();
+            assert_eq!(uuid, "new-clip-1");
+            assert_eq!(preview, "Hello from remote");
+            assert_eq!(report.pulled_clips, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_updates_clip_when_remote_is_newer() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert local clip with older timestamp
+            insert_clip_full(&db, "clip-update-1", "old text", "hash-u1", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Remote delta with newer timestamp
+            let delta = make_delta(
+                vec![make_sync_clip("clip-update-1", "updated text", "hash-u1-new", None, "2024-01-02T00:00:00Z")],
+                vec![],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let preview: String = sqlx::query_scalar(
+                "SELECT text_preview FROM clips WHERE uuid = 'clip-update-1'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(preview, "updated text", "Clip should be updated to remote version");
+            assert_eq!(report.pulled_clips, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_skips_clip_when_local_is_newer() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert local clip with newer timestamp
+            insert_clip_full(&db, "clip-skip-1", "local newer text", "hash-s1", None, "2024-01-02T00:00:00Z", "2024-01-02T00:00:00Z").await;
+
+            // Remote delta with older timestamp
+            let delta = make_delta(
+                vec![make_sync_clip("clip-skip-1", "remote older text", "hash-s1-old", None, "2024-01-01T00:00:00Z")],
+                vec![],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let preview: String = sqlx::query_scalar(
+                "SELECT text_preview FROM clips WHERE uuid = 'clip-skip-1'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(preview, "local newer text", "Local newer clip should NOT be overwritten");
+            assert_eq!(report.pulled_clips, 0);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_content_hash_dedup_adopts_remote_uuid() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert local clip with UUID "local-1" and hash "shared-hash"
+            insert_clip_full(&db, "local-1", "same content", "shared-hash", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Remote delta with different UUID but same content hash
+            let delta = make_delta(
+                vec![make_sync_clip("remote-1", "same content", "shared-hash", None, "2024-01-02T00:00:00Z")],
+                vec![],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // Local clip should now have the remote UUID
+            let old_exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM clips WHERE uuid = 'local-1'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(old_exists.is_none(), "Old local UUID should no longer exist");
+
+            let new_exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM clips WHERE uuid = 'remote-1'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(new_exists.is_some(), "Remote UUID should now exist in DB");
+
+            assert_eq!(report.pulled_clips, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_inserts_new_folder() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            let delta = make_delta(
+                vec![],
+                vec![make_sync_folder("folder-new-1", "Remote Folder", 0, "2024-01-15T00:00:00Z")],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let name: Option<String> = sqlx::query_scalar(
+                "SELECT name FROM folders WHERE uuid = 'folder-new-1'"
+            ).fetch_optional(&db.pool).await.unwrap();
+
+            assert_eq!(name, Some("Remote Folder".to_string()), "New folder should be inserted");
+            assert_eq!(report.pulled_folders, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_updates_folder_when_remote_is_newer() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert local folder with older timestamp
+            insert_folder_full(&db, "folder-upd-1", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Remote delta with newer timestamp and updated properties
+            let mut remote_folder = make_sync_folder("folder-upd-1", "Work", 5, "2024-01-02T00:00:00Z");
+            remote_folder.color = Some("blue".to_string());
+
+            let delta = make_delta(vec![], vec![remote_folder], vec![]);
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let (position, color): (i64, Option<String>) = sqlx::query_as(
+                "SELECT position, color FROM folders WHERE uuid = 'folder-upd-1'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(position, 5, "Folder position should be updated");
+            assert_eq!(color, Some("blue".to_string()), "Folder color should be updated");
+            assert_eq!(report.pulled_folders, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_skips_folder_when_local_is_newer() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            insert_folder_full(&db, "folder-skip-1", "Projects", 0, "2024-01-02T00:00:00Z", "2024-01-02T00:00:00Z").await;
+
+            let delta = make_delta(
+                vec![],
+                vec![make_sync_folder("folder-skip-1", "Projects", 10, "2024-01-01T00:00:00Z")],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let position: i64 = sqlx::query_scalar(
+                "SELECT position FROM folders WHERE uuid = 'folder-skip-1'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(position, 0, "Folder should NOT be updated when local is newer");
+            assert_eq!(report.pulled_folders, 0);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_same_name_folder_reconciliation() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert local folder with different UUID but same name
+            insert_folder_full(&db, "local-folder-uuid", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Remote delta has a folder with different UUID but same name "Work"
+            let delta = make_delta(
+                vec![],
+                vec![make_sync_folder("remote-folder-uuid", "Work", 3, "2024-01-02T00:00:00Z")],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // The local folder should now have the remote UUID
+            let old_exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM folders WHERE uuid = 'local-folder-uuid'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(old_exists.is_none(), "Old local folder UUID should no longer exist");
+
+            let new_uuid: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM folders WHERE uuid = 'remote-folder-uuid'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(new_uuid.is_some(), "Remote folder UUID should now exist");
+
+            assert_eq!(report.pulled_folders, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_tombstone_deletes_clip() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert a clip that will be tombstoned
+            insert_clip_full(&db, "clip-to-delete", "doomed text", "hash-doom", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            let delta = make_delta(
+                vec![],
+                vec![],
+                vec![Tombstone {
+                    uuid: "clip-to-delete".to_string(),
+                    entity_type: "clip".to_string(),
+                    deleted_at: "2024-01-15T00:00:00Z".to_string(),
+                }],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM clips WHERE uuid = 'clip-to-delete'"
+            ).fetch_optional(&db.pool).await.unwrap();
+
+            assert!(exists.is_none(), "Tombstoned clip should be deleted");
+            assert_eq!(report.deleted, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_tombstone_deletes_folder_and_unfiles_clips() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert a folder and a clip inside it
+            let folder_id = insert_folder_full(&db, "folder-to-delete", "Doomed Folder", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(&db, "clip-in-folder", "inside doomed folder", "hash-inf", Some(folder_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            let delta = make_delta(
+                vec![],
+                vec![],
+                vec![Tombstone {
+                    uuid: "folder-to-delete".to_string(),
+                    entity_type: "folder".to_string(),
+                    deleted_at: "2024-01-15T00:00:00Z".to_string(),
+                }],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // Folder should be deleted
+            let folder_exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM folders WHERE uuid = 'folder-to-delete'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(folder_exists.is_none(), "Tombstoned folder should be deleted");
+
+            // Clip should still exist but with folder_id = NULL
+            let clip_folder: Option<Option<i64>> = sqlx::query_scalar(
+                "SELECT folder_id FROM clips WHERE uuid = 'clip-in-folder'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(clip_folder.is_some(), "Clip should still exist after folder deletion");
+            assert_eq!(clip_folder.unwrap(), None, "Clip should be unfiled (folder_id = NULL)");
+
+            assert_eq!(report.deleted, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_skips_synced_suffix_folder() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Delta with a folder that has "(synced)" suffix -- should be skipped
+            let delta = make_delta(
+                vec![],
+                vec![make_sync_folder("synced-artifact", "Work (synced)", 0, "2024-01-15T00:00:00Z")],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM folders WHERE uuid = 'synced-artifact'"
+            ).fetch_optional(&db.pool).await.unwrap();
+
+            assert!(exists.is_none(), "Folder with '(synced)' suffix should be skipped");
+            assert_eq!(report.pulled_folders, 0);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_cleans_up_existing_synced_folder_with_original() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert original "Work" folder and a "(synced)" artifact
+            let orig_id = insert_folder_full(&db, "orig-work", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            let synced_id = insert_folder_full(&db, "synced-work", "Work (synced)", 1, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Put a clip in the "(synced)" folder
+            insert_clip_full(&db, "clip-in-synced", "text in synced", "hash-sync", Some(synced_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Apply an empty delta -- the cleanup runs after delta application
+            let delta = make_delta(vec![], vec![], vec![]);
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // "(synced)" folder should be deleted
+            let synced_exists: Option<String> = sqlx::query_scalar(
+                "SELECT name FROM folders WHERE name = 'Work (synced)'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert!(synced_exists.is_none(), "'Work (synced)' folder should be merged/deleted");
+
+            // Clip should have been moved to the original "Work" folder
+            let clip_folder_id: Option<i64> = sqlx::query_scalar(
+                "SELECT folder_id FROM clips WHERE uuid = 'clip-in-synced'"
+            ).fetch_optional(&db.pool).await.unwrap().unwrap();
+            assert_eq!(clip_folder_id, Some(orig_id), "Clip should be moved to original folder");
+
+            assert_eq!(report.deleted, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_renames_synced_folder_when_no_original() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert only a "(synced)" folder with no matching original
+            insert_folder_full(&db, "orphan-synced", "Projects (synced)", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            let delta = make_delta(vec![], vec![], vec![]);
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // Should be renamed to "Projects" (without suffix)
+            let renamed: Option<String> = sqlx::query_scalar(
+                "SELECT name FROM folders WHERE uuid = 'orphan-synced'"
+            ).fetch_optional(&db.pool).await.unwrap();
+            assert_eq!(renamed, Some("Projects".to_string()), "Orphan (synced) folder should be renamed");
+
+            assert_eq!(report.deleted, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_multiple_deltas_in_sequence() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+
+            // First delta: insert a clip and a folder
+            let mut report1 = SyncReport::default();
+            let delta1 = make_delta(
+                vec![make_sync_clip("seq-clip-1", "first", "hash-seq-1", None, "2024-01-01T00:00:00Z")],
+                vec![make_sync_folder("seq-folder-1", "SeqFolder", 0, "2024-01-01T00:00:00Z")],
+                vec![],
+            );
+            apply_delta(&db, &delta1, false, &drive, &mut report1).await.unwrap();
+            assert_eq!(report1.pulled_clips, 1);
+            assert_eq!(report1.pulled_folders, 1);
+
+            // Second delta: update the clip and add another clip
+            let mut report2 = SyncReport::default();
+            let delta2 = make_delta(
+                vec![
+                    make_sync_clip("seq-clip-1", "first updated", "hash-seq-1-upd", None, "2024-01-02T00:00:00Z"),
+                    make_sync_clip("seq-clip-2", "second", "hash-seq-2", Some("seq-folder-1"), "2024-01-02T00:00:00Z"),
+                ],
+                vec![],
+                vec![],
+            );
+            apply_delta(&db, &delta2, false, &drive, &mut report2).await.unwrap();
+            assert_eq!(report2.pulled_clips, 2);
+
+            // Verify final state
+            let preview1: String = sqlx::query_scalar("SELECT text_preview FROM clips WHERE uuid = 'seq-clip-1'")
+                .fetch_one(&db.pool).await.unwrap();
+            assert_eq!(preview1, "first updated");
+
+            let folder_id_of_clip2: Option<i64> = sqlx::query_scalar(
+                "SELECT folder_id FROM clips WHERE uuid = 'seq-clip-2'"
+            ).fetch_one(&db.pool).await.unwrap();
+            assert!(folder_id_of_clip2.is_some(), "Second clip should be in the folder");
+
+            let total_clips: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips")
+                .fetch_one(&db.pool).await.unwrap();
+            assert_eq!(total_clips, 2);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_empty_delta_no_changes() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert a clip first
+            insert_clip_full(&db, "existing-clip", "pre-existing", "hash-exist", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            let delta = make_delta(vec![], vec![], vec![]);
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // Nothing should change
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips").fetch_one(&db.pool).await.unwrap();
+            assert_eq!(count, 1);
+            assert_eq!(report.pulled_clips, 0);
+            assert_eq!(report.pulled_folders, 0);
+            assert_eq!(report.deleted, 0);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_tombstone_for_nonexistent_clip_is_noop() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            let delta = make_delta(
+                vec![],
+                vec![],
+                vec![Tombstone {
+                    uuid: "nonexistent-clip".to_string(),
+                    entity_type: "clip".to_string(),
+                    deleted_at: "2024-01-15T00:00:00Z".to_string(),
+                }],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            assert_eq!(report.deleted, 0, "Tombstone for nonexistent clip should be no-op");
+        }
+
+        #[tokio::test]
+        async fn apply_delta_tombstone_for_nonexistent_folder_is_noop() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            let delta = make_delta(
+                vec![],
+                vec![],
+                vec![Tombstone {
+                    uuid: "nonexistent-folder".to_string(),
+                    entity_type: "folder".to_string(),
+                    deleted_at: "2024-01-15T00:00:00Z".to_string(),
+                }],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            assert_eq!(report.deleted, 0, "Tombstone for nonexistent folder should be no-op");
+        }
+
+        #[tokio::test]
+        async fn apply_delta_clip_with_folder_uuid_resolves_folder_id() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert a folder first
+            let folder_id = insert_folder_full(&db, "target-folder", "Target", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Insert a clip that references the folder by UUID
+            let delta = make_delta(
+                vec![make_sync_clip("clip-with-folder", "text in folder", "hash-cwf", Some("target-folder"), "2024-01-15T00:00:00Z")],
+                vec![],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let resolved_folder_id: Option<i64> = sqlx::query_scalar(
+                "SELECT folder_id FROM clips WHERE uuid = 'clip-with-folder'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(resolved_folder_id, Some(folder_id), "Clip folder_id should resolve from folder UUID");
+        }
+
+        #[tokio::test]
+        async fn apply_delta_clip_with_unknown_folder_uuid_sets_null() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert a clip referencing a folder UUID that does not exist
+            let delta = make_delta(
+                vec![make_sync_clip("clip-orphan-folder", "orphan text", "hash-orphan", Some("nonexistent-folder-uuid"), "2024-01-15T00:00:00Z")],
+                vec![],
+                vec![],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let folder_id: Option<Option<i64>> = sqlx::query_scalar(
+                "SELECT folder_id FROM clips WHERE uuid = 'clip-orphan-folder'"
+            ).fetch_optional(&db.pool).await.unwrap();
+
+            assert!(folder_id.is_some(), "Clip should exist");
+            assert_eq!(folder_id.unwrap(), None, "folder_id should be NULL when folder UUID is not found");
+        }
+
+        #[tokio::test]
+        async fn apply_delta_paste_count_takes_max() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert local clip with paste_count = 10
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash,
+                        is_deleted, is_pinned, is_sensitive, paste_count, created_at, last_accessed, updated_at)
+                 VALUES ('paste-count-clip', 'text', 'hello', 'hello', 'hash-pc', 0, 0, 0, 10, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')"
+            ).execute(&db.pool).await.unwrap();
+
+            // Remote has paste_count = 5, but newer timestamp
+            let mut remote_clip = make_sync_clip("paste-count-clip", "hello", "hash-pc", None, "2024-01-02T00:00:00Z");
+            remote_clip.paste_count = 5;
+
+            let delta = make_delta(vec![remote_clip], vec![], vec![]);
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let paste_count: i64 = sqlx::query_scalar(
+                "SELECT paste_count FROM clips WHERE uuid = 'paste-count-clip'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert_eq!(paste_count, 10, "paste_count should be MAX(local=10, remote=5) = 10");
+        }
+
+        #[tokio::test]
+        async fn apply_delta_image_clip_skipped_when_sync_images_false() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            let mut image_clip = make_sync_clip("img-clip-1", "", "img-hash-1", None, "2024-01-15T00:00:00Z");
+            image_clip.clip_type = "image".to_string();
+            image_clip.text_content = None;
+
+            let delta = make_delta(vec![image_clip], vec![], vec![]);
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let exists: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM clips WHERE uuid = 'img-clip-1'"
+            ).fetch_optional(&db.pool).await.unwrap();
+
+            assert!(exists.is_none(), "Image clip should be skipped when sync_images=false");
+            assert_eq!(report.pulled_clips, 0);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_preserves_clip_pinned_and_note() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            let mut clip = make_sync_clip("pinned-noted-clip", "important", "hash-pn", None, "2024-01-15T00:00:00Z");
+            clip.is_pinned = true;
+            clip.note = Some("This is important".to_string());
+
+            let delta = make_delta(vec![clip], vec![], vec![]);
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            let (is_pinned, note): (bool, Option<String>) = sqlx::query_as(
+                "SELECT is_pinned, note FROM clips WHERE uuid = 'pinned-noted-clip'"
+            ).fetch_one(&db.pool).await.unwrap();
+
+            assert!(is_pinned, "is_pinned should be preserved");
+            assert_eq!(note, Some("This is important".to_string()), "note should be preserved");
+        }
+
+        // ──────────────────────────────────────────────
+        // C. build_full_state tests
+        // ──────────────────────────────────────────────
+
+        #[tokio::test]
+        async fn build_full_state_empty_db() {
+            let db = setup_test_db().await;
+
+            let state = build_full_state(&db, "test-device", true).await.unwrap();
+
+            assert!(state.clips.is_empty(), "Empty DB should produce empty clips");
+            assert!(state.folders.is_empty(), "Empty DB should produce empty folders");
+            assert!(state.tombstones.is_empty(), "Empty DB should produce empty tombstones");
+            assert_eq!(state.device_id, "test-device");
+        }
+
+        #[tokio::test]
+        async fn build_full_state_includes_clips_and_folders() {
+            let db = setup_test_db().await;
+
+            // Insert clips and folders
+            let folder_id = insert_folder_full(&db, "state-folder-1", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(&db, "state-clip-1", "hello world", "hash-sc1", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(&db, "state-clip-2", "in folder", "hash-sc2", Some(folder_id), "2024-01-02T00:00:00Z", "2024-01-02T00:00:00Z").await;
+
+            let state = build_full_state(&db, "test-device", true).await.unwrap();
+
+            assert_eq!(state.clips.len(), 2, "Should include all clips");
+            assert_eq!(state.folders.len(), 1, "Should include all folders");
+            assert_eq!(state.folders[0].name, "Work");
+
+            // Clip in folder should have folder_uuid populated
+            let clip_in_folder = state.clips.iter().find(|c| c.uuid == "state-clip-2").unwrap();
+            assert_eq!(clip_in_folder.folder_uuid, Some("state-folder-1".to_string()));
+
+            // Clip not in folder should have folder_uuid = None
+            let clip_no_folder = state.clips.iter().find(|c| c.uuid == "state-clip-1").unwrap();
+            assert_eq!(clip_no_folder.folder_uuid, None);
+        }
+
+        #[tokio::test]
+        async fn build_full_state_excludes_images_when_disabled() {
+            let db = setup_test_db().await;
+
+            // Insert a text clip and an image clip
+            insert_clip_full(&db, "text-clip-for-state", "some text", "hash-text-state", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash,
+                        is_deleted, is_pinned, is_sensitive, paste_count, created_at, last_accessed, updated_at)
+                 VALUES ('image-clip-for-state', 'image', 'img.png', '', 'hash-img-state', 0, 0, 0, 0, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')"
+            ).execute(&db.pool).await.unwrap();
+
+            let state = build_full_state(&db, "test-device", false).await.unwrap();
+
+            assert_eq!(state.clips.len(), 1, "Should only include text clips when sync_images=false");
+            assert_eq!(state.clips[0].uuid, "text-clip-for-state");
+        }
+
+        #[tokio::test]
+        async fn build_full_state_includes_tombstones() {
+            let db = setup_test_db().await;
+
+            // Insert tombstones
+            sqlx::query("INSERT INTO sync_tombstones (uuid, entity_type, deleted_at) VALUES ('tomb-1', 'clip', '2024-01-15T00:00:00Z')")
+                .execute(&db.pool).await.unwrap();
+            sqlx::query("INSERT INTO sync_tombstones (uuid, entity_type, deleted_at) VALUES ('tomb-2', 'folder', '2024-01-16T00:00:00Z')")
+                .execute(&db.pool).await.unwrap();
+
+            let state = build_full_state(&db, "test-device", true).await.unwrap();
+
+            assert_eq!(state.tombstones.len(), 2, "Should include all tombstones");
+            assert_eq!(state.tombstones[0].uuid, "tomb-1");
+            assert_eq!(state.tombstones[1].uuid, "tomb-2");
+        }
+
+        #[tokio::test]
+        async fn build_full_state_text_content_populated_for_text_clips() {
+            let db = setup_test_db().await;
+
+            insert_clip_full(&db, "content-clip", "full text content here", "hash-ftc", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            let state = build_full_state(&db, "test-device", true).await.unwrap();
+
+            assert_eq!(state.clips.len(), 1);
+            assert_eq!(state.clips[0].text_content, Some("full text content here".to_string()),
+                "text_content should contain the full text for text clips");
+        }
+
+        // ──────────────────────────────────────────────
+        // D. SyncReport tracking
+        // ──────────────────────────────────────────────
+
+        #[tokio::test]
+        async fn sync_report_counts_correct_after_mixed_delta() {
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Pre-insert a clip to be tombstoned
+            insert_clip_full(&db, "to-delete-for-report", "delete me", "hash-del-rep", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            let delta = make_delta(
+                vec![
+                    make_sync_clip("report-clip-1", "new clip one", "hash-r1", None, "2024-01-15T00:00:00Z"),
+                    make_sync_clip("report-clip-2", "new clip two", "hash-r2", None, "2024-01-15T00:00:00Z"),
+                ],
+                vec![
+                    make_sync_folder("report-folder-1", "ReportFolder", 0, "2024-01-15T00:00:00Z"),
+                ],
+                vec![
+                    Tombstone {
+                        uuid: "to-delete-for-report".to_string(),
+                        entity_type: "clip".to_string(),
+                        deleted_at: "2024-01-15T00:00:00Z".to_string(),
+                    },
+                ],
+            );
+
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            assert_eq!(report.pulled_clips, 2, "Should report 2 pulled clips");
+            assert_eq!(report.pulled_folders, 1, "Should report 1 pulled folder");
+            assert_eq!(report.deleted, 1, "Should report 1 deleted item");
+            assert!(!report.skipped, "Should not be skipped");
+            assert!(report.errors.is_empty(), "Should have no errors");
+        }
+
+        #[tokio::test]
+        async fn sync_report_default_values() {
+            let report = SyncReport::default();
+
+            assert_eq!(report.pushed_clips, 0);
+            assert_eq!(report.pushed_folders, 0);
+            assert_eq!(report.pulled_clips, 0);
+            assert_eq!(report.pulled_folders, 0);
+            assert_eq!(report.deleted, 0);
+            assert!(!report.skipped);
+            assert!(report.errors.is_empty());
+        }
+    }
 }

@@ -1,9 +1,8 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { ClipboardItem as AppClipboardItem, Settings } from './types';
+import { ClipboardItem as AppClipboardItem } from './types';
 import { ClipList } from './components/ClipList';
 import { ControlBar } from './components/ControlBar';
 import { ContextMenu } from './components/ContextMenu';
@@ -19,26 +18,20 @@ import { useFolderPreview } from './hooks/useFolderPreview';
 import { useContextMenu } from './hooks/useContextMenu';
 import { useFolderModal } from './hooks/useFolderModal';
 import { useBatchActions } from './hooks/useBatchActions';
+import { useWindowLifecycle } from './hooks/useWindowLifecycle';
+import { useSearch } from './hooks/useSearch';
+import { useMultiSelect } from './hooks/useMultiSelect';
 import { Toaster, toast } from 'sonner';
 import { LAYOUT } from './constants';
-
-const RE_URL = /^https?:\/\/\S+$/i;
-const RE_FILE_PATH = /^[a-zA-Z]:\\/;
 
 function App() {
   const [clips, setClips] = useState<AppClipboardItem[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-  const [clipFilter, setClipFilter] = useState<string | null>(null);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
-  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [windowFocusCount, setWindowFocusCount] = useState(0);
 
   const effectiveTheme = useTheme(theme);
 
@@ -102,7 +95,7 @@ function App() {
     setClips,
     setIsLoading,
     setHasMore,
-    setSelectedClipId,
+    setSelectedClipId: (v) => setSelectedClipId(v),
     setEditingClip,
     setNoteModalClipId,
     setNoteModalInitial,
@@ -134,104 +127,59 @@ function App() {
     handlePreviewListLeave,
   } = useFolderPreview({ clips, folders });
 
+  // --- Search Hook ---
+  const {
+    searchInput,
+    searchQuery,
+    showSearch,
+    clipFilter,
+    filteredClips,
+    filteredPreviewClips,
+    handleSearch,
+    setShowSearch,
+    setClipFilter,
+  } = useSearch({ clips, previewClips, setPreviewFolder });
+
+  // --- Multi-Select Hook ---
+  const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
+  const {
+    selectedClipId,
+    selectedClipIds,
+    isMultiSelect,
+    setSelectedClipId,
+    setSelectedClipIds,
+    handleSelectClip,
+  } = useMultiSelect({ displayedClips });
+
   const refreshCurrentFolder = useCallback(() => {
     loadClips(selectedFolderRef.current, false, searchQuery);
   }, [loadClips, searchQuery]);
 
-  // Stable ref so the clipboard listener never re-subscribes
-  const refreshCurrentFolderRef = useRef(refreshCurrentFolder);
-  refreshCurrentFolderRef.current = refreshCurrentFolder;
-
-  // Stable ref for loadClips — used in focus handler to bypass stale closures
+  // Stable refs so event listeners never re-subscribe
   const loadClipsRef = useRef(loadClips);
   loadClipsRef.current = loadClips;
   const debouncedFolderRefreshRef = useRef(debouncedFolderRefresh);
   debouncedFolderRefreshRef.current = debouncedFolderRefresh;
 
-  const [searchInput, setSearchInput] = useState('');
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // --- Window Lifecycle Hook ---
+  const { windowFocusCount, refreshCurrentFolderRef } = useWindowLifecycle({
+    searchInputRef,
+    selectedFolderRef,
+    loadClipsRef,
+    debouncedFolderRefreshRef,
+    setClips,
+    setHasMore,
+    setIsLoading,
+    setSelectedClipId,
+    setSelectedClipIds,
+    setPreviewFolder,
+    setTheme,
+  });
 
-  const handleSearch = useCallback((query: string) => {
-    setSearchInput(query);
-    setPreviewFolder(undefined);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => {
-      setSearchQuery(query);
-    }, 100);
-  }, [setPreviewFolder]);
+  // Keep refreshCurrentFolderRef in sync for clipboard-change listener
+  refreshCurrentFolderRef.current = refreshCurrentFolder;
 
   // --- Effects ---
-
-  useEffect(() => {
-    invoke<Settings>('get_settings')
-      .then((s) => {
-        setTheme(s.theme);
-      })
-      .catch(console.error);
-
-    const unlisten = listen<Settings>('settings-changed', (event) => {
-      setTheme(event.payload.theme);
-    });
-
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
-
-  // Auto-show search bar when window opens
-  useEffect(() => {
-    setShowSearch(true);
-    setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 100);
-  }, []);
-
-  // Reset selection, clear search, reload clips, and scroll to top every time the window is shown/focused
-  // Debounced to avoid spam queries on rapid Alt+Tab toggles
-  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const unlisten = appWindow.listen('tauri://focus', () => {
-      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
-      focusTimerRef.current = setTimeout(() => {
-        setSelectedClipId(null);
-        setSelectedClipIds(new Set());
-        // Keep selectedFolder + search — user stays in their context across window toggles
-        // Search is only cleared explicitly via Esc key
-        setPreviewFolder(undefined);
-        setWindowFocusCount((c) => c + 1);
-        // Reload clips (respecting current search query if any)
-        const currentSearch = searchInputRef.current?.value || '';
-        if (!selectedFolderRef.current && !currentSearch) {
-          invoke<{ clips: AppClipboardItem[]; folders: any[]; total_count: number }>('get_initial_state', {
-            filterId: null,
-            limit: 20,
-          }).then((state) => {
-            setClips(state.clips);
-            setHasMore(state.clips.length === 20);
-            setIsLoading(false);
-            if (state.folders) {
-              debouncedFolderRefreshRef.current();
-            }
-          }).catch(() => {
-            loadClipsRef.current(null, false, '');
-          });
-        } else {
-          loadClipsRef.current(selectedFolderRef.current, false, currentSearch);
-        }
-      }, 150);
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Focus search input AFTER React has rendered the cleared state
-  useEffect(() => {
-    if (windowFocusCount > 0) {
-      searchInputRef.current?.focus();
-    }
-  }, [windowFocusCount]);
 
   useEffect(() => {
     loadFolders();
@@ -246,25 +194,6 @@ function App() {
   useEffect(() => {
     refreshTotalCount();
   }, [refreshTotalCount]);
-
-  // Subscribe ONCE — uses refs so the callback is always fresh without re-subscribing
-  useEffect(() => {
-    const unlistenClipboard = listen<{ clip_type?: string }>('clipboard-change', (event) => {
-      refreshCurrentFolderRef.current();
-      debouncedFolderRefreshRef.current();
-      const type = event.payload?.clip_type || 'text';
-      toast.success(type === 'image' ? 'Image saved' : 'Clip saved', {
-        duration: 1500,
-        style: { fontSize: '12px', padding: '6px 12px' },
-      });
-    });
-
-    return () => {
-      unlistenClipboard.then((unlisten) => {
-        if (typeof unlisten === 'function') unlisten();
-      });
-    };
-  }, []);
 
   // --- Settings window ---
   const openSettings = useCallback(async () => {
@@ -330,7 +259,6 @@ function App() {
     },
     onNavigateUp: () => {
       if (editingClip || isLoading) return;
-      const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
       const currentIndex = displayedClips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex > 0) {
         setSelectedClipId(displayedClips[currentIndex - 1].id);
@@ -338,7 +266,6 @@ function App() {
     },
     onNavigateDown: () => {
       if (editingClip || isLoading) return;
-      const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
       const currentIndex = displayedClips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex === -1 && displayedClips.length > 0) {
         setSelectedClipId(displayedClips[0].id);
@@ -380,32 +307,6 @@ function App() {
     openCreateModal, openRenameModal, closeModal: closeFolderModal,
   } = useFolderModal();
 
-  // Unified clip filter — matches by clip_type for base types, by subtype for smart collections
-  const CLIP_TYPE_KEYS = new Set(['text', 'image', 'html', 'rtf']);
-  const matchesClipFilter = useCallback((clip: AppClipboardItem, filter: string): boolean => {
-    if (CLIP_TYPE_KEYS.has(filter)) {
-      if (filter === 'text') {
-        // "text" = pure text, not url/path/file subtypes
-        return clip.clip_type === 'text'
-          && !RE_URL.test(clip.content.trim())
-          && !RE_FILE_PATH.test(clip.content.trim());
-      }
-      return clip.clip_type === filter;
-    }
-    // Subtype filter (url, email, color, path, phone, json, code)
-    return clip.subtype === filter;
-  }, []);
-
-  const filteredClips = useMemo(() => {
-    if (!clipFilter) return clips;
-    return clips.filter((c) => matchesClipFilter(c, clipFilter));
-  }, [clips, clipFilter, matchesClipFilter]);
-
-  const filteredPreviewClips = useMemo(() => {
-    if (!clipFilter) return previewClips;
-    return previewClips.filter((c) => matchesClipFilter(c, clipFilter));
-  }, [previewClips, clipFilter, matchesClipFilter]);
-
   const folderMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const f of folders) { map[f.id] = f.name; }
@@ -436,50 +337,6 @@ function App() {
     selectedFolder, loadFolders, refreshTotalCount,
     isPreviewing, filteredPreviewClips: filteredPreviewClips, filteredClips,
   });
-
-  // --- Multi-select ---
-  const handleSelectClip = useCallback((clipId: string, e?: React.MouseEvent) => {
-    const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
-
-    if (e?.shiftKey && selectedClipId) {
-      // Range select: from last selected to clicked
-      const startIdx = displayedClips.findIndex(c => c.id === selectedClipId);
-      const endIdx = displayedClips.findIndex(c => c.id === clipId);
-      if (startIdx !== -1 && endIdx !== -1) {
-        const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
-        const rangeIds = displayedClips.slice(from, to + 1).map(c => c.id);
-        setSelectedClipIds(prev => {
-          const next = new Set(prev);
-          if (selectedClipId && !next.has(selectedClipId)) {
-            next.add(selectedClipId);
-          }
-          rangeIds.forEach(id => next.add(id));
-          return next;
-        });
-      }
-    } else if (e?.ctrlKey || e?.metaKey) {
-      // Toggle select — also include the currently selected clip if not yet in set
-      setSelectedClipIds(prev => {
-        const next = new Set(prev);
-        if (selectedClipId && !next.has(selectedClipId)) {
-          next.add(selectedClipId);
-        }
-        if (next.has(clipId)) {
-          next.delete(clipId);
-        } else {
-          next.add(clipId);
-        }
-        return next;
-      });
-    } else {
-      // Single select — clear multi-select
-      setSelectedClipIds(new Set());
-    }
-    setSelectedClipId(clipId);
-  }, [selectedClipId, isPreviewing, filteredPreviewClips, filteredClips]);
-
-  const isMultiSelect = selectedClipIds.size > 1;
-
 
   // --- Render ---
   return (

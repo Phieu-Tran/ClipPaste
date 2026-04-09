@@ -20,6 +20,8 @@ pub enum SyncError {
     NotConfigured,
     /// Another sync is already in progress
     AlreadyRunning,
+    /// Rate limited by Google Drive API (429/503 after retries exhausted)
+    RateLimited(String),
 }
 
 impl fmt::Display for SyncError {
@@ -34,6 +36,7 @@ impl fmt::Display for SyncError {
             SyncError::Io(msg) => write!(f, "I/O error: {}", msg),
             SyncError::NotConfigured => write!(f, "Sync not configured"),
             SyncError::AlreadyRunning => write!(f, "Sync already in progress"),
+            SyncError::RateLimited(msg) => write!(f, "Rate limited by Google Drive: {}", msg),
         }
     }
 }

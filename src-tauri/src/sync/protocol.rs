@@ -9,22 +9,22 @@ const MAX_DELTAS_BEFORE_COMPACT: usize = 50;
 
 /// Full snapshot — uploaded once, then compacted periodically.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-struct SyncState {
-    clips: Vec<SyncClip>,
-    folders: Vec<SyncFolder>,
-    tombstones: Vec<Tombstone>,
-    device_id: String,
-    updated_at: String,
+pub(crate) struct SyncState {
+    pub(crate) clips: Vec<SyncClip>,
+    pub(crate) folders: Vec<SyncFolder>,
+    pub(crate) tombstones: Vec<Tombstone>,
+    pub(crate) device_id: String,
+    pub(crate) updated_at: String,
 }
 
 /// Small delta — only contains changes since last sync.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct SyncDelta {
-    clips: Vec<SyncClip>,
-    folders: Vec<SyncFolder>,
-    tombstones: Vec<Tombstone>,
-    device_id: String,
-    created_at: String,
+pub(crate) struct SyncDelta {
+    pub(crate) clips: Vec<SyncClip>,
+    pub(crate) folders: Vec<SyncFolder>,
+    pub(crate) tombstones: Vec<Tombstone>,
+    pub(crate) device_id: String,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Default)]
@@ -151,7 +151,7 @@ pub async fn sync_now(
 
 // ── Build state from DB ──
 
-async fn build_full_state(db: &Database, device_id: &str, sync_images: bool) -> Result<SyncState, SyncError> {
+pub(crate) async fn build_full_state(db: &Database, device_id: &str, sync_images: bool) -> Result<SyncState, SyncError> {
     let clips = get_all_clips(db, sync_images).await?;
     let folders = get_all_folders(db).await?;
     let tombstones = get_tombstones(db).await?;
@@ -274,7 +274,7 @@ async fn resolve_folder_uuid(db: &Database, folder_id: Option<i64>) -> Result<Op
 
 // ── Apply delta to local DB ──
 
-async fn apply_delta(
+pub(crate) async fn apply_delta(
     db: &Database,
     delta: &SyncDelta,
     sync_images: bool,
