@@ -78,8 +78,6 @@ pub struct SyncScratchpad {
     pub title: String,
     pub content: String,
     #[serde(default)]
-    pub fields_json: Option<String>,
-    #[serde(default)]
     pub is_pinned: bool,
     #[serde(default)]
     pub color: Option<String>,

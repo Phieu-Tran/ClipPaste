@@ -82,8 +82,13 @@ pub async fn sync_now(
     let cycle_started_at = chrono::Utc::now();
     let cycle_started_iso = cycle_started_at.to_rfc3339();
 
+    // Single list call fetches every file in appDataFolder. Previously we made 3–4 separate
+    // list calls (find STATE_FILE, list op_*, list delta_*, list img_*) which counted against
+    // Drive API quota. Now we filter locally and reuse the list for compaction + image push.
+    let all_files = drive.list_files(None, None).await?;
+    let state_meta = all_files.iter().find(|f| f.name == STATE_FILE).cloned();
+
     // 1. First-sync path — no state file on Drive yet.
-    let state_meta = drive.find_file_by_name(STATE_FILE).await?;
     if state_meta.is_none() {
         log::info!("SYNC: First sync — uploading full state");
         let state = build_full_state(db, &device_id, sync_images).await?;
@@ -106,6 +111,15 @@ pub async fn sync_now(
         return Ok(report);
     }
     let state_meta = state_meta.unwrap();
+
+    // Partition once, reuse everywhere downstream.
+    let op_files: Vec<super::drive::DriveFile> = all_files.iter()
+        .filter(|f| f.name.starts_with(OP_PREFIX)).cloned().collect();
+    let legacy_files: Vec<super::drive::DriveFile> = all_files.iter()
+        .filter(|f| f.name.starts_with(LEGACY_DELTA_PREFIX)).cloned().collect();
+    let remote_image_hashes: std::collections::HashSet<String> = all_files.iter()
+        .filter_map(|f| f.name.strip_prefix("img_").and_then(|n| n.strip_suffix(".png")).map(String::from))
+        .collect();
 
     // Load local cursors (with defaults for upgraded installs).
     let push_base_at = db.get_setting("sync_push_base_at").await
@@ -155,10 +169,7 @@ pub async fn sync_now(
         }
     }
 
-    // 3. Pull: list all op files (new `op_*` + legacy `delta_*`) and apply any we haven't seen.
-    let op_files = drive.list_files(Some(OP_PREFIX), None).await?;
-    let legacy_files = drive.list_files(Some(LEGACY_DELTA_PREFIX), None).await?;
-
+    // 3. Pull: apply op files (new `op_*` + legacy `delta_*`) we haven't seen.
     let own_op_prefix = format!("{}{}_", OP_PREFIX, device_id);
     let own_legacy_name = format!("{}{}.json", LEGACY_DELTA_PREFIX, device_id);
 
@@ -224,8 +235,7 @@ pub async fn sync_now(
         drive.create_file(&op_name, &json, "application/json").await?;
 
         if sync_images {
-            let remote_hashes = get_remote_image_hashes(drive).await?;
-            push_new_images(db, drive, &remote_hashes, &mut report).await?;
+            push_new_images(db, drive, &remote_image_hashes, &mut report).await?;
         }
     } else if sorted_ops.is_empty() && !state_refreshed {
         log::info!("SYNC: No changes anywhere, skipping");
@@ -243,7 +253,7 @@ pub async fn sync_now(
     if total_op_count >= MAX_OPS_BEFORE_COMPACT || total_op_bytes >= MAX_OPS_BYTES_BEFORE_COMPACT {
         log::info!("SYNC: Compacting {} op files ({} bytes) into fresh state", total_op_count, total_op_bytes);
         let merged_files: Vec<super::drive::DriveFile> = op_files.iter().chain(legacy_files.iter()).cloned().collect();
-        if let Some(new_state_meta) = compact(db, drive, &device_id, sync_images, &merged_files).await? {
+        if let Some(new_state_meta) = compact(db, drive, &device_id, sync_images, &merged_files, &all_files).await? {
             if let Some(modified) = new_state_meta.modified_time.as_deref() {
                 save_setting(&db.pool, "sync_state_seen_modified", modified).await?;
             }
@@ -379,24 +389,24 @@ async fn get_changed_folders(db: &Database, since: &str) -> Result<Vec<SyncFolde
 }
 
 async fn get_all_scratchpads(db: &Database) -> Result<Vec<SyncScratchpad>, SyncError> {
-    let rows: Vec<(String, String, String, Option<String>, bool, Option<String>, i64, String, String)> = sqlx::query_as(
-        "SELECT uuid, title, content, fields_json, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
+    let rows: Vec<(String, String, String, bool, Option<String>, i64, String, String)> = sqlx::query_as(
+        "SELECT uuid, title, content, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
          FROM scratchpads ORDER BY position ASC"
     ).fetch_all(&db.pool).await?;
 
-    Ok(rows.into_iter().map(|(uuid, title, content, fields_json, is_pinned, color, position, created_at, updated_at)| {
-        SyncScratchpad { uuid, title, content, fields_json, is_pinned, color, position, created_at, updated_at }
+    Ok(rows.into_iter().map(|(uuid, title, content, is_pinned, color, position, created_at, updated_at)| {
+        SyncScratchpad { uuid, title, content, is_pinned, color, position, created_at, updated_at }
     }).collect())
 }
 
 async fn get_changed_scratchpads(db: &Database, since: &str) -> Result<Vec<SyncScratchpad>, SyncError> {
-    let rows: Vec<(String, String, String, Option<String>, bool, Option<String>, i64, String, String)> = sqlx::query_as(
-        "SELECT uuid, title, content, fields_json, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
+    let rows: Vec<(String, String, String, bool, Option<String>, i64, String, String)> = sqlx::query_as(
+        "SELECT uuid, title, content, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
          FROM scratchpads WHERE COALESCE(updated_at, created_at) > ?"
     ).bind(since).fetch_all(&db.pool).await?;
 
-    Ok(rows.into_iter().map(|(uuid, title, content, fields_json, is_pinned, color, position, created_at, updated_at)| {
-        SyncScratchpad { uuid, title, content, fields_json, is_pinned, color, position, created_at, updated_at }
+    Ok(rows.into_iter().map(|(uuid, title, content, is_pinned, color, position, created_at, updated_at)| {
+        SyncScratchpad { uuid, title, content, is_pinned, color, position, created_at, updated_at }
     }).collect())
 }
 
@@ -608,13 +618,13 @@ pub(crate) async fn apply_delta(
         if !should_apply { continue; }
 
         if local_scratchpads.contains_key(&sp.uuid) {
-            sqlx::query("UPDATE scratchpads SET title=?, content=?, fields_json=?, is_pinned=?, color=?, position=?, updated_at=? WHERE uuid=?")
-                .bind(&sp.title).bind(&sp.content).bind(&sp.fields_json).bind(sp.is_pinned).bind(&sp.color)
+            sqlx::query("UPDATE scratchpads SET title=?, content=?, is_pinned=?, color=?, position=?, updated_at=? WHERE uuid=?")
+                .bind(&sp.title).bind(&sp.content).bind(sp.is_pinned).bind(&sp.color)
                 .bind(sp.position).bind(&sp.updated_at).bind(&sp.uuid)
                 .execute(&db.pool).await?;
         } else {
-            sqlx::query("INSERT INTO scratchpads (uuid, title, content, fields_json, is_pinned, color, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
-                .bind(&sp.uuid).bind(&sp.title).bind(&sp.content).bind(&sp.fields_json).bind(sp.is_pinned).bind(&sp.color)
+            sqlx::query("INSERT INTO scratchpads (uuid, title, content, is_pinned, color, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)")
+                .bind(&sp.uuid).bind(&sp.title).bind(&sp.content).bind(sp.is_pinned).bind(&sp.color)
                 .bind(sp.position).bind(&sp.created_at).bind(&sp.updated_at)
                 .execute(&db.pool).await?;
         }
@@ -680,6 +690,7 @@ async fn compact(
     device_id: &str,
     sync_images: bool,
     op_files: &[super::drive::DriveFile],
+    all_files: &[super::drive::DriveFile],
 ) -> Result<Option<super::drive::DriveFile>, SyncError> {
     // Upload fresh full state
     let state = build_full_state(db, device_id, sync_images).await?;
@@ -696,19 +707,31 @@ async fn compact(
         }
     }
 
-    log::info!("SYNC: Compacted — {} clips, {} folders in state, {} op files removed",
-        state.clips.len(), state.folders.len(), removed);
+    // Prune orphan Drive images: anything matching img_{hash}.png that no clip references.
+    // Reuses the file list fetched at the start of sync_now — no extra Drive call.
+    let mut orphan_images = 0usize;
+    if sync_images {
+        let referenced: std::collections::HashSet<String> = state.clips.iter()
+            .filter(|c| c.clip_type == "image")
+            .map(|c| c.content_hash.clone())
+            .collect();
+        for img in all_files {
+            let is_orphan = img.name.strip_prefix("img_")
+                .and_then(|n| n.strip_suffix(".png"))
+                .map(|hash| !referenced.contains(hash))
+                .unwrap_or(false);
+            if is_orphan && drive.delete_file(&img.id).await.is_ok() {
+                orphan_images += 1;
+            }
+        }
+    }
+
+    log::info!("SYNC: Compacted — {} clips, {} folders in state, {} op files removed, {} orphan images removed",
+        state.clips.len(), state.folders.len(), removed, orphan_images);
     Ok(Some(new_state_meta))
 }
 
 // ── Image sync ──
-
-async fn get_remote_image_hashes(drive: &DriveClient) -> Result<std::collections::HashSet<String>, SyncError> {
-    let files = drive.list_files(Some("img_"), None).await?;
-    Ok(files.iter()
-        .filter_map(|f| f.name.strip_prefix("img_").and_then(|n| n.strip_suffix(".png")).map(|s| s.to_string()))
-        .collect())
-}
 
 async fn push_new_images(
     db: &Database,
@@ -716,27 +739,49 @@ async fn push_new_images(
     remote_hashes: &std::collections::HashSet<String>,
     report: &mut SyncReport,
 ) -> Result<(), SyncError> {
+    use futures::stream::{self, StreamExt};
+
     let local_images: Vec<(String, Vec<u8>)> = sqlx::query_as(
         "SELECT content_hash, content FROM clips WHERE clip_type = 'image'"
     ).fetch_all(&db.pool).await?;
 
-    for (hash, content) in &local_images {
-        if remote_hashes.contains(hash) { continue; }
-
-        let filename = String::from_utf8_lossy(content).into_owned();
-        let path = db.images_dir.join(&filename);
-        if !path.exists() { continue; }
-
-        match std::fs::read(&path) {
-            Ok(bytes) if bytes.len() <= 10_000_000 => {
-                let drive_name = format!("img_{}.png", hash);
-                if let Err(e) = drive.upsert_file(&drive_name, &bytes, "image/png").await {
-                    log::warn!("SYNC: Failed to push image {}: {}", hash, e);
-                    report.errors.push(format!("push image: {}", e));
+    // Build upload work set — read bytes upfront so the concurrent tasks don't fight over the disk.
+    let to_upload: Vec<(String, Vec<u8>)> = local_images.into_iter()
+        .filter(|(hash, _)| !remote_hashes.contains(hash))
+        .filter_map(|(hash, content)| {
+            let filename = String::from_utf8_lossy(&content).into_owned();
+            let path = db.images_dir.join(&filename);
+            if !path.exists() { return None; }
+            match std::fs::read(&path) {
+                Ok(bytes) if bytes.len() <= 10_000_000 => Some((hash, bytes)),
+                Ok(bytes) => {
+                    log::info!("SYNC: Skipping large image {} ({}MB)", hash, bytes.len() / 1_000_000);
+                    None
                 }
+                Err(e) => { log::warn!("SYNC: Failed to read image {}: {}", filename, e); None }
             }
-            Ok(bytes) => log::info!("SYNC: Skipping large image {} ({}MB)", hash, bytes.len() / 1_000_000),
-            Err(e) => log::warn!("SYNC: Failed to read image {}: {}", filename, e),
+        })
+        .collect();
+
+    if to_upload.is_empty() { return Ok(()); }
+
+    // Upload up to 4 images concurrently — bounded so we don't DOS Drive's rate limits.
+    const IMAGE_UPLOAD_CONCURRENCY: usize = 4;
+    let results: Vec<Result<(), String>> = stream::iter(to_upload)
+        .map(|(hash, bytes)| async move {
+            let drive_name = format!("img_{}.png", hash);
+            drive.upsert_file(&drive_name, &bytes, "image/png").await
+                .map(|_| ())
+                .map_err(|e| format!("push image {}: {}", hash, e))
+        })
+        .buffer_unordered(IMAGE_UPLOAD_CONCURRENCY)
+        .collect()
+        .await;
+
+    for r in results {
+        if let Err(msg) = r {
+            log::warn!("SYNC: {}", msg);
+            report.errors.push(msg);
         }
     }
     Ok(())

@@ -2,8 +2,8 @@ import { useEffect, useCallback } from 'react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { currentMonitor } from '@tauri-apps/api/window';
 
-const COLLAPSED_WIDTH = 14;
-const COLLAPSED_HEIGHT = 80;
+const COLLAPSED_WIDTH = 16;
+const COLLAPSED_HEIGHT = 100;
 
 export function useScratchpad() {
   // Auto-create scratchpad window shortly after mount

@@ -78,6 +78,11 @@ static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Maximum entries in the search cache. Clips beyond this are still in DB but not instant-searchable.
 const SEARCH_CACHE_MAX: usize = 50_000;
 
+/// Version of the sensitive/subtype detection rules. Bump this when `detect_sensitive`
+/// or `detect_subtype` logic changes in a way that should re-classify existing clips.
+/// On startup, if the DB-stored version is lower, rescan runs; otherwise it's skipped.
+pub const DETECTION_RULES_VERSION: i64 = 1;
+
 /// Load all clip previews into memory for instant search.
 /// Capped at SEARCH_CACHE_MAX entries (most recent first) to bound memory usage.
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {

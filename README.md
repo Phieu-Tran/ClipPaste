@@ -76,11 +76,12 @@
 
 | | Feature | Description |
 |:---:|:---|:---|
-| ☁️ | **Google Drive Sync** | Sync clips & folders across devices via Google Drive |
-| ⚡ | **Delta Sync** | Only uploads changes — not the entire history every time |
+| ☁️ | **Google Drive Sync** | Sync clips, folders & scratchpad notes across devices |
+| ⚡ | **Delta Sync** | Append-only op log, auto-compacts when >30 ops or >2 MB |
 | 🔄 | **Auto & Manual Sync** | Configurable interval (1m–1h) + manual sync button |
-| 🖼️ | **Image Sync** | Optionally sync image clips (toggle on/off, 10MB limit) |
-| 🗑️ | **Deletion Propagation** | Deletes sync across devices via tombstones (30-day TTL) |
+| 🖼️ | **Image Sync** | Content-hash dedup, 10MB per-file limit, orphan cleanup on compact |
+| 🗑️ | **Deletion Propagation** | Tombstones propagate deletes cross-device (30-day TTL) |
+| 🔁 | **Resilient** | Exponential backoff retry for network errors + 429/503 rate limits |
 
 ### Scratchpad
 
@@ -88,9 +89,12 @@
 |:---:|:---|:---|
 | 📝 | **Sidebar Notes** | Persistent notes panel docked to screen edge — independent of clipboard |
 | 🎯 | **Edit Before Paste** | Click note → centered modal to edit → Ctrl+Enter to paste |
-| 🎨 | **Color Notes** | 8 color presets with subtle gradient tint |
-| 📌 | **Pin Notes** | Pin important notes to the top |
-| 🔍 | **Search Notes** | Filter notes by title or content |
+| 🎨 | **Color Notes** | 8 color presets with gradient tint; **filter by color** in header |
+| 📌 | **Pin Notes** | Pinned notes always on top, visual border accent |
+| 🔍 | **Search + Sort** | Search by title/content; sort Manual / A-Z / Recent |
+| ✨ | **Markdown Preview** | `**bold**`, `*italic*`, `` `code` ``, `- bullets` render in previews |
+| ↩️ | **Undo Delete** | 5-second toast with Undo button after deleting a note |
+| ⌨️ | **Keyboard Nav** | `↑↓` navigate, `Enter` paste, `E` edit, `Delete` remove, `/` search |
 | 🖱️ | **Hover Expand** | Collapsed tab on screen edge, hover to expand |
 | ☁️ | **Synced** | Notes sync across devices via Google Drive |
 
@@ -101,7 +105,7 @@
 | 🎨 | **Themes & Effects** | Dark / Light / System + Mica, Mica Alt, Acrylic, Blur effects |
 | 🖥️ | **Multi-Monitor** | Window appears on the active display |
 | 🚫 | **Ignore Apps** | Exclude password managers, banking apps, etc. |
-| ⌨️ | **Custom Hotkey** | Default: `Ctrl+Shift+V` |
+| ⌨️ | **Custom Hotkey** | Defaults: `Ctrl+Shift+V` (clipboard), `Ctrl+Shift+S` (scratchpad) |
 | 🔄 | **Auto-Update** | In-app update with progress bar |
 | 📂 | **Custom Data Dir** | Choose where to store your data |
 
@@ -133,9 +137,17 @@
 
 ## Keyboard Shortcuts
 
+### Global
+
 | Shortcut | Action |
 |:---------|:-------|
-| `Ctrl+Shift+V` | Toggle window *(customizable)* |
+| `Ctrl+Shift+V` | Toggle clipboard window *(customizable)* |
+| `Ctrl+Shift+S` | Toggle scratchpad panel |
+
+### Clipboard list
+
+| Shortcut | Action |
+|:---------|:-------|
 | `Ctrl+F` | Focus search bar |
 | `Escape` | Close window / Clear search |
 | `Enter` | Paste selected clip |
@@ -143,6 +155,18 @@
 | `P` | Pin / Unpin selected clip |
 | `E` | Edit before paste *(text only)* |
 | `↑` `↓` | Navigate between clips |
+
+### Scratchpad
+
+| Shortcut | Action |
+|:---------|:-------|
+| `↑` `↓` | Navigate between notes |
+| `Enter` | Open paste modal for selected note |
+| `E` | Edit selected note |
+| `Delete` | Delete note *(5s Undo)* |
+| `/` | Focus note search |
+| `Ctrl+Enter` | Confirm paste / Save edit *(inside modal)* |
+| `Esc` | Cancel modal / Collapse panel |
 
 ---
 

@@ -43,21 +43,11 @@ export interface ScratchpadItem {
   uuid: string;
   title: string;
   content: string;
-  fields_json: string | null;
   is_pinned: boolean;
   color: string | null;
   position: number;
   created_at: string;
   updated_at: string | null;
-}
-
-export interface TemplateField {
-  key: string;
-  label: string;
-  type: 'text' | 'textarea' | 'number' | 'select';
-  placeholder?: string;
-  options?: string[];
-  default?: string;
 }
 
 export type ClipType = 'text' | 'image' | 'html' | 'rtf' | 'file' | 'url';

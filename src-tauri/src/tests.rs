@@ -859,7 +859,7 @@ mod tests {
             let db = setup_test_db().await;
             let version: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
                 .fetch_one(&db.pool).await.unwrap();
-            assert_eq!(version, 7, "Schema version should be 7 after all migrations");
+            assert_eq!(version, 13, "Schema version should be 13 after all migrations");
         }
 
         // --- CRUD tests ---
@@ -1315,6 +1315,7 @@ mod tests {
             SyncDelta {
                 clips,
                 folders,
+                scratchpads: vec![],
                 tombstones,
                 device_id: "test-device-remote".to_string(),
                 created_at: "2024-06-01T00:00:00Z".to_string(),
@@ -1330,6 +1331,7 @@ mod tests {
             let state = SyncState {
                 clips: vec![make_sync_clip("c1", "hello", "hash1", None, "2024-01-01T00:00:00Z")],
                 folders: vec![make_sync_folder("f1", "Work", 0, "2024-01-01T00:00:00Z")],
+                scratchpads: vec![],
                 tombstones: vec![Tombstone {
                     uuid: "t1".to_string(),
                     entity_type: "clip".to_string(),
@@ -1358,6 +1360,7 @@ mod tests {
             let delta = SyncDelta {
                 clips: vec![make_sync_clip("c2", "world", "hash2", Some("f1"), "2024-02-01T00:00:00Z")],
                 folders: vec![],
+                scratchpads: vec![],
                 tombstones: vec![],
                 device_id: "device-b".to_string(),
                 created_at: "2024-02-01T00:00:00Z".to_string(),
@@ -1389,6 +1392,7 @@ mod tests {
             let delta = SyncDelta {
                 clips: vec![],
                 folders: vec![],
+                scratchpads: vec![],
                 tombstones: vec![
                     Tombstone { uuid: "del-1".to_string(), entity_type: "clip".to_string(), deleted_at: "2024-03-01T00:00:00Z".to_string() },
                     Tombstone { uuid: "del-2".to_string(), entity_type: "folder".to_string(), deleted_at: "2024-03-02T00:00:00Z".to_string() },

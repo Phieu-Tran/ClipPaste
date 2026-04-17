@@ -16,8 +16,10 @@ impl Database {
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
             .busy_timeout(std::time::Duration::from_secs(5));
 
+        // SQLite WAL mode supports concurrent readers with one writer, so a small pool
+        // lets lookups (settings, app icons, folder counts) run while a write is in flight.
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
+            .max_connections(4)
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     // Per-connection PRAGMAs — applied to every connection in the pool
@@ -505,6 +507,18 @@ impl Database {
             log::info!("DB: Applied migration v12 (scratchpad color)");
         }
 
+        if version < 13 {
+            // Drop the unused fields_json column (template feature was never wired up).
+            // SQLite supports DROP COLUMN since 3.35 (2021); modern bundled sqlx is newer.
+            let drop_result = sqlx::query("ALTER TABLE scratchpads DROP COLUMN fields_json")
+                .execute(&self.pool).await;
+            match drop_result {
+                Ok(_) => log::info!("DB: Applied migration v13 (drop scratchpads.fields_json)"),
+                Err(e) => log::warn!("DB: migration v13 drop column failed (non-fatal): {}", e),
+            }
+            self.set_schema_version(13).await;
+        }
+
         // === Migrate image blobs to disk ===
         // Images previously stored as BLOBs in content column are now stored as files.
         // content column will hold just the filename (e.g. "abc123.png").
@@ -575,12 +589,12 @@ impl Database {
         let excess = count - max_items;
         log::info!("DB: Trimming {} clips exceeding max_items={}", excess, max_items);
 
-        // Collect image filenames before deleting (within same transaction)
-        // Only from unprotected clips (not in folder, not pinned)
-        // Must match the same ORDER BY as the DELETE to get the correct files
-        let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
-            "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'
-             AND id IN (SELECT id FROM clips WHERE folder_id IS NULL AND is_pinned = 0 ORDER BY created_at ASC LIMIT ?)"
+        // Collect uuids + image filenames of the rows we're about to delete.
+        // Must match the same ORDER BY as the DELETE to identify the right rows.
+        let doomed: Vec<(String, String, Vec<u8>)> = sqlx::query_as(
+            "SELECT uuid, clip_type, content FROM clips
+             WHERE folder_id IS NULL AND is_pinned = 0
+             ORDER BY created_at ASC LIMIT ?"
         ).bind(excess).fetch_all(&mut *tx).await.unwrap_or_default();
 
         // Delete oldest unprotected clips (folder + pinned items are safe)
@@ -600,14 +614,14 @@ impl Database {
             return;
         }
 
-        // Clean up image files + thumbnails after successful commit
-        for (content,) in &image_clips {
-            let filename = String::from_utf8_lossy(content).into_owned();
-            self.remove_image_and_thumb(&filename);
+        // Clean up image files + thumbnails, drop from search cache per-uuid.
+        for (uuid, clip_type, content) in &doomed {
+            if clip_type == "image" {
+                let filename = String::from_utf8_lossy(content).into_owned();
+                self.remove_image_and_thumb(&filename);
+            }
+            crate::clipboard::remove_from_search_cache(uuid);
         }
-
-        // Rebuild search cache (trimmed clips must be removed)
-        crate::clipboard::load_search_cache(&self.pool).await;
     }
 
     /// Delete clips older than auto_delete_days (only unprotected: not in folder, not pinned).
@@ -627,9 +641,10 @@ impl Database {
             Err(e) => { log::error!("enforce_auto_delete: failed to begin tx: {}", e); return; }
         };
 
-        // Collect image filenames before deleting (within same transaction)
-        let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
-            "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'
+        // Collect uuids + image filenames before deleting (within same transaction)
+        let doomed: Vec<(String, String, Vec<u8>)> = sqlx::query_as(
+            "SELECT uuid, clip_type, content FROM clips
+             WHERE folder_id IS NULL AND is_pinned = 0
              AND created_at < datetime('now', '-' || ? || ' days')"
         ).bind(days).fetch_all(&mut *tx).await.unwrap_or_default();
 
@@ -645,12 +660,13 @@ impl Database {
                     return;
                 }
                 log::info!("DB: Auto-deleted {} clips older than {} days", r.rows_affected(), days);
-                for (content,) in &image_clips {
-                    let filename = String::from_utf8_lossy(content).into_owned();
-                    self.remove_image_and_thumb(&filename);
+                for (uuid, clip_type, content) in &doomed {
+                    if clip_type == "image" {
+                        let filename = String::from_utf8_lossy(content).into_owned();
+                        self.remove_image_and_thumb(&filename);
+                    }
+                    crate::clipboard::remove_from_search_cache(uuid);
                 }
-                // Rebuild search cache so deleted clips are dropped from in-memory index
-                crate::clipboard::load_search_cache(&self.pool).await;
             }
             Ok(_) => { let _ = tx.commit().await; }
             Err(e) => {

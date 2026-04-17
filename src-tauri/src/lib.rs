@@ -3,7 +3,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -392,24 +392,67 @@ pub fn run_app() {
                 log::error!("Failed to parse hotkey: {}", saved_hotkey);
             }
 
+            // Scratchpad hotkey — defaults to Ctrl+Shift+S. Opens the scratchpad window
+            // and tells the frontend to expand it to list mode via the `scratchpad-toggle` event.
+            let db_for_sp_hotkey = db_for_clipboard.clone();
+            let scratchpad_hotkey = get_runtime().expect("Tokio runtime not initialized").block_on(async {
+                db_for_sp_hotkey.get_setting("scratchpad_hotkey").await.ok().flatten()
+            }).unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+            log::info!("Registering scratchpad hotkey: {}", scratchpad_hotkey);
+
+            if let Ok(sp_shortcut) = Shortcut::from_str(&scratchpad_hotkey) {
+                let app_handle_for_sp = app_handle.clone();
+                let _ = app_handle.global_shortcut().on_shortcut(sp_shortcut, move |_app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        if let Some(sp_win) = app_handle_for_sp.get_webview_window("scratchpad") {
+                            let _ = sp_win.show();
+                            let _ = sp_win.emit("scratchpad-toggle", ());
+                        }
+                    }
+                });
+            } else {
+                log::error!("Failed to parse scratchpad hotkey: {}", scratchpad_hotkey);
+            }
+
             let handle_for_clip = app_handle.clone();
             let db_for_clip = db_for_clipboard.clone();
             clipboard::init(&handle_for_clip, db_for_clip);
 
-            // Load caches into memory for instant search + settings lookups
+            // Load caches into memory for instant search + settings lookups.
+            // Cleanup scans (orphan images, max_items, auto_delete) are deferred so the UI is
+            // interactive ASAP — they run on a lower-priority background task after caches load.
             let db_for_cache = db_for_clipboard.clone();
             tauri::async_runtime::spawn(async move {
                 clipboard::load_search_cache(&db_for_cache.pool).await;
                 clipboard::load_settings_cache(&db_for_cache.pool).await;
                 clipboard::load_app_icons_cache(&db_for_cache.pool).await;
-                // Enforce max_items + auto_delete_days + clean up orphan images on startup
-                db_for_cache.enforce_max_items().await;
-                db_for_cache.enforce_auto_delete().await;
-                db_for_cache.cleanup_orphan_images().await;
-                // Re-scan sensitive detection on all existing clips (picks up new patterns)
-                db_for_cache.rescan_sensitive().await;
-                // Re-scan subtypes on all existing text clips (picks up new subtype patterns)
-                db_for_cache.rescan_subtypes().await;
+
+                // Defer cleanup scans so they don't block the first render.
+                let db_for_cleanup = db_for_cache.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    db_for_cleanup.enforce_max_items().await;
+                    db_for_cleanup.enforce_auto_delete().await;
+                    db_for_cleanup.cleanup_orphan_images().await;
+                });
+                // Rescan only when detection rules bumped — saves a full-table scan every launch.
+                let stored_version: i64 = db_for_cache
+                    .get_setting("detection_rules_version").await.ok().flatten()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+                if stored_version < clipboard::DETECTION_RULES_VERSION {
+                    log::info!("RESCAN: detection_rules v{} < v{}, running full rescan",
+                        stored_version, clipboard::DETECTION_RULES_VERSION);
+                    db_for_cache.rescan_sensitive().await;
+                    db_for_cache.rescan_subtypes().await;
+                    let _ = sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES ('detection_rules_version', ?)")
+                        .bind(clipboard::DETECTION_RULES_VERSION.to_string())
+                        .execute(&db_for_cache.pool).await;
+                    // Refresh cache so in-memory setting reflects the new version.
+                    clipboard::load_settings_cache(&db_for_cache.pool).await;
+                } else {
+                    log::debug!("RESCAN: detection_rules v{} up to date, skipping", stored_version);
+                }
             });
 
             // Periodic WAL checkpoint every 5 minutes — reduces data loss window on crash/force-kill

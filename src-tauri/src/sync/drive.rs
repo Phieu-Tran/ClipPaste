@@ -72,6 +72,26 @@ impl DriveClient {
         }
     }
 
+    /// Handle a network-level (reqwest::Error) failure during send().
+    /// If retries remain, sleeps for backoff and returns Ok(()). Caller must `continue`.
+    /// If retries exhausted, returns Err(Network).
+    async fn backoff_network_error(
+        err: reqwest::Error,
+        attempt: u32,
+        context: &str,
+    ) -> Result<(), SyncError> {
+        if attempt >= MAX_RETRIES {
+            return Err(SyncError::Network(err.to_string()));
+        }
+        let delay = compute_backoff_delay(attempt, None);
+        log::warn!(
+            "SYNC: Network error during {}: {}, retrying in {:?} (attempt {}/{})",
+            context, err, delay, attempt + 1, MAX_RETRIES
+        );
+        tokio::time::sleep(delay).await;
+        Ok(())
+    }
+
     /// Check a response for retryable status codes (429/503).
     /// If retryable and retries remain, sleeps for the backoff duration and returns Ok(None).
     /// If retryable and retries exhausted, returns Err(RateLimited).
@@ -149,10 +169,10 @@ impl DriveClient {
                         req = req.query(&[("pageToken", token.as_str())]);
                     }
 
-                    let resp = req
-                        .send()
-                        .await
-                        .map_err(|e| SyncError::Network(e.to_string()))?;
+                    let resp = match req.send().await {
+                        Ok(r) => r,
+                        Err(e) => { Self::backoff_network_error(e, attempt, "list_files").await?; continue; }
+                    };
 
                     match Self::check_retry(resp, attempt, "list_files").await? {
                         Some(resp) => {
@@ -191,7 +211,7 @@ impl DriveClient {
         );
 
         for attempt in 0..=MAX_RETRIES {
-            let resp = self
+            let resp = match self
                 .client
                 .get(DRIVE_FILES_URL)
                 .bearer_auth(&self.access_token)
@@ -203,7 +223,10 @@ impl DriveClient {
                 ])
                 .send()
                 .await
-                .map_err(|e| SyncError::Network(e.to_string()))?;
+            {
+                Ok(r) => r,
+                Err(e) => { Self::backoff_network_error(e, attempt, "find_file_by_name").await?; continue; }
+            };
 
             match Self::check_retry(resp, attempt, "find_file_by_name").await? {
                 Some(resp) => {
@@ -241,7 +264,7 @@ impl DriveClient {
         for attempt in 0..=MAX_RETRIES {
             let body = build_multipart_body(boundary, &metadata, content, mime_type);
 
-            let resp = self
+            let resp = match self
                 .client
                 .post(DRIVE_UPLOAD_URL)
                 .bearer_auth(&self.access_token)
@@ -256,7 +279,10 @@ impl DriveClient {
                 .body(body)
                 .send()
                 .await
-                .map_err(|e| SyncError::Network(e.to_string()))?;
+            {
+                Ok(r) => r,
+                Err(e) => { Self::backoff_network_error(e, attempt, "create_file").await?; continue; }
+            };
 
             match Self::check_retry(resp, attempt, "create_file").await? {
                 Some(resp) => {
@@ -286,7 +312,7 @@ impl DriveClient {
         let url = format!("{}/{}", DRIVE_UPLOAD_URL, file_id);
 
         for attempt in 0..=MAX_RETRIES {
-            let resp = self
+            let resp = match self
                 .client
                 .patch(&url)
                 .bearer_auth(&self.access_token)
@@ -298,7 +324,10 @@ impl DriveClient {
                 .body(content.to_vec())
                 .send()
                 .await
-                .map_err(|e| SyncError::Network(e.to_string()))?;
+            {
+                Ok(r) => r,
+                Err(e) => { Self::backoff_network_error(e, attempt, "update_file").await?; continue; }
+            };
 
             match Self::check_retry(resp, attempt, "update_file").await? {
                 Some(resp) => {
@@ -323,13 +352,16 @@ impl DriveClient {
         let url = format!("{}/{}?alt=media", DRIVE_FILES_URL, file_id);
 
         for attempt in 0..=MAX_RETRIES {
-            let resp = self
+            let resp = match self
                 .client
                 .get(&url)
                 .bearer_auth(&self.access_token)
                 .send()
                 .await
-                .map_err(|e| SyncError::Network(e.to_string()))?;
+            {
+                Ok(r) => r,
+                Err(e) => { Self::backoff_network_error(e, attempt, "download_file").await?; continue; }
+            };
 
             match Self::check_retry(resp, attempt, "download_file").await? {
                 Some(resp) => {
@@ -355,13 +387,16 @@ impl DriveClient {
         let url = format!("{}/{}", DRIVE_FILES_URL, file_id);
 
         for attempt in 0..=MAX_RETRIES {
-            let resp = self
+            let resp = match self
                 .client
                 .delete(&url)
                 .bearer_auth(&self.access_token)
                 .send()
                 .await
-                .map_err(|e| SyncError::Network(e.to_string()))?;
+            {
+                Ok(r) => r,
+                Err(e) => { Self::backoff_network_error(e, attempt, "delete_file").await?; continue; }
+            };
 
             match Self::check_retry(resp, attempt, "delete_file").await? {
                 Some(resp) => {

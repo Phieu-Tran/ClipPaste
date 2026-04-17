@@ -7,7 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.10.0] - 2026-04-17
+
+### Added — Scratchpad UX
+- **Global hotkey `Ctrl+Shift+S`** toggles the scratchpad panel (backend-registered, emits `scratchpad-toggle` event)
+- **Keyboard nav in list mode**: `↑↓` select, `Enter` paste, `E` edit, `Delete` remove, `/` focus search
+- **Undo delete** — sonner toast with 5-second Undo button; recreates the note with original title/content/color
+- **Color filter** — dot row in header; click to filter, click again to clear; only shown when any note is colored
+- **Sort options** — Manual / A-Z / Recent (pinned still always on top)
+- **Markdown preview** — lightweight inline renderer for `**bold**`, `*italic*`, `` `code` ``, and `- bullets`
+- **Char counter** — appears on hover at bottom-right of each card
+- **Pinned/unpinned divider** — subtle "Others" separator between sections
+- **Selected ring** — primary-colored ring highlights the keyboard-selected note
+- **Paste strip on left of card** (quick access) + Edit button in hover toolbar
+
+### Added — Backend / Sync
+- `DETECTION_RULES_VERSION` const — startup rescan skipped unless code version > DB-stored version (speeds up launch)
+- Orphan image cleanup on Drive during compact — prunes `img_{hash}.png` files no longer referenced by any clip
+- Network retry with exponential backoff for all Drive API calls (on top of existing 429/503 retry)
+
+### Changed
+- DB `max_connections: 1 → 4` — WAL readers no longer block behind writes
+- Startup cleanup scans (`enforce_max_items`, `enforce_auto_delete`, `cleanup_orphan_images`) deferred to a background task with 2s delay — UI interactive sooner
+- `enforce_max_items` / `enforce_auto_delete` use targeted `remove_from_search_cache(uuid)` instead of rebuilding the whole 50K-entry cache
+- Sync protocol: **single `list_files` call at start** replaces 3–4 separate listings (state, ops, legacy deltas, images) — saves quota
+- Image uploads run with bounded concurrency of 4 via `futures::buffer_unordered` instead of sequentially
+- Scratchpad tab collapsed: 14×80 → 16×100 with minimal 3-dot grip (no more awkward yellow icon)
+- Paste/edit modal: hide → resize → show sequence reduces flicker when switching from side panel
+- Note color gradient stronger (`0.12/0.04` vs `0.04/0.01`) with thicker 5px left border — notes easier to distinguish
+- `scratchpad_paste` backend: `std::thread::spawn` + `std::thread::sleep` → `tauri::async_runtime::spawn` + `tokio::time::sleep` (non-blocking)
+
+### Removed
+- `fields_json` column + `TemplateField` type — template feature was never wired to UI; dropped in migration v13
+
+### Fixed
+- `tests.rs` updated to reflect schema v13 and scratchpad-shape SyncDelta/SyncState (was failing on missing `scratchpads` field)
+
+### Hotkeys reference
+- Updated Settings > Hotkeys tab with 3 sections: General (adds Scratchpad toggle), Clipboard list, Scratchpad
+- README rewritten with per-surface shortcut tables
+
+### Tests
+- 129 / 129 passing (schema_version bumped 12 → 13, scratchpads test-data backfilled)
+
+---
+
+## [1.9.0] - 2026-04-16
 
 ### Added
 - **Scratchpad sidebar** — persistent notes panel docked to right edge of screen, independent of clipboard history

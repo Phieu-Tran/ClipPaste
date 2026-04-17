@@ -30,24 +30,33 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
       section: 'General',
       items: [
         { keys: globalKeys, description: 'Open / Close ClipPaste (global)', configurable: true },
+        { keys: ['Ctrl', 'Shift', 'S'], description: 'Toggle Scratchpad (global)' },
         { keys: ['Esc'], description: 'Close window' },
         { keys: ['Ctrl', 'F'], description: 'Focus search bar' },
       ],
     },
     {
-      section: 'Navigation',
+      section: 'Clipboard list',
       items: [
         { keys: ['↑'], description: 'Select previous clip' },
         { keys: ['↓'], description: 'Select next clip' },
         { keys: ['Enter'], description: 'Paste selected clip' },
-      ],
-    },
-    {
-      section: 'Actions',
-      items: [
         { keys: ['E'], description: 'Edit before paste (text only)' },
         { keys: ['P'], description: 'Pin / Unpin selected clip' },
         { keys: ['Ctrl', 'Delete'], description: 'Delete selected clip' },
+      ],
+    },
+    {
+      section: 'Scratchpad',
+      items: [
+        { keys: ['↑'], description: 'Select previous note' },
+        { keys: ['↓'], description: 'Select next note' },
+        { keys: ['Enter'], description: 'Open paste modal for selected note' },
+        { keys: ['E'], description: 'Edit selected note' },
+        { keys: ['Delete'], description: 'Delete selected note (with Undo)' },
+        { keys: ['/'], description: 'Focus search' },
+        { keys: ['Ctrl', 'Enter'], description: 'Save edit / confirm paste (in modal)' },
+        { keys: ['Esc'], description: 'Cancel / collapse' },
       ],
     },
   ];
@@ -89,8 +98,8 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
       ))}
 
       <p className="text-xs text-muted-foreground">
-        The global shortcut can be changed in <span className="font-medium text-foreground">General</span> settings.
-        Single-key shortcuts (E, P) only work when the search bar is not focused.
+        The main global shortcut can be changed in <span className="font-medium text-foreground">General</span> settings.
+        Single-key shortcuts (E, P, /) only work when no input is focused.
       </p>
     </div>
   );
