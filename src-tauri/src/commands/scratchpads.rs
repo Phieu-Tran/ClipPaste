@@ -161,37 +161,35 @@ pub async fn scratchpad_paste(
 ) -> Result<(), String> {
     use sha2::{Sha256, Digest};
 
-    // Write text to clipboard
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
     let hash = format!("{:x}", hasher.finalize());
     super::helpers::clipboard_write_text(&app, &text, &hash).await?;
 
-    // Hide scratchpad window (no animation, just hide)
     let _ = window.hide();
 
-    // Auto-paste if enabled — restore foreground to the user's target app BEFORE keystrokes.
     let auto_paste = crate::clipboard::get_cached_setting("auto_paste")
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(true);
 
+    // Run the whole restore→paste chain inline-awaited so the command only
+    // returns AFTER Shift+Insert has been delivered. A prior `spawn` version
+    // raced against the frontend's mode transition + show() — scratchpad could
+    // reappear and steal foreground before keystrokes reached the target app,
+    // causing intermittent paste failures.
+    #[cfg(target_os = "windows")]
     if auto_paste {
-        let _ = &window;
-        tauri::async_runtime::spawn(async {
-            // Give the webview a moment to complete `hide()` before re-fronting the target.
-            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-            #[cfg(target_os = "windows")]
-            {
-                let restored = crate::clipboard::restore_prev_foreground();
-                if !restored {
-                    log::warn!("SCRATCHPAD: prev-foreground restore failed, Shift+Insert may miss target");
-                }
-                // Windows needs a brief tick to honor the foreground change before sending input.
-                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-                crate::clipboard::send_paste_input();
-            }
-        });
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        let restored = crate::clipboard::restore_prev_foreground();
+        if !restored {
+            log::warn!("SCRATCHPAD: prev-foreground restore failed, Shift+Insert may miss target");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        crate::clipboard::send_paste_input();
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     }
+    #[cfg(not(target_os = "windows"))]
+    let _ = auto_paste;
 
     Ok(())
 }

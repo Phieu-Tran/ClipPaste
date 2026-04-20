@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.4] - 2026-04-20
+
+### Fixed
+- **Scratchpad paste race**: `scratchpad_paste` used to spawn the restore-foreground → Shift+Insert chain via `tauri::async_runtime::spawn` with fixed sleeps, while the frontend concurrently ran `setMode('collapsed')` + `appWindow.show()`. The scratchpad window could reappear and steal foreground before keystrokes reached the target app, causing intermittent paste failures. The chain now runs inline-awaited inside the command; the frontend's `doPaste` only resolves after Shift+Insert has been delivered, then it's safe to re-show the collapsed tab.
+- **Ctrl+Enter in paste modal sent nothing**: the user's physical Ctrl was still held when the backend fired Shift+Insert, so target apps saw Ctrl+Shift+Insert (not a paste combo). `send_paste_input` now polls `GetAsyncKeyState` for up to 400 ms for Ctrl/Alt/Win to be physically released, then injects KEYUP for every modifier variant as a belt-and-suspenders before the Shift+Insert sequence.
+
+---
+
 ## [1.10.3] - 2026-04-17
 
 ### Changed

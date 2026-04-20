@@ -1054,48 +1054,66 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 pub fn send_paste_input() {
-    unsafe {
-        let inputs = vec![
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_SHIFT,
-                        ..Default::default()
-                    },
-                },
-            },
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_INSERT,
-                        ..Default::default()
-                    },
-                },
-            },
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_INSERT,
-                        dwFlags: KEYEVENTF_KEYUP,
-                        ..Default::default()
-                    },
-                },
-            },
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_SHIFT,
-                        dwFlags: KEYEVENTF_KEYUP,
-                        ..Default::default()
-                    },
-                },
-            },
-        ];
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_CONTROL, VK_LCONTROL, VK_RCONTROL, VK_MENU, VK_LMENU, VK_RMENU,
+        VK_LWIN, VK_RWIN,
+    };
 
+    // If the paste was triggered by a shortcut like Ctrl+Enter, the user's physical
+    // Ctrl key may still be down when we get here. Injecting a KEYUP isn't enough —
+    // many apps check GetAsyncKeyState which reports physical state, so they'd still
+    // see Ctrl held and treat Shift+Insert as Ctrl+Shift+Insert. Wait briefly for the
+    // user to actually release the modifier.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(400);
+    loop {
+        let any_held = unsafe {
+            ((GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000) != 0
+                || ((GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000) != 0
+                || ((GetAsyncKeyState(VK_LWIN.0 as i32) as u16) & 0x8000) != 0
+                || ((GetAsyncKeyState(VK_RWIN.0 as i32) as u16) & 0x8000) != 0
+        };
+        if !any_held || std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    unsafe {
+        // Belt-and-suspenders: still inject KEYUPs so the sync message-queue state
+        // matches expectations even if the physical release hasn't fully propagated.
+        let keyup = |vk| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    ..Default::default()
+                },
+            },
+        };
+        let keydown = |vk| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    ..Default::default()
+                },
+            },
+        };
+
+        let release_mods = vec![
+            keyup(VK_CONTROL), keyup(VK_LCONTROL), keyup(VK_RCONTROL),
+            keyup(VK_MENU), keyup(VK_LMENU), keyup(VK_RMENU),
+            keyup(VK_LWIN), keyup(VK_RWIN),
+        ];
+        SendInput(&release_mods, std::mem::size_of::<INPUT>() as i32);
+
+        let inputs = vec![
+            keydown(VK_SHIFT),
+            keydown(VK_INSERT),
+            keyup(VK_INSERT),
+            keyup(VK_SHIFT),
+        ];
         SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
     }
 }

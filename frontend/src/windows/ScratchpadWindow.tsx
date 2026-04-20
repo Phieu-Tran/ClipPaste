@@ -385,21 +385,21 @@ export function ScratchpadWindow() {
 
   const doPaste = useCallback(async () => {
     if (!pastingId) return;
-    // Hide window FIRST to avoid flicker
+    // Hide first so the modal disappears instantly from the user's POV.
     await appWindow.hide();
     try {
+      // Backend awaits the full restore→paste chain inline — the invoke only
+      // resolves AFTER Shift+Insert has been delivered to the target app, so
+      // it's safe to start re-showing the collapsed tab below.
       await invoke('scratchpad_paste', { text: pasteContent });
     } catch {
       await navigator.clipboard.writeText(pasteContent);
     }
     setPastingId(null);
     setPinned(false);
-    // Restore collapsed tab after a delay
-    setTimeout(async () => {
-      setMode('collapsed');
-      // moveToCollapsed will run from useEffect, then show
-      setTimeout(() => { appWindow.show().catch(() => {}); }, 300);
-    }, 200);
+    setMode('collapsed');
+    // moveToCollapsed repositions the hidden window; show it after a tick.
+    setTimeout(() => { appWindow.show().catch(() => {}); }, 200);
   }, [pastingId, pasteContent, appWindow]);
 
   // ── CRUD ──
