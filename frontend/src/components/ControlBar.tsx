@@ -291,12 +291,6 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search clips..."
               className="flex-1 border-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  onSearchClick();
-                }
-              }}
             />
             <button
               onClick={onSearchClick}

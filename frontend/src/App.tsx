@@ -231,13 +231,15 @@ function App() {
   useKeyboard({
     onClose: () => {
       if (editingClip) return;
-      // Esc priority: multi-select → search → selected clip → folder → hide window
+      // Esc priority: multi-select → search text → search bar → selected clip → folder → hide
       if (isMultiSelect) {
         setSelectedClipIds(new Set());
         setSelectedClipId(null);
       } else if (searchInput.trim()) {
         handleSearch('');
         searchInputRef.current?.focus();
+      } else if (showSearch) {
+        setShowSearch(false);
       } else if (selectedClipId) {
         setSelectedClipId(null);
       } else if (selectedFolder) {

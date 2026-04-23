@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.6] - 2026-04-23
+
+### Fixed
+- **ESC in search felt "abrupt"**: the `ControlBar` search input had its own ESC handler that called `onSearchClick()`, which cleared the text *and* collapsed the search bar in one keystroke — bypassing the staged ESC priority in `useKeyboard`. It also fired alongside the document-level handler, so the sequence was inconsistent. ESC now flows through a single staged path: (1) clear search text only, keep bar open + focus, (2) close the search bar, (3) deselect clip, (4) exit folder, (5) hide app. One "back step" per press, no more skipping levels.
+
+---
+
 ## [1.10.5] - 2026-04-23
 
 ### Fixed
