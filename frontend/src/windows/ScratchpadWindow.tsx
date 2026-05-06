@@ -339,12 +339,8 @@ export function ScratchpadWindow() {
   }, []);
 
   const handleClose = useCallback(() => {
-    setPinned(false);
-    setEditingId(null);
-    setPastingId(null);
-    setSearchQuery('');
-    setMode('collapsed');
-  }, []);
+    appWindow.close().catch(() => {});
+  }, [appWindow]);
 
   const handlePanelClick = useCallback(() => {
     if (!pinned && mode === 'list') setPinned(true);
@@ -547,9 +543,6 @@ export function ScratchpadWindow() {
           <span className="flex-1 truncate text-sm font-semibold text-foreground/90">
             {isPaste ? (item.title || 'Paste snippet') : 'Edit note'}
           </span>
-          <button onClick={handleClose} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Close">
-            <X size={15} />
-          </button>
         </div>
 
         {/* Content */}
@@ -670,10 +663,6 @@ export function ScratchpadWindow() {
             <button onClick={(e) => { e.stopPropagation(); handleAdd(); }}
               className="rounded-md p-1.5 text-emerald-400/80 transition-all hover:bg-emerald-400/15 hover:text-emerald-400" title="New note">
               <Plus size={14} />
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleClose(); }}
-              className="rounded-md p-1.5 text-muted-foreground/50 transition-all hover:bg-white/[0.08] hover:text-foreground/80" title="Close">
-              <X size={14} />
             </button>
           </div>
         </div>

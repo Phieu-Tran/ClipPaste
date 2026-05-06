@@ -6,6 +6,7 @@ import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
 import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert, Phone, Braces, Code2 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { enqueue } from '../imageQueue';
+import { getIcon } from '../iconCache';
 
 /** Image component that tries asset protocol first, falls back to base64 via get_clip.
  *  Fallback requests go through a concurrency-limited queue (max 3) to avoid UI stutter. */
@@ -380,9 +381,9 @@ export const ClipCard = memo(function ClipCard({
 
         {/* Header */}
         <div className={clsx(headerColor, 'flex flex-shrink-0 items-center gap-1.5 border-b border-black/10 px-2.5 py-2 dark:border-black/20')}>
-          {clip.source_icon && (
+          {getIcon(clip.source_app) && (
             <img
-              src={`data:image/png;base64,${clip.source_icon}`}
+              src={`data:image/png;base64,${getIcon(clip.source_app)}`}
               alt=""
               className="h-4 w-4 object-contain"
             />

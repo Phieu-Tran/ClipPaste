@@ -1,7 +1,8 @@
 import { useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
-import { PAGE_SIZE } from '../constants';
+import { PAGE_SIZE, MAX_CLIPS_IN_STATE } from '../constants';
+import { cacheIcons, stripIcons } from '../iconCache';
 import { toast } from 'sonner';
 
 interface UseClipActionsOpts {
@@ -69,12 +70,16 @@ export function useClipActions(opts: UseClipActionsOpts) {
         // Discard if a newer query has been fired since
         if (loadGenRef.current !== thisGen) return;
 
+        cacheIcons(data);
+        const stripped = stripIcons(data);
+
         if (append) {
           setClips((prev) => {
-            return [...prev, ...data];
+            const combined = [...prev, ...stripped];
+            return combined.length > MAX_CLIPS_IN_STATE ? combined.slice(0, MAX_CLIPS_IN_STATE) : combined;
           });
         } else {
-          setClips(data);
+          setClips(stripped);
         }
 
         setHasMore(data.length === PAGE_SIZE);

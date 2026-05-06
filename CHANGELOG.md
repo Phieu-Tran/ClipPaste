@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.9] - 2026-05-06
+
+### Fixed
+- **Reduced memory usage**: scratchpad window is now created on demand and fully destroyed when closed (instead of auto-spawning at startup and hiding in background), saving ~60–80 MB for users who don't use scratchpad
+- **Fixed memory growth over time**: app icons (source_icon) are now cached once per app name and stripped from each clip object in state, eliminating duplicate base64 icon data; clip state is also capped at 500 items to prevent unbounded growth from scrolling
+
+---
+
 ## [1.10.8] - 2026-04-27
 
 ### Added
