@@ -136,8 +136,13 @@ pub fn check_auto_paste_and_hide(window: &tauri::WebviewWindow) {
         crate::animate_window_hide(window, Some(Box::new(move || {
             #[cfg(target_os = "windows")]
             {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                // After hide+sleep the foreground window IS the paste target.
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                // Explicitly restore focus to the target window captured at hotkey time.
+                // This is more reliable than waiting for Windows to auto-restore focus,
+                // especially for apps like SecureCRT that don't always receive focus back
+                // on their own after a topmost window hides.
+                let restored = crate::clipboard::restore_prev_foreground();
+                std::thread::sleep(std::time::Duration::from_millis(if restored { 50 } else { 100 }));
                 // Skip the keystroke if the target app is in the Ignored list.
                 if crate::clipboard::is_foreground_app_ignored(&db) {
                     log::info!("PASTE: Suppressed Shift+Insert (target app is ignored)");

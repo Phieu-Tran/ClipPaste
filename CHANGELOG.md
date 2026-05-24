@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.10] - 2026-05-24
+
+### Fixed
+- **Virtual desktop jumping**: opening ClipPaste from a different virtual desktop than where it was last used no longer causes Windows to jump back to the old desktop. Fixed by (a) clearing the `HWND_TOPMOST` flag after the window hides (it was set during slide animation but never cleared), and (b) using `IVirtualDesktopManager::MoveWindowToDesktop` to move the window to the current desktop before showing it.
+- **SecureCRT (and similar apps) paste reliability**: paste into terminal emulators and other apps that don't always auto-receive focus now works consistently. The target window's HWND is captured at hotkey time and `SetForegroundWindow` is called explicitly (via `AttachThreadInput` trick) before sending `Shift+Insert`, instead of relying on Windows to auto-restore focus.
+
+---
+
 ## [1.10.9] - 2026-05-06
 
 ### Fixed

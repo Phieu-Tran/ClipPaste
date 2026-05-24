@@ -389,6 +389,9 @@ pub fn run_app() {
                                 log::info!("HOTKEY: Suppressed (foreground app is ignored)");
                                 return;
                             }
+                            // Capture target window BEFORE ClipPaste steals focus,
+                            // so check_auto_paste_and_hide can restore focus explicitly.
+                            crate::clipboard::capture_prev_foreground();
                             position_window_at_bottom(&win_clone);
                             let _ = win_clone.show();
                             let _ = win_clone.set_focus();
@@ -614,6 +617,12 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
             #[cfg(not(target_os = "windows"))]
             let skip_animation = false;
 
+            // Move to current virtual desktop before showing, so we don't jump desktops.
+            #[cfg(target_os = "windows")]
+            if let Ok(handle) = window.hwnd() {
+                move_window_to_current_virtual_desktop(windows::Win32::Foundation::HWND(handle.0 as _));
+            }
+
             if skip_animation {
                 // Position directly at target — no slide animation
                 let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
@@ -765,6 +774,19 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 
             let _ = window.hide();
 
+            // Clear TOPMOST after hiding so the window doesn't stay topmost
+            // across virtual desktop switches (TOPMOST was set during slide animation).
+            #[cfg(target_os = "windows")]
+            if let Ok(handle) = window.hwnd() {
+                use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE};
+                use windows::Win32::Foundation::HWND;
+                let hwnd = HWND(handle.0 as _);
+                let hwnd_notopmost = HWND(-2 as _); // HWND_NOTOPMOST
+                unsafe {
+                    let _ = SetWindowPos(hwnd, Some(hwnd_notopmost), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+            }
+
             if let Some(callback) = on_done {
                 callback();
             }
@@ -814,6 +836,57 @@ fn has_adjacent_monitor_below(work_area_x: i32, work_area_bottom: i32, work_area
         }
     }
     false
+}
+
+/// Move our hidden window to the user's current virtual desktop before showing it.
+/// Without this, showing a window that was last visible on a different desktop causes
+/// Windows to jump back to that old desktop.
+///
+/// Strategy: get the current desktop GUID via the foreground window (which is always
+/// on the current desktop), then call IVirtualDesktopManager::MoveWindowToDesktop.
+#[cfg(target_os = "windows")]
+fn move_window_to_current_virtual_desktop(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::Win32::UI::Shell::IVirtualDesktopManager;
+    use windows::Win32::System::Com::{CoInitializeEx, CoCreateInstance, CLSCTX_ALL, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    use windows::core::GUID;
+
+    const CLSID_VIRTUAL_DESKTOP_MANAGER: GUID = GUID {
+        data1: 0xAA509086,
+        data2: 0x5CA9,
+        data3: 0x4C25,
+        data4: [0x8F, 0x95, 0x58, 0x9D, 0x3C, 0x07, 0xB4, 0x8A],
+    };
+
+    unsafe {
+        // Initialize COM for this worker thread (idempotent if already initialized).
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let mgr: IVirtualDesktopManager = match CoCreateInstance(&CLSID_VIRTUAL_DESKTOP_MANAGER, None, CLSCTX_ALL) {
+            Ok(m) => m,
+            Err(e) => {
+                log::debug!("VD: IVirtualDesktopManager unavailable: {:?}", e);
+                return;
+            }
+        };
+
+        // Skip if already on the current virtual desktop.
+        if mgr.IsWindowOnCurrentVirtualDesktop(hwnd).map(|b| b.as_bool()).unwrap_or(true) {
+            return;
+        }
+
+        // Get the current desktop GUID from the foreground window (always on current desktop).
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() { return; }
+
+        let desktop_id = match mgr.GetWindowDesktopId(fg) {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+
+        let _ = mgr.MoveWindowToDesktop(hwnd, &desktop_id);
+        log::info!("VD: Moved ClipPaste window to current virtual desktop");
+    }
 }
 
 /// Monitor info obtained directly from Win32 APIs, avoiding coordinate system
