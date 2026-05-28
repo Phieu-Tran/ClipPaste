@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backup import now shows a restart-required banner with a direct Restart Now action.
 - Added a read-only `--bench [query]` CLI mode for local database, image directory, search, and startup-cache timing.
 - Added Windows-friendly test scripts (`pnpm test`, `pnpm test:fe`, `pnpm test:be`).
+- README keeps the existing visual layout while updating architecture notes for current hooks, settings tabs, command modules, and data-directory storage.
 
 ### Changed
 - Image previews now resolve through the configured data directory instead of assuming a fixed asset path.

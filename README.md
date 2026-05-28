@@ -188,8 +188,12 @@ graph TB
             useFolderActions["useFolderActions<br/><small>CRUD, reorder, move clip</small>"]
             useDragDrop["useDragDrop<br/><small>card → folder drag</small>"]
             useFolderPreview["useFolderPreview<br/><small>hover preview + cache</small>"]
+            useSearch["useSearch<br/><small>query, filters, folder-scoped search</small>"]
+            useMultiSelect["useMultiSelect<br/><small>selection state + range actions</small>"]
             useKeyboard["useKeyboard<br/><small>Esc, Ctrl+F, arrows, Enter</small>"]
             useBatchActions["useBatchActions<br/><small>bulk paste, delete, move, pin</small>"]
+            useLifecycle["useWindowLifecycle<br/><small>window events, reload, cleanup</small>"]
+            useTheme["useTheme<br/><small>theme + effect state</small>"]
             useContextMenu["useContextMenu<br/><small>right-click menu state</small>"]
             useFolderModal["useFolderModal<br/><small>create/rename modal</small>"]
         end
@@ -198,7 +202,8 @@ graph TB
             ControlBar["ControlBar<br/><small>search, folder tabs, filters</small>"]
             ClipList["ClipList<br/><small>@tanstack/react-virtual</small>"]
             ClipCard["ClipCard<br/><small>subtype badges, highlight, timestamp</small>"]
-            Settings["SettingsPanel<br/><small>GeneralTab / FoldersTab / DashboardTab / SyncTab</small>"]
+            Settings["SettingsPanel<br/><small>General / Folders / Dashboard / Hotkeys / Sync</small>"]
+            Scratchpad["ScratchpadWindow<br/><small>notes side panel</small>"]
         end
 
         App --> Hooks
@@ -210,8 +215,11 @@ graph TB
             clips["clips.rs<br/><small>get, paste, copy, delete, search, pin</small>"]
             folders["folders.rs<br/><small>CRUD, reorder</small>"]
             settings["settings.rs<br/><small>get/save, ignored apps, hotkey</small>"]
-            data["data.rs<br/><small>export, import, dashboard, timeline</small>"]
+            data["data.rs<br/><small>data dir, export/import, dashboard, cleanup</small>"]
+            scratchpads["scratchpads.rs<br/><small>notes CRUD, reorder, paste</small>"]
+            syncCommands["sync.rs<br/><small>connect, status, sync now</small>"]
             window["window.rs<br/><small>show, hide, focus, dragging</small>"]
+            helpers["helpers.rs<br/><small>shared command helpers</small>"]
         end
 
         clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect,<br/>sensitive detect, incognito mode</small>"]
@@ -325,12 +333,13 @@ sequenceDiagram
 ### Storage Layout
 
 ```
-{data_dir}/ClipPaste/
+{data_dir}/
 ├── clipboard.db           # SQLite (WAL mode)
 ├── clipboard.db-wal       # Write-Ahead Log (concurrent reads + writes)
 ├── clipboard.db-shm       # Shared memory index for WAL
 └── images/                # Clipboard images (not in DB)
     ├── {sha256}.png       # Deduplicated by content hash
+    ├── {sha256}_thumb.jpg # Generated thumbnail for faster previews
     └── ...
 ```
 
@@ -348,9 +357,10 @@ sequenceDiagram
 | **@tanstack/react-virtual** | Horizontal virtual list — constant DOM count regardless of clip count |
 | **Hard delete** (no soft delete) | No DB bloat, no stale rows, simpler queries |
 | **Pinned + folder items protected** | Bulk clear, dedup, and auto-trim never touch pinned or folder clips |
+| **Data dir is the source of truth** | `clipboard.db` and `images/` live directly inside the configured folder |
 | **Atomic DB operations** | Transactions for folder delete, max_items trim — crash-safe |
 | **ICON_CACHE LRU(100)** | Bounded app icon cache prevents memory leak on long sessions |
-| **Modular commands/** | 7 domain files instead of monolithic commands.rs (1500+ lines) |
+| **Modular commands/** | Domain commands split across `clips`, `folders`, `settings`, `data`, `window`, `scratchpads`, `sync`, and helpers |
 
 ---
 
