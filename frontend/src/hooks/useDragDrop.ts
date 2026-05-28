@@ -40,7 +40,8 @@ export function useDragDrop(opts: UseDragDropOpts) {
 
   const handleNativeDragEnd = useCallback(() => {
     const { clipId, targetFolderId } = dragStateRef.current;
-    const droppedOnFolder = clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET';
+    const droppedOnFolder =
+      clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET';
 
     if (droppedOnFolder) {
       // Dropped on a folder tab — move clip
@@ -59,7 +60,7 @@ export function useDragDrop(opts: UseDragDropOpts) {
       clipId: null,
       targetFolderId: 'NO_TARGET',
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleMoveClip]);
 
   return {

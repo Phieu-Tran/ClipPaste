@@ -16,7 +16,12 @@ export function useFolderModal() {
     setShowAddFolderModal(true);
   };
 
-  const openRenameModal = (folderId: string, name: string, color: string | null, icon: string | null) => {
+  const openRenameModal = (
+    folderId: string,
+    name: string,
+    color: string | null,
+    icon: string | null
+  ) => {
     setFolderModalMode('rename');
     setEditingFolderId(folderId);
     setNewFolderName(name);

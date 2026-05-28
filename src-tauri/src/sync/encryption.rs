@@ -1,10 +1,10 @@
+use super::error::SyncError;
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use chacha20poly1305::{
     aead::{Aead, KeyInit, OsRng},
     XChaCha20Poly1305, XNonce,
 };
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use rand::RngCore;
-use super::error::SyncError;
 
 const NONCE_LEN: usize = 24;
 const KEY_LEN: usize = 32;
@@ -12,19 +12,21 @@ const SALT_LEN: usize = 16;
 
 /// Derive a 256-bit encryption key from a passphrase + salt using Argon2id.
 pub fn derive_key(passphrase: &str, salt: &[u8]) -> Result<[u8; KEY_LEN], SyncError> {
-    use argon2::{Algorithm, Version, Params};
+    use argon2::{Algorithm, Params, Version};
 
     let params = Params::new(
-        65536,  // 64 MB memory
-        3,      // 3 iterations
-        1,      // 1 degree of parallelism
+        65536, // 64 MB memory
+        3,     // 3 iterations
+        1,     // 1 degree of parallelism
         Some(KEY_LEN),
-    ).map_err(|e| SyncError::Encryption(format!("Argon2 params error: {}", e)))?;
+    )
+    .map_err(|e| SyncError::Encryption(format!("Argon2 params error: {}", e)))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
     let mut key = [0u8; KEY_LEN];
-    argon2.hash_password_into(passphrase.as_bytes(), salt, &mut key)
+    argon2
+        .hash_password_into(passphrase.as_bytes(), salt, &mut key)
         .map_err(|e| SyncError::Encryption(format!("Key derivation failed: {}", e)))?;
 
     Ok(key)
@@ -46,7 +48,8 @@ pub fn encrypt(key: &[u8; KEY_LEN], plaintext: &[u8]) -> Result<Vec<u8>, SyncErr
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = XNonce::from_slice(&nonce_bytes);
 
-    let ciphertext = cipher.encrypt(nonce, plaintext)
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
         .map_err(|e| SyncError::Encryption(format!("Encryption failed: {}", e)))?;
 
     // Prepend nonce to ciphertext
@@ -60,7 +63,9 @@ pub fn encrypt(key: &[u8; KEY_LEN], plaintext: &[u8]) -> Result<Vec<u8>, SyncErr
 /// Input: nonce (24 bytes) || ciphertext
 pub fn decrypt(key: &[u8; KEY_LEN], data: &[u8]) -> Result<Vec<u8>, SyncError> {
     if data.len() < NONCE_LEN {
-        return Err(SyncError::Encryption("Data too short to contain nonce".into()));
+        return Err(SyncError::Encryption(
+            "Data too short to contain nonce".into(),
+        ));
     }
 
     let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
@@ -68,7 +73,8 @@ pub fn decrypt(key: &[u8; KEY_LEN], data: &[u8]) -> Result<Vec<u8>, SyncError> {
     let cipher = XChaCha20Poly1305::new_from_slice(&key[..])
         .map_err(|e| SyncError::Encryption(format!("Invalid key: {}", e)))?;
 
-    cipher.decrypt(nonce, ciphertext)
+    cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|e| SyncError::Encryption(format!("Decryption failed (wrong passphrase?): {}", e)))
 }
 
@@ -76,7 +82,8 @@ pub fn decrypt(key: &[u8; KEY_LEN], data: &[u8]) -> Result<Vec<u8>, SyncError> {
 pub fn hash_passphrase_for_verification(passphrase: &str) -> Result<String, SyncError> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let hash = argon2.hash_password(passphrase.as_bytes(), &salt)
+    let hash = argon2
+        .hash_password(passphrase.as_bytes(), &salt)
         .map_err(|e| SyncError::Encryption(format!("Passphrase hashing failed: {}", e)))?;
     Ok(hash.to_string())
 }
@@ -88,7 +95,9 @@ pub fn verify_passphrase(passphrase: &str, hash: &str) -> bool {
         Ok(h) => h,
         Err(_) => return false,
     };
-    Argon2::default().verify_password(passphrase.as_bytes(), &parsed).is_ok()
+    Argon2::default()
+        .verify_password(passphrase.as_bytes(), &parsed)
+        .is_ok()
 }
 
 #[cfg(test)]

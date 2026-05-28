@@ -39,7 +39,7 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
         onClick: async () => {
           try {
             const count = await invoke<number>('bulk_delete_clips', { ids });
-            setClips(prev => prev.filter(c => !selectedClipIds.has(c.id)));
+            setClips((prev) => prev.filter((c) => !selectedClipIds.has(c.id)));
             setSelectedClipIds(new Set());
             setSelectedClipId(null);
             loadFolders();
@@ -54,35 +54,55 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
       cancel: { label: 'Cancel', onClick: () => {} },
       duration: 4000,
     });
-  }, [selectedClipIds, setClips, setSelectedClipIds, setSelectedClipId, loadFolders, refreshTotalCount]);
+  }, [
+    selectedClipIds,
+    setClips,
+    setSelectedClipIds,
+    setSelectedClipId,
+    loadFolders,
+    refreshTotalCount,
+  ]);
 
-  const handleBulkMove = useCallback(async (folderId: string | null) => {
-    if (selectedClipIds.size === 0) return;
-    const ids = Array.from(selectedClipIds);
-    try {
-      await invoke('bulk_move_clips', { ids, folderId });
-      if (selectedFolder && folderId !== selectedFolder) {
-        setClips(prev => prev.filter(c => !selectedClipIds.has(c.id)));
-      } else {
-        setClips(prev => prev.map(c => selectedClipIds.has(c.id) ? { ...c, folder_id: folderId } : c));
+  const handleBulkMove = useCallback(
+    async (folderId: string | null) => {
+      if (selectedClipIds.size === 0) return;
+      const ids = Array.from(selectedClipIds);
+      try {
+        await invoke('bulk_move_clips', { ids, folderId });
+        if (selectedFolder && folderId !== selectedFolder) {
+          setClips((prev) => prev.filter((c) => !selectedClipIds.has(c.id)));
+        } else {
+          setClips((prev) =>
+            prev.map((c) => (selectedClipIds.has(c.id) ? { ...c, folder_id: folderId } : c))
+          );
+        }
+        setSelectedClipIds(new Set());
+        setSelectedClipId(null);
+        loadFolders();
+        refreshTotalCount();
+        toast.success(`Moved ${ids.length} clips`);
+      } catch (error) {
+        console.error('Bulk move failed:', error);
+        toast.error('Failed to move clips');
       }
-      setSelectedClipIds(new Set());
-      setSelectedClipId(null);
-      loadFolders();
-      refreshTotalCount();
-      toast.success(`Moved ${ids.length} clips`);
-    } catch (error) {
-      console.error('Bulk move failed:', error);
-      toast.error('Failed to move clips');
-    }
-  }, [selectedClipIds, selectedFolder, setClips, setSelectedClipIds, setSelectedClipId, loadFolders, refreshTotalCount]);
+    },
+    [
+      selectedClipIds,
+      selectedFolder,
+      setClips,
+      setSelectedClipIds,
+      setSelectedClipId,
+      loadFolders,
+      refreshTotalCount,
+    ]
+  );
 
   const handleBulkPaste = useCallback(async () => {
     if (selectedClipIds.size === 0) return;
     const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
     const textsInOrder = displayedClips
-      .filter(c => selectedClipIds.has(c.id) && c.clip_type !== 'image')
-      .map(c => c.content);
+      .filter((c) => selectedClipIds.has(c.id) && c.clip_type !== 'image')
+      .map((c) => c.content);
     if (textsInOrder.length === 0) {
       toast.error('No text clips selected');
       return;
@@ -96,11 +116,39 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
       console.error('Bulk paste failed:', error);
       toast.error('Failed to paste');
     }
-  }, [selectedClipIds, isPreviewing, filteredPreviewClips, filteredClips, setSelectedClipIds, setSelectedClipId]);
+  }, [
+    selectedClipIds,
+    isPreviewing,
+    filteredPreviewClips,
+    filteredClips,
+    setSelectedClipIds,
+    setSelectedClipId,
+  ]);
+
+  const handleBulkSetPin = useCallback(
+    async (pinned: boolean) => {
+      if (selectedClipIds.size === 0) return;
+      const ids = Array.from(selectedClipIds);
+      try {
+        const count = await invoke<number>('bulk_set_pin', { ids, pinned });
+        setClips((prev) =>
+          prev.map((clip) => (selectedClipIds.has(clip.id) ? { ...clip, is_pinned: pinned } : clip))
+        );
+        setSelectedClipIds(new Set());
+        setSelectedClipId(null);
+        toast.success(`${pinned ? 'Pinned' : 'Unpinned'} ${count} clips`);
+      } catch (error) {
+        console.error('Bulk pin failed:', error);
+        toast.error(pinned ? 'Failed to pin clips' : 'Failed to unpin clips');
+      }
+    },
+    [selectedClipIds, setClips, setSelectedClipIds, setSelectedClipId]
+  );
 
   return {
     handleBulkDelete,
     handleBulkMove,
     handleBulkPaste,
+    handleBulkSetPin,
   };
 }

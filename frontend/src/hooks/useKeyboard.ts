@@ -26,9 +26,7 @@ export function useKeyboard(options: KeyboardOptions) {
 
       const target = e.target as HTMLElement;
       const isTyping =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable;
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'f' && opts.onSearch) {
         e.preventDefault();
@@ -69,7 +67,6 @@ export function useKeyboard(options: KeyboardOptions) {
         e.preventDefault();
         opts.onPin();
       }
-
     };
 
     document.addEventListener('keydown', handleKeyDown);

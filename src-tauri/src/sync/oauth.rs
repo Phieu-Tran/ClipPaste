@@ -37,8 +37,10 @@ pub async fn authorize() -> Result<(OAuthTokens, String), SyncError> {
     // Find an available port
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .map_err(|e| SyncError::Auth(format!("Failed to bind loopback: {}", e)))?;
-    let port = listener.local_addr()
-        .map_err(|e| SyncError::Auth(format!("Failed to get port: {}", e)))?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|e| SyncError::Auth(format!("Failed to get port: {}", e)))?
+        .port();
     drop(listener); // Release so tiny_http can bind it
 
     let redirect_uri = format!("http://127.0.0.1:{}", port);
@@ -54,15 +56,22 @@ pub async fn authorize() -> Result<(OAuthTokens, String), SyncError> {
 
     // Open browser (platform-specific)
     #[cfg(target_os = "windows")]
-    let open_result = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &auth_url]).spawn();
+    let open_result = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", &auth_url])
+        .spawn();
     #[cfg(target_os = "macos")]
     let open_result = std::process::Command::new("open").arg(&auth_url).spawn();
     #[cfg(target_os = "linux")]
-    let open_result = std::process::Command::new("xdg-open").arg(&auth_url).spawn();
+    let open_result = std::process::Command::new("xdg-open")
+        .arg(&auth_url)
+        .spawn();
 
     if let Err(e) = open_result {
         log::error!("Failed to open browser: {}", e);
-        return Err(SyncError::Auth(format!("Failed to open browser: {}. Please open this URL manually: {}", e, auth_url)));
+        return Err(SyncError::Auth(format!(
+            "Failed to open browser: {}. Please open this URL manually: {}",
+            e, auth_url
+        )));
     }
 
     // Start local server and wait for callback
@@ -77,7 +86,11 @@ pub async fn authorize() -> Result<(OAuthTokens, String), SyncError> {
             let request = match server.recv_timeout(std::time::Duration::from_secs(300)) {
                 Ok(Some(req)) => req,
                 Ok(None) => continue,
-                Err(_) => return Err(SyncError::Auth("Timed out waiting for authorization".into())),
+                Err(_) => {
+                    return Err(SyncError::Auth(
+                        "Timed out waiting for authorization".into(),
+                    ))
+                }
             };
 
             let url = request.url().to_string();
@@ -95,16 +108,16 @@ pub async fn authorize() -> Result<(OAuthTokens, String), SyncError> {
             }
 
             if let Some(error) = extract_query_param(&url, "error") {
-                let response = tiny_http::Response::from_string(
-                    format!("<html><body><h2>Authorization failed</h2><p>{}</p></body></html>", error)
-                );
+                let response = tiny_http::Response::from_string(format!(
+                    "<html><body><h2>Authorization failed</h2><p>{}</p></body></html>",
+                    error
+                ));
                 let _ = request.respond(response);
                 return Err(SyncError::Auth(format!("User denied access: {}", error)));
             }
 
             // Handle favicon.ico and other non-auth requests (browsers auto-request these)
-            let response = tiny_http::Response::from_string("")
-                .with_status_code(204);
+            let response = tiny_http::Response::from_string("").with_status_code(204);
             let _ = request.respond(response);
         }
 
@@ -112,10 +125,12 @@ pub async fn authorize() -> Result<(OAuthTokens, String), SyncError> {
     });
 
     // Wait for auth code
-    let code = rx.await
+    let code = rx
+        .await
         .map_err(|_| SyncError::Auth("Authorization cancelled".into()))?;
 
-    server_handle.await
+    server_handle
+        .await
         .map_err(|e| SyncError::Auth(format!("Server task panicked: {}", e)))??;
 
     // Exchange code for tokens
@@ -130,7 +145,8 @@ pub async fn authorize() -> Result<(OAuthTokens, String), SyncError> {
 /// Exchange authorization code for access + refresh tokens.
 async fn exchange_code(code: &str, redirect_uri: &str) -> Result<OAuthTokens, SyncError> {
     let client = reqwest::Client::new();
-    let resp = client.post(TOKEN_URL)
+    let resp = client
+        .post(TOKEN_URL)
         .form(&[
             ("code", code),
             ("client_id", CLIENT_ID),
@@ -138,7 +154,8 @@ async fn exchange_code(code: &str, redirect_uri: &str) -> Result<OAuthTokens, Sy
             ("redirect_uri", redirect_uri),
             ("grant_type", "authorization_code"),
         ])
-        .send().await
+        .send()
+        .await
         .map_err(|e| SyncError::Network(format!("Token exchange failed: {}", e)))?;
 
     if !resp.status().is_success() {
@@ -146,10 +163,13 @@ async fn exchange_code(code: &str, redirect_uri: &str) -> Result<OAuthTokens, Sy
         return Err(SyncError::Auth(format!("Token exchange failed: {}", body)));
     }
 
-    let token_resp: TokenResponse = resp.json().await
+    let token_resp: TokenResponse = resp
+        .json()
+        .await
         .map_err(|e| SyncError::Auth(format!("Failed to parse token response: {}", e)))?;
 
-    let refresh_token = token_resp.refresh_token
+    let refresh_token = token_resp
+        .refresh_token
         .ok_or_else(|| SyncError::Auth("No refresh token received".into()))?;
 
     Ok(OAuthTokens {
@@ -162,14 +182,16 @@ async fn exchange_code(code: &str, redirect_uri: &str) -> Result<OAuthTokens, Sy
 /// Refresh an expired access token using the refresh token.
 pub async fn refresh_token(refresh_token: &str) -> Result<OAuthTokens, SyncError> {
     let client = reqwest::Client::new();
-    let resp = client.post(TOKEN_URL)
+    let resp = client
+        .post(TOKEN_URL)
         .form(&[
             ("refresh_token", refresh_token),
             ("client_id", CLIENT_ID),
             ("client_secret", CLIENT_SECRET),
             ("grant_type", "refresh_token"),
         ])
-        .send().await
+        .send()
+        .await
         .map_err(|e| SyncError::Network(format!("Token refresh failed: {}", e)))?;
 
     if !resp.status().is_success() {
@@ -177,12 +199,16 @@ pub async fn refresh_token(refresh_token: &str) -> Result<OAuthTokens, SyncError
         return Err(SyncError::Auth(format!("Token refresh failed: {}", body)));
     }
 
-    let token_resp: TokenResponse = resp.json().await
+    let token_resp: TokenResponse = resp
+        .json()
+        .await
         .map_err(|e| SyncError::Auth(format!("Failed to parse refresh response: {}", e)))?;
 
     Ok(OAuthTokens {
         access_token: token_resp.access_token,
-        refresh_token: token_resp.refresh_token.unwrap_or_else(|| refresh_token.to_string()),
+        refresh_token: token_resp
+            .refresh_token
+            .unwrap_or_else(|| refresh_token.to_string()),
         expires_at: chrono::Utc::now().timestamp() + token_resp.expires_in as i64,
     })
 }
@@ -190,16 +216,20 @@ pub async fn refresh_token(refresh_token: &str) -> Result<OAuthTokens, SyncError
 /// Get user's email from Google userinfo endpoint.
 async fn get_user_email(access_token: &str) -> Result<String, SyncError> {
     let client = reqwest::Client::new();
-    let resp = client.get(USERINFO_URL)
+    let resp = client
+        .get(USERINFO_URL)
         .bearer_auth(access_token)
-        .send().await
+        .send()
+        .await
         .map_err(|e| SyncError::Network(format!("Failed to get user info: {}", e)))?;
 
     if !resp.status().is_success() {
         return Err(SyncError::Auth("Failed to get user email".into()));
     }
 
-    let info: UserInfo = resp.json().await
+    let info: UserInfo = resp
+        .json()
+        .await
         .map_err(|e| SyncError::Auth(format!("Failed to parse user info: {}", e)))?;
 
     Ok(info.email)
@@ -208,9 +238,11 @@ async fn get_user_email(access_token: &str) -> Result<String, SyncError> {
 /// Revoke access (disconnect).
 pub async fn revoke_token(token: &str) -> Result<(), SyncError> {
     let client = reqwest::Client::new();
-    let _ = client.post("https://oauth2.googleapis.com/revoke")
+    let _ = client
+        .post("https://oauth2.googleapis.com/revoke")
         .form(&[("token", token)])
-        .send().await;
+        .send()
+        .await;
     Ok(())
 }
 
@@ -249,7 +281,8 @@ fn urlencoded_decode(s: &str) -> String {
         if b == b'%' {
             let hi = chars.next().unwrap_or(b'0');
             let lo = chars.next().unwrap_or(b'0');
-            let byte = u8::from_str_radix(&format!("{}{}", hi as char, lo as char), 16).unwrap_or(0);
+            let byte =
+                u8::from_str_radix(&format!("{}{}", hi as char, lo as char), 16).unwrap_or(0);
             result.push(byte);
         } else if b == b'+' {
             result.push(b' ');

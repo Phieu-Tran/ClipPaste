@@ -80,7 +80,9 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
                 <span className="text-sm">
                   {item.description}
                   {item.configurable && (
-                    <span className="ml-1.5 text-[10px] text-muted-foreground/60">configurable</span>
+                    <span className="ml-1.5 text-[10px] text-muted-foreground/60">
+                      configurable
+                    </span>
                   )}
                 </span>
                 <div className="flex items-center gap-1">
@@ -98,8 +100,9 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
       ))}
 
       <p className="text-xs text-muted-foreground">
-        The main global shortcut can be changed in <span className="font-medium text-foreground">General</span> settings.
-        Single-key shortcuts (E, P, /) only work when no input is focused.
+        The main global shortcut can be changed in{' '}
+        <span className="font-medium text-foreground">General</span> settings. Single-key shortcuts
+        (E, P, /) only work when no input is focused.
       </p>
     </div>
   );

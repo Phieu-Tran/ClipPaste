@@ -6,6 +6,9 @@ import {
   BarChart3,
   Keyboard,
   Cloud,
+  CheckCircle2,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../hooks/useTheme';
@@ -32,17 +35,31 @@ interface SettingsPanelProps {
 }
 
 type Tab = 'dashboard' | 'general' | 'folders' | 'hotkeys' | 'sync';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 interface DashboardStats {
   total: number;
   today: number;
   images: number;
+  text: number;
   folders: number;
+  pinned: number;
+  sensitive: number;
+  in_folders: number;
+  urls: number;
   daily: { day: string; count: number }[];
   top_apps: { app: string; count: number }[];
   most_pasted: { id: string; preview: string; count: number }[];
   db_size: number;
   images_size: number;
+  old_images_14d: {
+    days: number;
+    count: number;
+    bytes: number;
+    protected_count: number;
+    oldest_created_at: string | null;
+    newest_created_at: string | null;
+  };
 }
 
 function toDateStr(d: Date): string {
@@ -52,6 +69,8 @@ function toDateStr(d: Date): string {
 export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [settings, setSettings] = useState<Settings>(initialSettings);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [importRestartRequired, setImportRestartRequired] = useState(false);
   const [_historySize, setHistorySize] = useState<number>(0);
   const [isRecordingMode, setIsRecordingMode] = useState(false);
 
@@ -66,14 +85,26 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
 
   // Dashboard State
   const [dashStats, setDashStats] = useState<DashboardStats | null>(null);
+  const [dashStatsError, setDashStatsError] = useState('');
   const [dashDate, setDashDate] = useState(toDateStr(new Date()));
   const [dashSearch, setDashSearch] = useState('');
   const [dashSourceApp, setDashSourceApp] = useState<string | null>(null);
-  const [dashClips, setDashClips] = useState<{ id: string; clip_type: string; content: string; preview: string; created_at: string; source_app: string | null; subtype: string | null }[]>([]);
+  const [dashClips, setDashClips] = useState<
+    {
+      id: string;
+      clip_type: string;
+      content: string;
+      preview: string;
+      created_at: string;
+      source_app: string | null;
+      subtype: string | null;
+    }[]
+  >([]);
   const [dashClipsLoading, setDashClipsLoading] = useState(false);
 
   // Debounced dashboard search
   const dashSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedDashSearch, setDebouncedDashSearch] = useState('');
 
   // Apply theme immediately when settings.theme changes
@@ -84,6 +115,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     const prevSettings = settings;
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
+    if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+    setSaveStatus('saving');
 
     try {
       await invoke('save_settings', { settings: newSettings });
@@ -95,29 +128,13 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     } catch (error) {
       console.error(`Failed to save settings:`, error);
       setSettings(prevSettings); // Rollback on failure
+      setSaveStatus('error');
       toast.error(`Failed to save settings`);
       return; // Don't show success toast
     }
 
-    // Feedback for changes
-    const keys = Object.keys(updates);
-    if (keys.length === 1) {
-      const key = keys[0] as keyof Settings;
-      const value = updates[key];
-      if (key !== 'theme') {
-        const label = key
-          .split('_')
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ');
-        if (typeof value === 'boolean') {
-          toast.success(`${label} was ${value ? 'enabled' : 'disabled'}`);
-        } else {
-          toast.success(`${label} updated`);
-        }
-      }
-    } else if (keys.length > 1) {
-      toast.success('Settings updated');
-    }
+    setSaveStatus('saved');
+    saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1800);
   };
 
   const updateSetting = (key: keyof Settings, value: any) => {
@@ -154,8 +171,33 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     isOpen: false,
     title: '',
     message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    variant: 'danger' as 'danger' | 'warning' | 'info',
+    details: [] as string[],
     action: async () => {},
   });
+
+  const requestConfirm = (options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    details?: string[];
+    action: () => Promise<void>;
+  }) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: options.title,
+      message: options.message,
+      confirmText: options.confirmText ?? 'Confirm',
+      cancelText: options.cancelText ?? 'Cancel',
+      variant: options.variant ?? 'danger',
+      details: options.details ?? [],
+      action: options.action,
+    });
+  };
 
   const loadFolders = async () => {
     try {
@@ -166,13 +208,27 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     }
   };
 
+  const refreshDashboardStats = async () => {
+    try {
+      setDashStatsError('');
+      const stats = await invoke<DashboardStats>('get_dashboard_stats');
+      setDashStats(stats);
+    } catch (error) {
+      console.error('Failed to load dashboard stats:', error);
+      setDashStatsError(String(error));
+    }
+  };
+
   useEffect(() => {
     invoke<number>('get_clipboard_history_size').then(setHistorySize).catch(console.error);
     invoke<string[]>('get_ignored_apps').then(setIgnoredApps).catch(console.error);
     getVersion().then(setAppVersion).catch(console.error);
     loadFolders();
     invoke<string>('get_data_directory').then(setDataDirectory).catch(console.error);
-    invoke<DashboardStats>('get_dashboard_stats').then(setDashStats).catch(console.error);
+    refreshDashboardStats();
+    return () => {
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+    };
   }, []);
 
   // Debounce dashboard search input
@@ -228,7 +284,11 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setIsRecordingMode(false);
   };
 
-  const [updateProgress, setUpdateProgress] = useState<{ percent: number; downloaded: number; total: number } | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<{
+    percent: number;
+    downloaded: number;
+    total: number;
+  } | null>(null);
 
   const handleCheckUpdate = async () => {
     try {
@@ -253,7 +313,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                     setUpdateProgress({ percent: 0, downloaded: 0, total: totalBytes });
                   } else if (event.event === 'Progress') {
                     downloadedBytes += event.data.chunkLength;
-                    const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+                    const percent =
+                      totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
                     setUpdateProgress({ percent, downloaded: downloadedBytes, total: totalBytes });
                   } else if (event.event === 'Finished') {
                     setUpdateProgress({ percent: 100, downloaded: totalBytes, total: totalBytes });
@@ -284,9 +345,12 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       if (selectedPath) {
         await invoke('set_data_directory', { newPath: selectedPath });
         setDataDirectory(selectedPath);
-        toast.success('Data directory changed. Please restart the application for changes to take effect.', {
-          duration: 5000,
-        });
+        toast.success(
+          'Data directory changed. Please restart the application for changes to take effect.',
+          {
+            duration: 5000,
+          }
+        );
       }
     } catch (e) {
       console.error('Failed to select data directory:', e);
@@ -295,17 +359,19 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   };
 
   const confirmClearHistory = () => {
-    setConfirmDialog({
-      isOpen: true,
+    requestConfirm({
       title: 'Clear History',
       message:
         'Are you sure you want to clear your clipboard history? This will only remove items that are not in folders. Items saved in folders will be preserved.',
+      confirmText: 'Clear History',
+      variant: 'danger',
       action: async () => {
         try {
           await invoke('clear_all_clips');
           // Refresh the history size after clearing
           const newSize = await invoke<number>('get_clipboard_history_size');
           setHistorySize(newSize);
+          await refreshDashboardStats();
           toast.success('Clipboard history cleared successfully.');
         } catch (error) {
           console.error('Failed to clear history:', error);
@@ -315,12 +381,109 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     });
   };
 
+  const handleRemoveDuplicates = async () => {
+    requestConfirm({
+      title: 'Remove Duplicates',
+      message:
+        'ClipPaste will keep one copy per content hash and remove duplicate unprotected clips.',
+      confirmText: 'Remove Duplicates',
+      variant: 'warning',
+      details: ['Pinned clips and clips inside folders are preserved.'],
+      action: async () => {
+        try {
+          const count = await invoke<number>('remove_duplicate_clips');
+          toast.success(`Removed ${count} duplicate clips`);
+          const newSize = await invoke<number>('get_clipboard_history_size');
+          setHistorySize(newSize);
+          await refreshDashboardStats();
+        } catch (error) {
+          console.error(error);
+          toast.error(`Failed to remove duplicates: ${error}`);
+        }
+      },
+    });
+  };
+
+  const handleExportBackup = async () => {
+    try {
+      const path = await invoke<string>('export_data');
+      toast.success(`Exported to ${path}`);
+    } catch (error) {
+      if (String(error) !== 'Export cancelled') {
+        toast.error(`Export failed: ${error}`);
+      }
+    }
+  };
+
+  const handleImportBackup = async () => {
+    requestConfirm({
+      title: 'Import Backup',
+      message:
+        'Importing a backup replaces the current database and image folder for this data directory. Create an export first if you need a rollback point.',
+      confirmText: 'Import Backup',
+      variant: 'warning',
+      details: [
+        'The app will ask you to choose a backup file.',
+        'Restart ClipPaste after import so every window reads the imported data.',
+      ],
+      action: async () => {
+        try {
+          await invoke('import_data');
+          setImportRestartRequired(true);
+          toast.success('Backup imported. Restart to apply.', {
+            duration: 10000,
+            action: {
+              label: 'Restart',
+              onClick: () => relaunch().catch((error) => toast.error(`Restart failed: ${error}`)),
+            },
+          });
+        } catch (error) {
+          if (String(error) !== 'Import cancelled') {
+            toast.error(`Import failed: ${error}`);
+          }
+        }
+      },
+    });
+  };
+
+  const renderSaveStatus = () => {
+    if (saveStatus === 'saving') {
+      return (
+        <span className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
+          <Loader2 size={12} className="animate-spin" />
+          Saving
+        </span>
+      );
+    }
+    if (saveStatus === 'saved') {
+      return (
+        <span className="flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+          <CheckCircle2 size={12} />
+          Saved
+        </span>
+      );
+    }
+    if (saveStatus === 'error') {
+      return (
+        <span className="flex items-center gap-1 rounded-full border border-destructive/20 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+          <AlertCircle size={12} />
+          Save failed
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <>
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
         title={confirmDialog.title}
         message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        variant={confirmDialog.variant}
+        details={confirmDialog.details}
         onConfirm={async () => {
           await confirmDialog.action();
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
@@ -331,9 +494,15 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         {/* Header */}
         <div className="drag-area flex items-center justify-between border-b border-border p-4">
           <h2 className="text-lg font-semibold">Settings</h2>
-          <button onClick={onClose} className="no-drag icon-button" style={{ WebkitAppRegion: 'no-drag' } as any}>
-            <X size={18} />
-          </button>
+          <div
+            className="no-drag flex items-center gap-2"
+            style={{ WebkitAppRegion: 'no-drag' } as any}
+          >
+            {renderSaveStatus()}
+            <button onClick={onClose} className="icon-button">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
@@ -406,9 +575,31 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="mx-auto max-w-2xl space-y-8">
+              {importRestartRequired && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-semibold text-amber-300">Backup imported</div>
+                      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                        Restart ClipPaste so every window and cache reads the imported database.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        relaunch().catch((error) => toast.error(`Restart failed: ${error}`))
+                      }
+                      className="btn btn-secondary flex-shrink-0 text-xs"
+                    >
+                      Restart Now
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {activeTab === 'dashboard' && (
                 <DashboardTab
                   dashStats={dashStats}
+                  dashStatsError={dashStatsError}
                   dashDate={dashDate}
                   setDashDate={setDashDate}
                   dashSearch={dashSearch}
@@ -417,6 +608,10 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   setDashSourceApp={setDashSourceApp}
                   dashClips={dashClips}
                   dashClipsLoading={dashClipsLoading}
+                  onOpenStorageSettings={() => setActiveTab('general')}
+                  onExportBackup={handleExportBackup}
+                  onRemoveDuplicates={handleRemoveDuplicates}
+                  onRefreshStats={refreshDashboardStats}
                 />
               )}
 
@@ -438,8 +633,14 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   setNewIgnoredApp={setNewIgnoredApp}
                   dataDirectory={dataDirectory}
                   handleSelectDataDirectory={handleSelectDataDirectory}
+                  dashStats={dashStats}
+                  refreshDashboardStats={refreshDashboardStats}
+                  requestConfirm={requestConfirm}
                   setHistorySize={setHistorySize}
                   confirmClearHistory={confirmClearHistory}
+                  handleRemoveDuplicates={handleRemoveDuplicates}
+                  handleExportBackup={handleExportBackup}
+                  handleImportBackup={handleImportBackup}
                   updateProgress={updateProgress}
                   handleCheckUpdate={handleCheckUpdate}
                   appVersion={appVersion}
@@ -477,7 +678,11 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
           <div className="flex gap-2 text-xs text-muted-foreground">
             <span>&copy; 2026</span>
             <span>&bull;</span>
-            <button onClick={handleCheckUpdate} className="underline hover:text-foreground" disabled={!!updateProgress}>
+            <button
+              onClick={handleCheckUpdate}
+              className="underline hover:text-foreground"
+              disabled={!!updateProgress}
+            >
               {updateProgress ? 'Updating...' : 'Check for Updates'}
             </button>
           </div>
@@ -486,7 +691,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
               <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
                 <span>{updateProgress.percent}%</span>
                 <span>
-                  {(updateProgress.downloaded / 1024 / 1024).toFixed(1)} / {(updateProgress.total / 1024 / 1024).toFixed(1)} MB
+                  {(updateProgress.downloaded / 1024 / 1024).toFixed(1)} /{' '}
+                  {(updateProgress.total / 1024 / 1024).toFixed(1)} MB
                 </span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">

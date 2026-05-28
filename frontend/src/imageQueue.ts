@@ -8,16 +8,23 @@ type Task<T> = () => Promise<T>;
 
 const MAX_CONCURRENT = 3;
 let running = 0;
-const queue: Array<{ task: Task<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+const queue: Array<{
+  task: Task<unknown>;
+  resolve: (v: unknown) => void;
+  reject: (e: unknown) => void;
+}> = [];
 
 function flush() {
   while (running < MAX_CONCURRENT && queue.length > 0) {
     const item = queue.shift()!;
     running++;
-    item.task().then(item.resolve, item.reject).finally(() => {
-      running--;
-      flush();
-    });
+    item
+      .task()
+      .then(item.resolve, item.reject)
+      .finally(() => {
+        running--;
+        flush();
+      });
   }
 }
 

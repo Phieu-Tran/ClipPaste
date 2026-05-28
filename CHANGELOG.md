@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.11] - 2026-05-28
+
+### Added
+- Storage & Retention settings now group data directory, max clip count, clip retention, image retention, and cleanup controls in one place.
+- Old image cleanup now supports preview-before-delete, including item count, estimated reclaimable size, and protected image count.
+- Dashboard now includes storage management, content mix, local DB/image size, and quick 14-day old-image cleanup insight.
+- Dashboard quick actions for storage settings, old-image preview, export backup, duplicate cleanup, and stats refresh.
+- Bulk action bar now supports paste, delete, move, pin, unpin, and cancel with clearer controls.
+- Sync health UI now shows status, pending changes, token expiry, last sync time, last pushed/pulled/deleted report, and last error with retry.
+- Backup import now shows a restart-required banner with a direct Restart Now action.
+- Added a read-only `--bench [query]` CLI mode for local database, image directory, search, and startup-cache timing.
+- Added Windows-friendly test scripts (`pnpm test`, `pnpm test:fe`, `pnpm test:be`).
+
+### Changed
+- Image previews now resolve through the configured data directory instead of assuming a fixed asset path.
+- Data directory switching now stages current DB/images into the new location when needed and avoids overwriting an existing `clipboard.db`.
+- Startup cleanup is safer: orphan managed image files are quarantined, and missing image rows are preserved unless explicitly opted in via env var.
+- Default log verbosity is reduced to `info`, configurable with `CLIPPASTE_LOG` or `RUST_LOG`.
+- Settings saves now use inline `Saving` / `Saved` / `Save failed` status instead of noisy per-toggle success toasts.
+- Dangerous Settings actions use the shared confirmation dialog with action-specific details.
+
+### Security
+- Removed Aptabase analytics integration and related permissions.
+- Narrowed Tauri asset protocol scope and disabled the global Tauri JS API.
+- Replaced broad clipboard plugin permissions with explicit least-privilege clipboard permissions.
+
+---
+
 ## [1.10.10] - 2026-05-24
 
 ### Fixed

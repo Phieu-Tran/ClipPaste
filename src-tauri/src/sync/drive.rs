@@ -86,7 +86,11 @@ impl DriveClient {
         let delay = compute_backoff_delay(attempt, None);
         log::warn!(
             "SYNC: Network error during {}: {}, retrying in {:?} (attempt {}/{})",
-            context, err, delay, attempt + 1, MAX_RETRIES
+            context,
+            err,
+            delay,
+            attempt + 1,
+            MAX_RETRIES
         );
         tokio::time::sleep(delay).await;
         Ok(())
@@ -171,7 +175,10 @@ impl DriveClient {
 
                     let resp = match req.send().await {
                         Ok(r) => r,
-                        Err(e) => { Self::backoff_network_error(e, attempt, "list_files").await?; continue; }
+                        Err(e) => {
+                            Self::backoff_network_error(e, attempt, "list_files").await?;
+                            continue;
+                        }
                     };
 
                     match Self::check_retry(resp, attempt, "list_files").await? {
@@ -225,7 +232,10 @@ impl DriveClient {
                 .await
             {
                 Ok(r) => r,
-                Err(e) => { Self::backoff_network_error(e, attempt, "find_file_by_name").await?; continue; }
+                Err(e) => {
+                    Self::backoff_network_error(e, attempt, "find_file_by_name").await?;
+                    continue;
+                }
             };
 
             match Self::check_retry(resp, attempt, "find_file_by_name").await? {
@@ -281,7 +291,10 @@ impl DriveClient {
                 .await
             {
                 Ok(r) => r,
-                Err(e) => { Self::backoff_network_error(e, attempt, "create_file").await?; continue; }
+                Err(e) => {
+                    Self::backoff_network_error(e, attempt, "create_file").await?;
+                    continue;
+                }
             };
 
             match Self::check_retry(resp, attempt, "create_file").await? {
@@ -326,7 +339,10 @@ impl DriveClient {
                 .await
             {
                 Ok(r) => r,
-                Err(e) => { Self::backoff_network_error(e, attempt, "update_file").await?; continue; }
+                Err(e) => {
+                    Self::backoff_network_error(e, attempt, "update_file").await?;
+                    continue;
+                }
             };
 
             match Self::check_retry(resp, attempt, "update_file").await? {
@@ -360,7 +376,10 @@ impl DriveClient {
                 .await
             {
                 Ok(r) => r,
-                Err(e) => { Self::backoff_network_error(e, attempt, "download_file").await?; continue; }
+                Err(e) => {
+                    Self::backoff_network_error(e, attempt, "download_file").await?;
+                    continue;
+                }
             };
 
             match Self::check_retry(resp, attempt, "download_file").await? {
@@ -395,7 +414,10 @@ impl DriveClient {
                 .await
             {
                 Ok(r) => r,
-                Err(e) => { Self::backoff_network_error(e, attempt, "delete_file").await?; continue; }
+                Err(e) => {
+                    Self::backoff_network_error(e, attempt, "delete_file").await?;
+                    continue;
+                }
             };
 
             match Self::check_retry(resp, attempt, "delete_file").await? {

@@ -33,7 +33,10 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onCloseRef.current(); }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCloseRef.current();
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
         if (clipIdRef.current) {
@@ -56,7 +59,9 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
     <div
       className="absolute inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} /* bg-black/50 */
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="flex w-[80%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">
         <p className="text-xs text-muted-foreground">Note · Enter to save · Esc to cancel</p>
@@ -70,7 +75,9 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
         <div className="flex justify-end gap-2">
           {initialNote && (
             <button
-              onClick={() => { if (clipId) onSave(clipId, null); }}
+              onClick={() => {
+                if (clipId) onSave(clipId, null);
+              }}
               className="rounded-md px-3 py-1 text-sm text-red-400 hover:bg-red-500/10"
             >
               Remove

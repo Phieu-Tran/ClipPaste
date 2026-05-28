@@ -68,7 +68,13 @@
 
   body {
     @apply text-foreground antialiased;
-    font-family: 'Segoe UI Variable', 'Segoe UI', Inter, system-ui, -apple-system, sans-serif;
+    font-family:
+      'Segoe UI Variable',
+      'Segoe UI',
+      Inter,
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 
   ::-webkit-scrollbar {
@@ -241,8 +247,12 @@
 
   /* Shimmer wave effect on skeleton lines */
   @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 
   .skeleton-shimmer {
@@ -274,8 +284,12 @@
 
   /* Copy pulse ring animation */
   @keyframes copy-pulse {
-    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-    100% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    0% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+    }
+    100% {
+      box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+    }
   }
 
   .animate-copy-pulse {

@@ -6,7 +6,6 @@ const COLLAPSED_WIDTH = 16;
 const COLLAPSED_HEIGHT = 100;
 
 export function useScratchpad() {
-
   // Toggle: create if not exists, otherwise show/focus
   const toggle = useCallback(async () => {
     const win = await WebviewWindow.getByLabel('scratchpad');

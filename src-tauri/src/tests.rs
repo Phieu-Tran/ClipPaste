@@ -6,12 +6,18 @@ mod tests {
 
     #[test]
     fn detect_subtype_url_http() {
-        assert_eq!(detect_subtype("http://example.com"), Some("url".to_string()));
+        assert_eq!(
+            detect_subtype("http://example.com"),
+            Some("url".to_string())
+        );
     }
 
     #[test]
     fn detect_subtype_url_https() {
-        assert_eq!(detect_subtype("https://example.com/path?q=1"), Some("url".to_string()));
+        assert_eq!(
+            detect_subtype("https://example.com/path?q=1"),
+            Some("url".to_string())
+        );
     }
 
     #[test]
@@ -21,12 +27,18 @@ mod tests {
 
     #[test]
     fn detect_subtype_email() {
-        assert_eq!(detect_subtype("user@example.com"), Some("email".to_string()));
+        assert_eq!(
+            detect_subtype("user@example.com"),
+            Some("email".to_string())
+        );
     }
 
     #[test]
     fn detect_subtype_email_with_plus() {
-        assert_eq!(detect_subtype("user+tag@example.com"), Some("email".to_string()));
+        assert_eq!(
+            detect_subtype("user+tag@example.com"),
+            Some("email".to_string())
+        );
     }
 
     #[test]
@@ -61,17 +73,26 @@ mod tests {
 
     #[test]
     fn detect_subtype_color_rgba() {
-        assert_eq!(detect_subtype("rgba(255, 0, 0, 0.5)"), Some("color".to_string()));
+        assert_eq!(
+            detect_subtype("rgba(255, 0, 0, 0.5)"),
+            Some("color".to_string())
+        );
     }
 
     #[test]
     fn detect_subtype_color_hsl() {
-        assert_eq!(detect_subtype("hsl(120, 100%, 50%)"), Some("color".to_string()));
+        assert_eq!(
+            detect_subtype("hsl(120, 100%, 50%)"),
+            Some("color".to_string())
+        );
     }
 
     #[test]
     fn detect_subtype_path_windows() {
-        assert_eq!(detect_subtype("C:\\Users\\test\\file.txt"), Some("path".to_string()));
+        assert_eq!(
+            detect_subtype("C:\\Users\\test\\file.txt"),
+            Some("path".to_string())
+        );
     }
 
     #[test]
@@ -81,7 +102,10 @@ mod tests {
 
     #[test]
     fn detect_subtype_path_unix() {
-        assert_eq!(detect_subtype("/usr/local/bin/app"), Some("path".to_string()));
+        assert_eq!(
+            detect_subtype("/usr/local/bin/app"),
+            Some("path".to_string())
+        );
     }
 
     #[test]
@@ -112,7 +136,10 @@ mod tests {
 
     #[test]
     fn detect_subtype_trimmed_url() {
-        assert_eq!(detect_subtype("  https://example.com  "), Some("url".to_string()));
+        assert_eq!(
+            detect_subtype("  https://example.com  "),
+            Some("url".to_string())
+        );
     }
 
     #[test]
@@ -207,17 +234,25 @@ mod tests {
         fn hash_is_hex_string_of_expected_length() {
             let hash = calculate_hash(b"test content");
             // SHA256 produces 32 bytes = 64 hex characters
-            assert_eq!(hash.len(), 64, "SHA256 hex hash should be 64 characters, got {}", hash.len());
+            assert_eq!(
+                hash.len(),
+                64,
+                "SHA256 hex hash should be 64 characters, got {}",
+                hash.len()
+            );
             // Verify all characters are valid hex
-            assert!(hash.chars().all(|c| c.is_ascii_hexdigit()),
-                "Hash should only contain hex characters, got: {}", hash);
+            assert!(
+                hash.chars().all(|c| c.is_ascii_hexdigit()),
+                "Hash should only contain hex characters, got: {}",
+                hash
+            );
         }
     }
 
     // === Search cache tests ===
 
     mod search_cache_tests {
-        use crate::clipboard::{SEARCH_CACHE, add_to_search_cache, remove_from_search_cache};
+        use crate::clipboard::{add_to_search_cache, remove_from_search_cache, SEARCH_CACHE};
 
         #[test]
         fn add_entry_verify_in_cache() {
@@ -228,7 +263,9 @@ mod tests {
             add_to_search_cache(uuid, preview, folder_id);
 
             let cache = SEARCH_CACHE.read();
-            let found = cache.get(uuid).map_or(false, |(p, f, _)| p == "some preview text" && *f == folder_id);
+            let found = cache.get(uuid).map_or(false, |(p, f, _)| {
+                p == "some preview text" && *f == folder_id
+            });
             assert!(found, "Entry should be found in search cache after add");
 
             // Cleanup
@@ -251,8 +288,10 @@ mod tests {
 
             // Verify it was removed
             let cache = SEARCH_CACHE.read();
-            assert!(!cache.contains_key(uuid),
-                "Entry should not be found in search cache after remove");
+            assert!(
+                !cache.contains_key(uuid),
+                "Entry should not be found in search cache after remove"
+            );
         }
 
         #[test]
@@ -269,9 +308,15 @@ mod tests {
             remove_from_search_cache(uuid2);
 
             let cache = SEARCH_CACHE.read();
-            assert!(cache.contains_key(uuid1), "First entry should still be present");
+            assert!(
+                cache.contains_key(uuid1),
+                "First entry should still be present"
+            );
             assert!(!cache.contains_key(uuid2), "Second entry should be removed");
-            assert!(cache.contains_key(uuid3), "Third entry should still be present");
+            assert!(
+                cache.contains_key(uuid3),
+                "Third entry should still be present"
+            );
 
             // Cleanup
             drop(cache);
@@ -283,12 +328,15 @@ mod tests {
     // === Settings cache tests ===
 
     mod settings_cache_tests {
-        use crate::clipboard::{SETTINGS_CACHE, get_cached_setting};
+        use crate::clipboard::{get_cached_setting, SETTINGS_CACHE};
 
         #[test]
         fn get_cached_setting_returns_none_for_missing_key() {
             let result = get_cached_setting("nonexistent_key_for_test_12345");
-            assert_eq!(result, None, "Should return None for a key that was never inserted");
+            assert_eq!(
+                result, None,
+                "Should return None for a key that was never inserted"
+            );
         }
 
         #[test]
@@ -303,8 +351,11 @@ mod tests {
             }
 
             let result = get_cached_setting(key);
-            assert_eq!(result, Some(value.to_string()),
-                "Should return the inserted value");
+            assert_eq!(
+                result,
+                Some(value.to_string()),
+                "Should return the inserted value"
+            );
 
             // Cleanup
             {
@@ -335,8 +386,11 @@ mod tests {
             {
                 let mut cache = ICON_CACHE.lock();
                 let result = cache.get(app_name);
-                assert_eq!(result, Some(&icon_data),
-                    "Should be able to read back the icon data that was written");
+                assert_eq!(
+                    result,
+                    Some(&icon_data),
+                    "Should be able to read back the icon data that was written"
+                );
             }
 
             // Cleanup (LRU uses `pop`)
@@ -347,13 +401,108 @@ mod tests {
         }
     }
 
+    // === Security config regression tests ===
+
+    mod security_config_tests {
+        use std::path::PathBuf;
+
+        fn manifest_file(relative_path: &str) -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative_path)
+        }
+
+        fn read_json(relative_path: &str) -> serde_json::Value {
+            let raw = std::fs::read_to_string(manifest_file(relative_path))
+                .expect("config file should be readable");
+            serde_json::from_str(&raw).expect("config file should be valid JSON")
+        }
+
+        #[test]
+        fn asset_protocol_scope_stays_app_local() {
+            let config = read_json("tauri.conf.json");
+            let scope = config["app"]["security"]["assetProtocol"]["scope"]
+                .as_array()
+                .expect("asset protocol scope should be an array");
+            let scopes: Vec<&str> = scope
+                .iter()
+                .map(|value| value.as_str().expect("scope entries should be strings"))
+                .collect();
+
+            assert!(
+                scopes.contains(&"$APPDATA/ClipPaste/**"),
+                "asset scope should include the app data directory"
+            );
+            assert!(
+                scopes.contains(&"$APPLOCALDATA/ClipPaste/**"),
+                "asset scope should include the app local data directory"
+            );
+            assert!(
+                !scopes.iter().any(|scope| {
+                    *scope == "**" || *scope == "$HOME/**" || scope.ends_with(":\\**")
+                }),
+                "asset scope should not expose whole drives or the full home directory"
+            );
+        }
+
+        #[test]
+        fn global_tauri_api_stays_disabled() {
+            let config = read_json("tauri.conf.json");
+
+            assert_eq!(
+                config["app"]["withGlobalTauri"].as_bool(),
+                Some(false),
+                "window.__TAURI__ should not be exposed globally"
+            );
+        }
+
+        #[test]
+        fn clipboard_permissions_stay_least_privilege() {
+            let capabilities = read_json("capabilities/default.json");
+            let permissions = capabilities["permissions"]
+                .as_array()
+                .expect("permissions should be an array");
+            let permission_ids: Vec<&str> = permissions
+                .iter()
+                .filter_map(|permission| permission.as_str())
+                .collect();
+
+            for required in [
+                "clipboard-x:allow-start-listening",
+                "clipboard-x:allow-stop-listening",
+                "clipboard-x:allow-read-text",
+                "clipboard-x:allow-read-image",
+                "clipboard-x:allow-write-text",
+                "clipboard-x:allow-write-image",
+            ] {
+                assert!(
+                    permission_ids.contains(&required),
+                    "missing clipboard permission: {required}"
+                );
+            }
+
+            for disallowed in [
+                "clipboard-x:default",
+                "clipboard-x:allow-clear",
+                "clipboard-x:allow-read-html",
+                "clipboard-x:allow-read-rtf",
+                "clipboard-x:allow-read-files",
+                "clipboard-x:allow-write-html",
+                "clipboard-x:allow-write-rtf",
+                "clipboard-x:allow-write-files",
+            ] {
+                assert!(
+                    !permission_ids.contains(&disallowed),
+                    "overbroad clipboard permission should not be enabled: {disallowed}"
+                );
+            }
+        }
+    }
+
     // === Integration tests ===
 
     mod integration_tests {
         use crate::clipboard::{
-            SEARCH_CACHE, SETTINGS_CACHE,
-            add_to_search_cache, remove_from_search_cache, get_cached_setting,
-            detect_subtype, truncate_utf8, calculate_hash,
+            add_to_search_cache, calculate_hash, detect_subtype, get_cached_setting,
+            remove_from_search_cache, truncate_utf8, SEARCH_CACHE, SETTINGS_CACHE,
         };
 
         /// Test the search cache workflow: add entries, search with single/multi-word,
@@ -373,11 +522,16 @@ mod tests {
             // Single word search: "hello" should match uuid1 and uuid3
             {
                 let cache = SEARCH_CACHE.read();
-                let results: Vec<&str> = cache.iter()
+                let results: Vec<&str> = cache
+                    .iter()
                     .filter(|(u, (p, _, _))| u.starts_with(prefix) && p.contains("hello"))
                     .map(|(u, _)| u.as_str())
                     .collect();
-                assert_eq!(results.len(), 2, "Single word 'hello' should match 2 entries");
+                assert_eq!(
+                    results.len(),
+                    2,
+                    "Single word 'hello' should match 2 entries"
+                );
                 assert!(results.contains(&uuid1.as_str()));
                 assert!(results.contains(&uuid3.as_str()));
             }
@@ -386,11 +540,18 @@ mod tests {
             {
                 let cache = SEARCH_CACHE.read();
                 let words = vec!["hello", "rust"];
-                let results: Vec<&str> = cache.iter()
-                    .filter(|(u, (p, _, _))| u.starts_with(prefix) && words.iter().all(|w| p.contains(w)))
+                let results: Vec<&str> = cache
+                    .iter()
+                    .filter(|(u, (p, _, _))| {
+                        u.starts_with(prefix) && words.iter().all(|w| p.contains(w))
+                    })
                     .map(|(u, _)| u.as_str())
                     .collect();
-                assert_eq!(results.len(), 1, "Multi-word 'hello rust' should match 1 entry");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "Multi-word 'hello rust' should match 1 entry"
+                );
                 assert_eq!(results[0], uuid1.as_str());
             }
 
@@ -398,43 +559,66 @@ mod tests {
             {
                 let cache = SEARCH_CACHE.read();
                 let words = vec!["world", "from"];
-                let results: Vec<&str> = cache.iter()
-                    .filter(|(u, (p, _, _))| u.starts_with(prefix) && words.iter().all(|w| p.contains(w)))
+                let results: Vec<&str> = cache
+                    .iter()
+                    .filter(|(u, (p, _, _))| {
+                        u.starts_with(prefix) && words.iter().all(|w| p.contains(w))
+                    })
                     .map(|(u, _)| u.as_str())
                     .collect();
-                assert_eq!(results.len(), 2, "Multi-word 'world from' should match 2 entries");
+                assert_eq!(
+                    results.len(),
+                    2,
+                    "Multi-word 'world from' should match 2 entries"
+                );
             }
 
             // Remove uuid2 and verify search updates
             remove_from_search_cache(&uuid2);
             {
                 let cache = SEARCH_CACHE.read();
-                let results: Vec<&str> = cache.iter()
+                let results: Vec<&str> = cache
+                    .iter()
                     .filter(|(u, (p, _, _))| u.starts_with(prefix) && p.contains("world"))
                     .map(|(u, _)| u.as_str())
                     .collect();
-                assert_eq!(results.len(), 1, "After removing uuid2, 'world' should match only uuid1");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "After removing uuid2, 'world' should match only uuid1"
+                );
                 assert_eq!(results[0], uuid1.as_str());
             }
 
             // Search with no matches
             {
                 let cache = SEARCH_CACHE.read();
-                let results: Vec<&str> = cache.iter()
+                let results: Vec<&str> = cache
+                    .iter()
                     .filter(|(u, (p, _, _))| u.starts_with(prefix) && p.contains("nonexistentxyz"))
                     .map(|(u, _)| u.as_str())
                     .collect();
-                assert!(results.is_empty(), "Nonexistent query should return no results");
+                assert!(
+                    results.is_empty(),
+                    "Nonexistent query should return no results"
+                );
             }
 
             // Verify folder_id filtering works alongside text search
             {
                 let cache = SEARCH_CACHE.read();
-                let results: Vec<&str> = cache.iter()
-                    .filter(|(u, (p, fid, _))| u.starts_with(prefix) && p.contains("hello") && *fid == Some(1))
+                let results: Vec<&str> = cache
+                    .iter()
+                    .filter(|(u, (p, fid, _))| {
+                        u.starts_with(prefix) && p.contains("hello") && *fid == Some(1)
+                    })
                     .map(|(u, _)| u.as_str())
                     .collect();
-                assert_eq!(results.len(), 1, "Folder-filtered search should match 1 entry");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "Folder-filtered search should match 1 entry"
+                );
                 assert_eq!(results[0], uuid1.as_str());
             }
 
@@ -447,51 +631,99 @@ mod tests {
         #[test]
         fn subtype_detection_comprehensive() {
             // URL: text containing "http" but not a standalone URL should NOT match
-            assert_eq!(detect_subtype("Check http://example.com for details"), None,
-                "Text with embedded URL should not match (has spaces)");
-            assert_eq!(detect_subtype("httpnotaurl"), None,
-                "Text starting with 'http' but not a URL should not match");
+            assert_eq!(
+                detect_subtype("Check http://example.com for details"),
+                None,
+                "Text with embedded URL should not match (has spaces)"
+            );
+            assert_eq!(
+                detect_subtype("httpnotaurl"),
+                None,
+                "Text starting with 'http' but not a URL should not match"
+            );
             // Note: "https://" with no host still matches the URL pattern
             // (starts_with "https://" and no whitespace). This is by design — the
             // detector is intentionally simple and fast, not a full URL validator.
-            assert_eq!(detect_subtype("https://"), Some("url".to_string()),
-                "Bare scheme passes the simple starts_with + no-whitespace check");
+            assert_eq!(
+                detect_subtype("https://"),
+                Some("url".to_string()),
+                "Bare scheme passes the simple starts_with + no-whitespace check"
+            );
 
             // URL: valid URLs
-            assert_eq!(detect_subtype("https://example.com/path?q=1&b=2#frag"), Some("url".to_string()));
-            assert_eq!(detect_subtype("http://localhost:3000"), Some("url".to_string()));
+            assert_eq!(
+                detect_subtype("https://example.com/path?q=1&b=2#frag"),
+                Some("url".to_string())
+            );
+            assert_eq!(
+                detect_subtype("http://localhost:3000"),
+                Some("url".to_string())
+            );
 
             // Email edge cases
-            assert_eq!(detect_subtype("not@an@email.com"), None,
-                "Multiple @ signs should not be detected as email");
-            assert_eq!(detect_subtype("@example.com"), None,
-                "Empty local part should not be detected as email");
-            assert_eq!(detect_subtype("user@.com"), Some("email".to_string()),
-                "Domain starting with dot still has a dot, so the simple check passes");
+            assert_eq!(
+                detect_subtype("not@an@email.com"),
+                None,
+                "Multiple @ signs should not be detected as email"
+            );
+            assert_eq!(
+                detect_subtype("@example.com"),
+                None,
+                "Empty local part should not be detected as email"
+            );
+            assert_eq!(
+                detect_subtype("user@.com"),
+                Some("email".to_string()),
+                "Domain starting with dot still has a dot, so the simple check passes"
+            );
 
             // Path edge cases
-            assert_eq!(detect_subtype("C:\\"), Some("path".to_string()),
-                "Drive root should be detected as path");
-            assert_eq!(detect_subtype("Z:/some/mixed/path"), Some("path".to_string()),
-                "Mixed slashes should still detect as path");
-            assert_eq!(detect_subtype("/"), None,
-                "Single slash should not be detected as path (len <= 1)");
-            assert_eq!(detect_subtype("/a"), Some("path".to_string()),
-                "Minimal Unix path should be detected");
+            assert_eq!(
+                detect_subtype("C:\\"),
+                Some("path".to_string()),
+                "Drive root should be detected as path"
+            );
+            assert_eq!(
+                detect_subtype("Z:/some/mixed/path"),
+                Some("path".to_string()),
+                "Mixed slashes should still detect as path"
+            );
+            assert_eq!(
+                detect_subtype("/"),
+                None,
+                "Single slash should not be detected as path (len <= 1)"
+            );
+            assert_eq!(
+                detect_subtype("/a"),
+                Some("path".to_string()),
+                "Minimal Unix path should be detected"
+            );
 
             // Color edge cases
             assert_eq!(detect_subtype("#000"), Some("color".to_string()));
-            assert_eq!(detect_subtype("#12345"), None,
-                "5-char hex is not a valid color length");
-            assert_eq!(detect_subtype("hsla(120, 50%, 50%, 0.5)"), Some("color".to_string()));
+            assert_eq!(
+                detect_subtype("#12345"),
+                None,
+                "5-char hex is not a valid color length"
+            );
+            assert_eq!(
+                detect_subtype("hsla(120, 50%, 50%, 0.5)"),
+                Some("color".to_string())
+            );
 
             // Multiline text should not match any subtype
-            assert_eq!(detect_subtype("line1\nline2"), None,
-                "Multiline text should not match URL, email, or path");
+            assert_eq!(
+                detect_subtype("line1\nline2"),
+                None,
+                "Multiline text should not match URL, email, or path"
+            );
 
             // Priority: URL wins over other patterns
-            assert_eq!(detect_subtype("https://user@example.com"), Some("url".to_string()),
-                "URL-shaped string with @ should be detected as URL, not email");
+            assert_eq!(
+                detect_subtype("https://user@example.com"),
+                Some("url".to_string()),
+                "URL-shaped string with @ should be detected as URL, not email"
+            );
         }
 
         /// Test truncate_utf8 with mixed content always produces valid UTF-8.
@@ -505,8 +737,12 @@ mod tests {
                 let result = truncate_utf8(mixed, max);
                 // result is &str, which is always valid UTF-8 in Rust, but verify length
                 let char_count = result.chars().count();
-                assert!(char_count <= max,
-                    "Truncated to {} chars but got {} chars", max, char_count);
+                assert!(
+                    char_count <= max,
+                    "Truncated to {} chars but got {} chars",
+                    max,
+                    char_count
+                );
             }
 
             // Verify exact truncation points
@@ -534,9 +770,9 @@ mod tests {
         /// Test settings cache concurrent access from multiple threads.
         #[test]
         fn settings_cache_concurrent_access() {
-            use std::thread;
-            use std::sync::Arc;
             use std::sync::atomic::{AtomicBool, Ordering};
+            use std::sync::Arc;
+            use std::thread;
 
             let prefix = "integ_concurrent_";
             let error_found = Arc::new(AtomicBool::new(false));
@@ -570,7 +806,8 @@ mod tests {
                     for _ in 0..100 {
                         let cache = SETTINGS_CACHE.read();
                         // Just verify the cache is readable and doesn't panic
-                        let _count = cache.iter()
+                        let _count = cache
+                            .iter()
                             .filter(|(k, _)| k.starts_with(&prefix_owned))
                             .count();
                         drop(cache);
@@ -583,16 +820,20 @@ mod tests {
             }
 
             for h in handles {
-                h.join().expect("Thread panicked during concurrent cache access");
+                h.join()
+                    .expect("Thread panicked during concurrent cache access");
             }
 
-            assert!(!error_found.load(Ordering::SeqCst),
-                "A write followed by read should always return Some (not None)");
+            assert!(
+                !error_found.load(Ordering::SeqCst),
+                "A write followed by read should always return Some (not None)"
+            );
 
             // Cleanup
             {
                 let mut cache = SETTINGS_CACHE.write();
-                let keys: Vec<String> = cache.keys()
+                let keys: Vec<String> = cache
+                    .keys()
                     .filter(|k| k.starts_with(prefix))
                     .cloned()
                     .collect();
@@ -612,20 +853,33 @@ mod tests {
                 let input = format!("test input number {}", i);
                 let hash = calculate_hash(input.as_bytes());
                 assert_eq!(hash.len(), 64, "SHA256 should always produce 64 hex chars");
-                assert!(hashes.insert(hash.clone()),
-                    "Hash collision detected for input '{}': {}", input, hash);
+                assert!(
+                    hashes.insert(hash.clone()),
+                    "Hash collision detected for input '{}': {}",
+                    input,
+                    hash
+                );
             }
 
             // Single-byte differences should produce different hashes
             let hash_a = calculate_hash(b"a");
             let hash_b = calculate_hash(b"b");
             let hash_aa = calculate_hash(b"aa");
-            assert_ne!(hash_a, hash_b, "Single char difference should produce different hashes");
-            assert_ne!(hash_a, hash_aa, "Different lengths should produce different hashes");
+            assert_ne!(
+                hash_a, hash_b,
+                "Single char difference should produce different hashes"
+            );
+            assert_ne!(
+                hash_a, hash_aa,
+                "Different lengths should produce different hashes"
+            );
 
             // Verify determinism: same input always gives same hash
             for _ in 0..10 {
-                assert_eq!(calculate_hash(b"determinism test"), calculate_hash(b"determinism test"));
+                assert_eq!(
+                    calculate_hash(b"determinism test"),
+                    calculate_hash(b"determinism test")
+                );
             }
 
             // Empty vs whitespace
@@ -636,7 +890,11 @@ mod tests {
             assert_ne!(hash_space, hash_newline);
 
             // Verify total uniqueness of all 500 hashes
-            assert_eq!(hashes.len(), 500, "All 500 inputs should produce unique hashes");
+            assert_eq!(
+                hashes.len(),
+                500,
+                "All 500 inputs should produce unique hashes"
+            );
         }
     }
 
@@ -647,30 +905,54 @@ mod tests {
 
         #[test]
         fn detect_aws_key() {
-            assert_eq!(detect_sensitive("AKIAIOSFODNN7EXAMPLE"), Some("aws_key".to_string()));
+            assert_eq!(
+                detect_sensitive("AKIAIOSFODNN7EXAMPLE"),
+                Some("aws_key".to_string())
+            );
         }
 
         #[test]
         fn detect_github_token() {
-            assert_eq!(detect_sensitive("ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), Some("github_token".to_string()));
-            assert_eq!(detect_sensitive("gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), Some("github_token".to_string()));
+            assert_eq!(
+                detect_sensitive("ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+                Some("github_token".to_string())
+            );
+            assert_eq!(
+                detect_sensitive("gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+                Some("github_token".to_string())
+            );
         }
 
         #[test]
         fn detect_stripe_key() {
-            assert_eq!(detect_sensitive("sk_live_abcdef1234567890abcdef"), Some("stripe_key".to_string()));
-            assert_eq!(detect_sensitive("sk_test_abcdef1234567890abcdef"), Some("stripe_key".to_string()));
+            assert_eq!(
+                detect_sensitive("sk_live_abcdef1234567890abcdef"),
+                Some("stripe_key".to_string())
+            );
+            assert_eq!(
+                detect_sensitive("sk_test_abcdef1234567890abcdef"),
+                Some("stripe_key".to_string())
+            );
         }
 
         #[test]
         fn detect_slack_token() {
-            assert_eq!(detect_sensitive("xoxb-123456789-abcdef"), Some("slack_token".to_string()));
+            assert_eq!(
+                detect_sensitive("xoxb-123456789-abcdef"),
+                Some("slack_token".to_string())
+            );
         }
 
         #[test]
         fn detect_private_key() {
-            assert_eq!(detect_sensitive("-----BEGIN RSA PRIVATE KEY-----\nMIIE..."), Some("private_key".to_string()));
-            assert_eq!(detect_sensitive("-----BEGIN PRIVATE KEY-----\nMIIE..."), Some("private_key".to_string()));
+            assert_eq!(
+                detect_sensitive("-----BEGIN RSA PRIVATE KEY-----\nMIIE..."),
+                Some("private_key".to_string())
+            );
+            assert_eq!(
+                detect_sensitive("-----BEGIN PRIVATE KEY-----\nMIIE..."),
+                Some("private_key".to_string())
+            );
         }
 
         #[test]
@@ -681,17 +963,26 @@ mod tests {
 
         #[test]
         fn detect_credit_card_visa() {
-            assert_eq!(detect_sensitive("4111111111111111"), Some("credit_card".to_string()));
+            assert_eq!(
+                detect_sensitive("4111111111111111"),
+                Some("credit_card".to_string())
+            );
         }
 
         #[test]
         fn detect_credit_card_with_dashes() {
-            assert_eq!(detect_sensitive("4111-1111-1111-1111"), Some("credit_card".to_string()));
+            assert_eq!(
+                detect_sensitive("4111-1111-1111-1111"),
+                Some("credit_card".to_string())
+            );
         }
 
         #[test]
         fn detect_credit_card_with_spaces() {
-            assert_eq!(detect_sensitive("4111 1111 1111 1111"), Some("credit_card".to_string()));
+            assert_eq!(
+                detect_sensitive("4111 1111 1111 1111"),
+                Some("credit_card".to_string())
+            );
         }
 
         #[test]
@@ -706,7 +997,10 @@ mod tests {
 
         #[test]
         fn not_sensitive_code() {
-            assert_eq!(detect_sensitive("const x = 42; function foo() { return x; }"), None);
+            assert_eq!(
+                detect_sensitive("const x = 42; function foo() { return x; }"),
+                None
+            );
         }
 
         #[test]
@@ -785,7 +1079,8 @@ mod tests {
 
         /// Create a temporary in-memory database for testing
         async fn setup_test_db() -> Database {
-            let temp_dir = std::env::temp_dir().join(format!("clippaste_test_{}", uuid::Uuid::new_v4()));
+            let temp_dir =
+                std::env::temp_dir().join(format!("clippaste_test_{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&temp_dir).unwrap();
             let db_path = temp_dir.join("test.db");
             let db = Database::new(db_path.to_str().unwrap(), &temp_dir).await;
@@ -794,7 +1089,13 @@ mod tests {
         }
 
         /// Helper: insert a text clip into the test database
-        async fn insert_clip(db: &Database, uuid: &str, text: &str, folder_id: Option<i64>, is_pinned: bool) {
+        async fn insert_clip(
+            db: &Database,
+            uuid: &str,
+            text: &str,
+            folder_id: Option<i64>,
+            is_pinned: bool,
+        ) {
             let hash = crate::clipboard::calculate_hash(text.as_bytes());
             let preview = &text[..text.len().min(2000)];
             sqlx::query(
@@ -814,7 +1115,9 @@ mod tests {
         async fn count_clips(db: &Database, where_clause: &str) -> i64 {
             let sql = format!("SELECT COUNT(*) FROM clips WHERE {}", where_clause);
             sqlx::query_scalar::<_, i64>(&sql)
-                .fetch_one(&db.pool).await.unwrap()
+                .fetch_one(&db.pool)
+                .await
+                .unwrap()
         }
 
         // --- Migration tests ---
@@ -824,17 +1127,34 @@ mod tests {
             let db = setup_test_db().await;
 
             // Verify all tables exist
-            let tables: Vec<(String,)> = sqlx::query_as(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            ).fetch_all(&db.pool).await.unwrap();
+            let tables: Vec<(String,)> =
+                sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                    .fetch_all(&db.pool)
+                    .await
+                    .unwrap();
             let table_names: Vec<&str> = tables.iter().map(|(n,)| n.as_str()).collect();
 
             assert!(table_names.contains(&"clips"), "clips table should exist");
-            assert!(table_names.contains(&"folders"), "folders table should exist");
-            assert!(table_names.contains(&"settings"), "settings table should exist");
-            assert!(table_names.contains(&"ignored_apps"), "ignored_apps table should exist");
-            assert!(table_names.contains(&"schema_version"), "schema_version table should exist");
-            assert!(table_names.contains(&"app_icons"), "app_icons table should exist");
+            assert!(
+                table_names.contains(&"folders"),
+                "folders table should exist"
+            );
+            assert!(
+                table_names.contains(&"settings"),
+                "settings table should exist"
+            );
+            assert!(
+                table_names.contains(&"ignored_apps"),
+                "ignored_apps table should exist"
+            );
+            assert!(
+                table_names.contains(&"schema_version"),
+                "schema_version table should exist"
+            );
+            assert!(
+                table_names.contains(&"app_icons"),
+                "app_icons table should exist"
+            );
         }
 
         #[tokio::test]
@@ -842,24 +1162,39 @@ mod tests {
             let db = setup_test_db().await;
 
             let indexes: Vec<(String,)> = sqlx::query_as(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
-            ).fetch_all(&db.pool).await.unwrap();
+                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'",
+            )
+            .fetch_all(&db.pool)
+            .await
+            .unwrap();
             let idx_names: Vec<&str> = indexes.iter().map(|(n,)| n.as_str()).collect();
 
             assert!(idx_names.contains(&"idx_clips_hash"), "content_hash index");
             assert!(idx_names.contains(&"idx_clips_folder"), "folder_id index");
             assert!(idx_names.contains(&"idx_clips_created"), "created_at index");
-            assert!(idx_names.contains(&"idx_folders_name"), "unique folder name index");
+            assert!(
+                idx_names.contains(&"idx_folders_name"),
+                "unique folder name index"
+            );
             // is_deleted index should NOT exist (dropped in migration v4)
-            assert!(!idx_names.contains(&"idx_clips_deleted_created"), "is_deleted index should be dropped");
+            assert!(
+                !idx_names.contains(&"idx_clips_deleted_created"),
+                "is_deleted index should be dropped"
+            );
         }
 
         #[tokio::test]
         async fn schema_version_is_latest() {
             let db = setup_test_db().await;
-            let version: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
-                .fetch_one(&db.pool).await.unwrap();
-            assert_eq!(version, 13, "Schema version should be 13 after all migrations");
+            let version: i64 =
+                sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                version, 13,
+                "Schema version should be 13 after all migrations"
+            );
         }
 
         // --- CRUD tests ---
@@ -869,9 +1204,12 @@ mod tests {
             let db = setup_test_db().await;
             insert_clip(&db, "test-uuid-1", "Hello World", None, false).await;
 
-            let clip: (String, String) = sqlx::query_as(
-                "SELECT uuid, text_preview FROM clips WHERE uuid = ?"
-            ).bind("test-uuid-1").fetch_one(&db.pool).await.unwrap();
+            let clip: (String, String) =
+                sqlx::query_as("SELECT uuid, text_preview FROM clips WHERE uuid = ?")
+                    .bind("test-uuid-1")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
             assert_eq!(clip.0, "test-uuid-1");
             assert_eq!(clip.1, "Hello World");
@@ -885,11 +1223,16 @@ mod tests {
                 .bind("Test Folder")
                 .bind("📁")
                 .bind("blue")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
-            let folder: (String, Option<String>, Option<String>) = sqlx::query_as(
-                "SELECT name, icon, color FROM folders WHERE name = ?"
-            ).bind("Test Folder").fetch_one(&db.pool).await.unwrap();
+            let folder: (String, Option<String>, Option<String>) =
+                sqlx::query_as("SELECT name, icon, color FROM folders WHERE name = ?")
+                    .bind("Test Folder")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
             assert_eq!(folder.0, "Test Folder");
             assert_eq!(folder.1.as_deref(), Some("📁"));
@@ -901,14 +1244,22 @@ mod tests {
             let db = setup_test_db().await;
 
             sqlx::query("INSERT INTO folders (name) VALUES (?)")
-                .bind("Unique Name").execute(&db.pool).await.unwrap();
+                .bind("Unique Name")
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
             let result = sqlx::query("INSERT INTO folders (name) VALUES (?)")
-                .bind("Unique Name").execute(&db.pool).await;
+                .bind("Unique Name")
+                .execute(&db.pool)
+                .await;
 
             assert!(result.is_err(), "Duplicate folder name should fail");
             let err_msg = result.unwrap_err().to_string();
-            assert!(err_msg.contains("UNIQUE"), "Error should mention UNIQUE constraint");
+            assert!(
+                err_msg.contains("UNIQUE"),
+                "Error should mention UNIQUE constraint"
+            );
         }
 
         // --- Settings tests ---
@@ -918,7 +1269,9 @@ mod tests {
             let db = setup_test_db().await;
 
             sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', 'dark')")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
             let val = db.get_setting("theme").await.unwrap();
             assert_eq!(val, Some("dark".to_string()));
@@ -960,9 +1313,18 @@ mod tests {
             let db = setup_test_db().await;
             db.add_ignored_app("Notepad.EXE").await.unwrap();
 
-            assert!(db.is_app_ignored("notepad.exe").await.unwrap(), "Case-insensitive match");
-            assert!(db.is_app_ignored("NOTEPAD.EXE").await.unwrap(), "Case-insensitive match");
-            assert!(!db.is_app_ignored("unknown.exe").await.unwrap(), "Non-ignored app");
+            assert!(
+                db.is_app_ignored("notepad.exe").await.unwrap(),
+                "Case-insensitive match"
+            );
+            assert!(
+                db.is_app_ignored("NOTEPAD.EXE").await.unwrap(),
+                "Case-insensitive match"
+            );
+            assert!(
+                !db.is_app_ignored("unknown.exe").await.unwrap(),
+                "Non-ignored app"
+            );
         }
 
         // --- enforce_max_items tests ---
@@ -973,7 +1335,14 @@ mod tests {
 
             // Insert 5 clips, no max_items setting
             for i in 0..5 {
-                insert_clip(&db, &format!("clip-{}", i), &format!("text {}", i), None, false).await;
+                insert_clip(
+                    &db,
+                    &format!("clip-{}", i),
+                    &format!("text {}", i),
+                    None,
+                    false,
+                )
+                .await;
             }
 
             db.enforce_max_items().await;
@@ -987,7 +1356,9 @@ mod tests {
 
             // Set max_items = 3
             sqlx::query("INSERT INTO settings (key, value) VALUES ('max_items', '3')")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
             // Insert 5 clips with staggered timestamps
             for i in 0..5 {
@@ -1008,11 +1379,17 @@ mod tests {
             assert_eq!(count, 3, "Should trim to max_items=3");
 
             // Verify oldest were deleted (trim-0, trim-1 are oldest)
-            let remaining: Vec<(String,)> = sqlx::query_as("SELECT uuid FROM clips ORDER BY created_at ASC")
-                .fetch_all(&db.pool).await.unwrap();
+            let remaining: Vec<(String,)> =
+                sqlx::query_as("SELECT uuid FROM clips ORDER BY created_at ASC")
+                    .fetch_all(&db.pool)
+                    .await
+                    .unwrap();
             let uuids: Vec<&str> = remaining.iter().map(|(u,)| u.as_str()).collect();
             assert!(!uuids.contains(&"trim-0"), "Oldest clip should be deleted");
-            assert!(!uuids.contains(&"trim-1"), "Second oldest should be deleted");
+            assert!(
+                !uuids.contains(&"trim-1"),
+                "Second oldest should be deleted"
+            );
             assert!(uuids.contains(&"trim-4"), "Newest clip should remain");
         }
 
@@ -1021,14 +1398,30 @@ mod tests {
             let db = setup_test_db().await;
 
             sqlx::query("INSERT INTO settings (key, value) VALUES ('max_items', '2')")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
             // Insert 3 unpinned + 2 pinned
             for i in 0..3 {
-                insert_clip(&db, &format!("unpin-{}", i), &format!("unpinned {}", i), None, false).await;
+                insert_clip(
+                    &db,
+                    &format!("unpin-{}", i),
+                    &format!("unpinned {}", i),
+                    None,
+                    false,
+                )
+                .await;
             }
             for i in 0..2 {
-                insert_clip(&db, &format!("pin-{}", i), &format!("pinned {}", i), None, true).await;
+                insert_clip(
+                    &db,
+                    &format!("pin-{}", i),
+                    &format!("pinned {}", i),
+                    None,
+                    true,
+                )
+                .await;
             }
 
             db.enforce_max_items().await;
@@ -1047,26 +1440,49 @@ mod tests {
             let db = setup_test_db().await;
 
             sqlx::query("INSERT INTO settings (key, value) VALUES ('max_items', '1')")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
             // Create a folder
             sqlx::query("INSERT INTO folders (name) VALUES ('Test')")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
             let folder_id: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE name = 'Test'")
-                .fetch_one(&db.pool).await.unwrap();
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
 
             // Insert 3 unfiled + 2 in folder
             for i in 0..3 {
-                insert_clip(&db, &format!("unfiled-{}", i), &format!("unfiled {}", i), None, false).await;
+                insert_clip(
+                    &db,
+                    &format!("unfiled-{}", i),
+                    &format!("unfiled {}", i),
+                    None,
+                    false,
+                )
+                .await;
             }
             for i in 0..2 {
-                insert_clip(&db, &format!("filed-{}", i), &format!("filed {}", i), Some(folder_id), false).await;
+                insert_clip(
+                    &db,
+                    &format!("filed-{}", i),
+                    &format!("filed {}", i),
+                    Some(folder_id),
+                    false,
+                )
+                .await;
             }
 
             db.enforce_max_items().await;
 
             let folder_count = count_clips(&db, "folder_id IS NOT NULL").await;
-            assert_eq!(folder_count, 2, "Folder clips must survive enforce_max_items");
+            assert_eq!(
+                folder_count, 2,
+                "Folder clips must survive enforce_max_items"
+            );
 
             let unfiled_count = count_clips(&db, "folder_id IS NULL AND is_pinned = 0").await;
             assert_eq!(unfiled_count, 1, "Unfiled clips trimmed to max_items=1");
@@ -1078,7 +1494,9 @@ mod tests {
         async fn wal_mode_enabled() {
             let db = setup_test_db().await;
             let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
-                .fetch_one(&db.pool).await.unwrap();
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
             assert_eq!(mode.to_lowercase(), "wal", "Database should be in WAL mode");
         }
 
@@ -1086,7 +1504,9 @@ mod tests {
         async fn foreign_keys_enabled() {
             let db = setup_test_db().await;
             let fk: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
-                .fetch_one(&db.pool).await.unwrap();
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
             assert_eq!(fk, 1, "Foreign keys should be enabled");
         }
 
@@ -1094,15 +1514,18 @@ mod tests {
 
         #[tokio::test]
         async fn refresh_search_cache_for_clip_self_heals_missing_entry() {
-            use crate::clipboard::{SEARCH_CACHE, refresh_search_cache_for_clip};
+            use crate::clipboard::{refresh_search_cache_for_clip, SEARCH_CACHE};
 
             let db = setup_test_db().await;
 
             // Create a folder + clip filed inside it, with a note
             sqlx::query("INSERT INTO folders (uuid, name, position) VALUES ('selfheal-folder', 'SelfHeal', 0)")
                 .execute(&db.pool).await.unwrap();
-            let folder_id: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE uuid='selfheal-folder'")
-                .fetch_one(&db.pool).await.unwrap();
+            let folder_id: i64 =
+                sqlx::query_scalar("SELECT id FROM folders WHERE uuid='selfheal-folder'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
             sqlx::query(
                 "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, note, is_deleted, is_pinned, created_at, last_accessed)
                  VALUES ('selfheal-clip', 'text', 'Docker Compose', 'Docker Compose', 'hash-selfheal', ?, 'My Note', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
@@ -1110,14 +1533,19 @@ mod tests {
 
             // Simulate the buggy state: cache is missing the entry
             SEARCH_CACHE.write().remove("selfheal-clip");
-            assert!(SEARCH_CACHE.read().get("selfheal-clip").is_none(), "Precondition: cache empty");
+            assert!(
+                SEARCH_CACHE.read().get("selfheal-clip").is_none(),
+                "Precondition: cache empty"
+            );
 
             // Trigger self-heal (what the re-copy dedup branch now calls)
             refresh_search_cache_for_clip(&db.pool, "selfheal-clip", "Docker Compose").await;
 
             // Verify entry is back, with correct folder_id, lowercased preview, and lowercased note
             let cache = SEARCH_CACHE.read();
-            let entry = cache.get("selfheal-clip").expect("Entry must be re-inserted after self-heal");
+            let entry = cache
+                .get("selfheal-clip")
+                .expect("Entry must be re-inserted after self-heal");
             assert_eq!(entry.0, "docker compose", "preview should be lowercased");
             assert_eq!(entry.1, Some(folder_id), "folder_id must be loaded from DB");
             assert_eq!(entry.2, "my note", "note should be lowercased");
@@ -1125,13 +1553,15 @@ mod tests {
 
         #[tokio::test]
         async fn enforce_auto_delete_clears_search_cache_entries() {
-            use crate::clipboard::{SEARCH_CACHE, add_to_search_cache};
+            use crate::clipboard::{add_to_search_cache, SEARCH_CACHE};
 
             let db = setup_test_db().await;
 
             // Configure auto_delete_days = 7
             sqlx::query("INSERT INTO settings (key, value) VALUES ('auto_delete_days', '7')")
-                .execute(&db.pool).await.unwrap();
+                .execute(&db.pool)
+                .await
+                .unwrap();
 
             // Insert one old clip (>7 days) and one fresh clip
             sqlx::query(
@@ -1152,14 +1582,140 @@ mod tests {
             db.enforce_auto_delete().await;
 
             // DB row is gone
-            let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE uuid='autodel-old'")
-                .fetch_one(&db.pool).await.unwrap();
+            let old_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE uuid='autodel-old'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
             assert_eq!(old_count, 0, "Old clip should be deleted from DB");
 
             // Cache should NOT contain the deleted clip (rebuilt by load_search_cache)
             let cache = SEARCH_CACHE.read();
-            assert!(!cache.contains_key("autodel-old"), "Stale UUID must be evicted from cache");
-            assert!(cache.contains_key("autodel-fresh"), "Fresh clip should remain in cache");
+            assert!(
+                !cache.contains_key("autodel-old"),
+                "Stale UUID must be evicted from cache"
+            );
+            assert!(
+                cache.contains_key("autodel-fresh"),
+                "Fresh clip should remain in cache"
+            );
+        }
+
+        #[tokio::test]
+        async fn delete_old_image_clips_removes_only_unprotected_old_images() {
+            let db = setup_test_db().await;
+
+            sqlx::query("INSERT INTO folders (name) VALUES ('Keep')")
+                .execute(&db.pool)
+                .await
+                .unwrap();
+            let folder_id: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE name = 'Keep'")
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+
+            let old_filename =
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.png";
+            let old_thumb =
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc_thumb.jpg";
+            let fresh_filename =
+                "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.png";
+            let pinned_filename =
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png";
+            let folder_filename =
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff.png";
+
+            for filename in [
+                old_filename,
+                old_thumb,
+                fresh_filename,
+                pinned_filename,
+                folder_filename,
+            ] {
+                std::fs::write(db.images_dir.join(filename), b"image data").unwrap();
+            }
+
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('old-image', 'image', ?, '', 'old-img-hash', 0, 0, datetime('now', '-30 days'), CURRENT_TIMESTAMP)",
+            )
+            .bind(old_filename.as_bytes())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('fresh-image', 'image', ?, '', 'fresh-img-hash', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            )
+            .bind(fresh_filename.as_bytes())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('pinned-image', 'image', ?, '', 'pinned-img-hash', 0, 1, datetime('now', '-30 days'), CURRENT_TIMESTAMP)",
+            )
+            .bind(pinned_filename.as_bytes())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('folder-image', 'image', ?, '', 'folder-img-hash', ?, 0, 0, datetime('now', '-30 days'), CURRENT_TIMESTAMP)",
+            )
+            .bind(folder_filename.as_bytes())
+            .bind(folder_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+            let preview = db.preview_old_image_cleanup(14).await;
+            assert_eq!(preview.count, 1);
+            assert_eq!(preview.bytes, b"image data".len() as u64 * 2);
+            assert_eq!(preview.protected_count, 2);
+            assert!(preview.oldest_created_at.is_some());
+
+            let removed = db.delete_old_image_clips(14).await;
+
+            assert_eq!(removed, 1);
+            assert_eq!(count_clips(&db, "uuid = 'old-image'").await, 0);
+            assert_eq!(count_clips(&db, "uuid = 'fresh-image'").await, 1);
+            assert_eq!(count_clips(&db, "uuid = 'pinned-image'").await, 1);
+            assert_eq!(count_clips(&db, "uuid = 'folder-image'").await, 1);
+            assert!(!db.images_dir.join(old_filename).exists());
+            assert!(!db.images_dir.join(old_thumb).exists());
+            assert!(db.images_dir.join(fresh_filename).exists());
+            assert!(db.images_dir.join(pinned_filename).exists());
+            assert!(db.images_dir.join(folder_filename).exists());
+        }
+
+        #[tokio::test]
+        async fn enforce_image_auto_delete_respects_disabled_setting() {
+            let db = setup_test_db().await;
+            let filename = "abababababababababababababababababababababababababababababababab.png";
+            std::fs::write(db.images_dir.join(filename), b"image data").unwrap();
+
+            sqlx::query("INSERT INTO settings (key, value) VALUES ('image_auto_delete', 'false')")
+                .execute(&db.pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO settings (key, value) VALUES ('image_delete_days', '14')")
+                .execute(&db.pool)
+                .await
+                .unwrap();
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('disabled-auto-image', 'image', ?, '', 'disabled-img-hash', 0, 0, datetime('now', '-30 days'), CURRENT_TIMESTAMP)",
+            )
+            .bind(filename.as_bytes())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+            db.enforce_image_auto_delete().await;
+
+            assert_eq!(count_clips(&db, "uuid = 'disabled-auto-image'").await, 1);
+            assert!(db.images_dir.join(filename).exists());
         }
 
         // --- Cleanup orphan images test ---
@@ -1169,13 +1725,18 @@ mod tests {
             let db = setup_test_db().await;
 
             // Create orphan image file
-            let orphan_path = db.images_dir.join("orphan_image.png");
+            let orphan_filename =
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png";
+            let orphan_path = db.images_dir.join(orphan_filename);
             std::fs::write(&orphan_path, b"fake image data").unwrap();
             assert!(orphan_path.exists());
 
             db.cleanup_orphan_images().await;
 
-            assert!(!orphan_path.exists(), "Orphan image should be deleted");
+            assert!(
+                !orphan_path.exists(),
+                "Managed orphan image should be quarantined"
+            );
         }
 
         #[tokio::test]
@@ -1183,7 +1744,7 @@ mod tests {
             let db = setup_test_db().await;
 
             // Insert image clip referencing a file
-            let filename = "tracked_image.png";
+            let filename = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png";
             let file_path = db.images_dir.join(filename);
             std::fs::write(&file_path, b"real image data").unwrap();
 
@@ -1204,11 +1765,14 @@ mod tests {
         use crate::database::Database;
         use crate::sync::drive::DriveClient;
         use crate::sync::models::*;
-        use crate::sync::protocol::{SyncState, SyncDelta, SyncReport, apply_delta, build_full_state};
+        use crate::sync::protocol::{
+            apply_delta, build_full_state, SyncDelta, SyncReport, SyncState,
+        };
 
         /// Create a temporary test database with all migrations applied
         async fn setup_test_db() -> Database {
-            let temp_dir = std::env::temp_dir().join(format!("clippaste_sync_test_{}", uuid::Uuid::new_v4()));
+            let temp_dir =
+                std::env::temp_dir().join(format!("clippaste_sync_test_{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&temp_dir).unwrap();
             let db_path = temp_dir.join("test.db");
             let db = Database::new(db_path.to_str().unwrap(), &temp_dir).await;
@@ -1258,22 +1822,32 @@ mod tests {
         ) -> i64 {
             sqlx::query(
                 "INSERT INTO folders (uuid, name, icon, color, position, created_at, updated_at)
-                 VALUES (?, ?, NULL, NULL, ?, ?, ?)"
+                 VALUES (?, ?, NULL, NULL, ?, ?, ?)",
             )
             .bind(uuid)
             .bind(name)
             .bind(position)
             .bind(created_at)
             .bind(updated_at)
-            .execute(&db.pool).await.unwrap();
+            .execute(&db.pool)
+            .await
+            .unwrap();
 
             sqlx::query_scalar::<_, i64>("SELECT id FROM folders WHERE uuid = ?")
                 .bind(uuid)
-                .fetch_one(&db.pool).await.unwrap()
+                .fetch_one(&db.pool)
+                .await
+                .unwrap()
         }
 
         /// Helper: create a SyncClip for testing (text type)
-        fn make_sync_clip(uuid: &str, text: &str, hash: &str, folder_uuid: Option<&str>, updated_at: &str) -> SyncClip {
+        fn make_sync_clip(
+            uuid: &str,
+            text: &str,
+            hash: &str,
+            folder_uuid: Option<&str>,
+            updated_at: &str,
+        ) -> SyncClip {
             SyncClip {
                 uuid: uuid.to_string(),
                 clip_type: "text".to_string(),
@@ -1329,7 +1903,13 @@ mod tests {
         #[test]
         fn sync_state_round_trip_serialize() {
             let state = SyncState {
-                clips: vec![make_sync_clip("c1", "hello", "hash1", None, "2024-01-01T00:00:00Z")],
+                clips: vec![make_sync_clip(
+                    "c1",
+                    "hello",
+                    "hash1",
+                    None,
+                    "2024-01-01T00:00:00Z",
+                )],
                 folders: vec![make_sync_folder("f1", "Work", 0, "2024-01-01T00:00:00Z")],
                 scratchpads: vec![],
                 tombstones: vec![Tombstone {
@@ -1342,7 +1922,8 @@ mod tests {
             };
 
             let json = serde_json::to_string(&state).expect("serialize SyncState");
-            let deserialized: SyncState = serde_json::from_str(&json).expect("deserialize SyncState");
+            let deserialized: SyncState =
+                serde_json::from_str(&json).expect("deserialize SyncState");
 
             assert_eq!(deserialized.clips.len(), 1);
             assert_eq!(deserialized.clips[0].uuid, "c1");
@@ -1358,7 +1939,13 @@ mod tests {
         #[test]
         fn sync_delta_round_trip_serialize() {
             let delta = SyncDelta {
-                clips: vec![make_sync_clip("c2", "world", "hash2", Some("f1"), "2024-02-01T00:00:00Z")],
+                clips: vec![make_sync_clip(
+                    "c2",
+                    "world",
+                    "hash2",
+                    Some("f1"),
+                    "2024-02-01T00:00:00Z",
+                )],
                 folders: vec![],
                 scratchpads: vec![],
                 tombstones: vec![],
@@ -1367,7 +1954,8 @@ mod tests {
             };
 
             let json = serde_json::to_string(&delta).expect("serialize SyncDelta");
-            let deserialized: SyncDelta = serde_json::from_str(&json).expect("deserialize SyncDelta");
+            let deserialized: SyncDelta =
+                serde_json::from_str(&json).expect("deserialize SyncDelta");
 
             assert_eq!(deserialized.clips.len(), 1);
             assert_eq!(deserialized.clips[0].folder_uuid, Some("f1".to_string()));
@@ -1379,7 +1967,8 @@ mod tests {
             let state = SyncState::default();
 
             let json = serde_json::to_string(&state).expect("serialize empty SyncState");
-            let deserialized: SyncState = serde_json::from_str(&json).expect("deserialize empty SyncState");
+            let deserialized: SyncState =
+                serde_json::from_str(&json).expect("deserialize empty SyncState");
 
             assert!(deserialized.clips.is_empty());
             assert!(deserialized.folders.is_empty());
@@ -1394,8 +1983,16 @@ mod tests {
                 folders: vec![],
                 scratchpads: vec![],
                 tombstones: vec![
-                    Tombstone { uuid: "del-1".to_string(), entity_type: "clip".to_string(), deleted_at: "2024-03-01T00:00:00Z".to_string() },
-                    Tombstone { uuid: "del-2".to_string(), entity_type: "folder".to_string(), deleted_at: "2024-03-02T00:00:00Z".to_string() },
+                    Tombstone {
+                        uuid: "del-1".to_string(),
+                        entity_type: "clip".to_string(),
+                        deleted_at: "2024-03-01T00:00:00Z".to_string(),
+                    },
+                    Tombstone {
+                        uuid: "del-2".to_string(),
+                        entity_type: "folder".to_string(),
+                        deleted_at: "2024-03-02T00:00:00Z".to_string(),
+                    },
                 ],
                 device_id: "device-c".to_string(),
                 created_at: "2024-03-01T00:00:00Z".to_string(),
@@ -1420,17 +2017,27 @@ mod tests {
             let mut report = SyncReport::default();
 
             let delta = make_delta(
-                vec![make_sync_clip("new-clip-1", "Hello from remote", "hash-new-1", None, "2024-01-15T00:00:00Z")],
+                vec![make_sync_clip(
+                    "new-clip-1",
+                    "Hello from remote",
+                    "hash-new-1",
+                    None,
+                    "2024-01-15T00:00:00Z",
+                )],
                 vec![],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // Verify clip was inserted
-            let row: Option<(String, String)> = sqlx::query_as(
-                "SELECT uuid, text_preview FROM clips WHERE uuid = 'new-clip-1'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let row: Option<(String, String)> =
+                sqlx::query_as("SELECT uuid, text_preview FROM clips WHERE uuid = 'new-clip-1'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
 
             assert!(row.is_some(), "New clip should be inserted");
             let (uuid, preview) = row.unwrap();
@@ -1446,22 +2053,44 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert local clip with older timestamp
-            insert_clip_full(&db, "clip-update-1", "old text", "hash-u1", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "clip-update-1",
+                "old text",
+                "hash-u1",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Remote delta with newer timestamp
             let delta = make_delta(
-                vec![make_sync_clip("clip-update-1", "updated text", "hash-u1-new", None, "2024-01-02T00:00:00Z")],
+                vec![make_sync_clip(
+                    "clip-update-1",
+                    "updated text",
+                    "hash-u1-new",
+                    None,
+                    "2024-01-02T00:00:00Z",
+                )],
                 vec![],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let preview: String = sqlx::query_scalar(
-                "SELECT text_preview FROM clips WHERE uuid = 'clip-update-1'"
-            ).fetch_one(&db.pool).await.unwrap();
+            let preview: String =
+                sqlx::query_scalar("SELECT text_preview FROM clips WHERE uuid = 'clip-update-1'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert_eq!(preview, "updated text", "Clip should be updated to remote version");
+            assert_eq!(
+                preview, "updated text",
+                "Clip should be updated to remote version"
+            );
             assert_eq!(report.pulled_clips, 1);
         }
 
@@ -1472,22 +2101,44 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert local clip with newer timestamp
-            insert_clip_full(&db, "clip-skip-1", "local newer text", "hash-s1", None, "2024-01-02T00:00:00Z", "2024-01-02T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "clip-skip-1",
+                "local newer text",
+                "hash-s1",
+                None,
+                "2024-01-02T00:00:00Z",
+                "2024-01-02T00:00:00Z",
+            )
+            .await;
 
             // Remote delta with older timestamp
             let delta = make_delta(
-                vec![make_sync_clip("clip-skip-1", "remote older text", "hash-s1-old", None, "2024-01-01T00:00:00Z")],
+                vec![make_sync_clip(
+                    "clip-skip-1",
+                    "remote older text",
+                    "hash-s1-old",
+                    None,
+                    "2024-01-01T00:00:00Z",
+                )],
                 vec![],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let preview: String = sqlx::query_scalar(
-                "SELECT text_preview FROM clips WHERE uuid = 'clip-skip-1'"
-            ).fetch_one(&db.pool).await.unwrap();
+            let preview: String =
+                sqlx::query_scalar("SELECT text_preview FROM clips WHERE uuid = 'clip-skip-1'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert_eq!(preview, "local newer text", "Local newer clip should NOT be overwritten");
+            assert_eq!(
+                preview, "local newer text",
+                "Local newer clip should NOT be overwritten"
+            );
             assert_eq!(report.pulled_clips, 0);
         }
 
@@ -1498,26 +2149,50 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert local clip with UUID "local-1" and hash "shared-hash"
-            insert_clip_full(&db, "local-1", "same content", "shared-hash", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "local-1",
+                "same content",
+                "shared-hash",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Remote delta with different UUID but same content hash
             let delta = make_delta(
-                vec![make_sync_clip("remote-1", "same content", "shared-hash", None, "2024-01-02T00:00:00Z")],
+                vec![make_sync_clip(
+                    "remote-1",
+                    "same content",
+                    "shared-hash",
+                    None,
+                    "2024-01-02T00:00:00Z",
+                )],
                 vec![],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // Local clip should now have the remote UUID
-            let old_exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM clips WHERE uuid = 'local-1'"
-            ).fetch_optional(&db.pool).await.unwrap();
-            assert!(old_exists.is_none(), "Old local UUID should no longer exist");
+            let old_exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM clips WHERE uuid = 'local-1'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
+            assert!(
+                old_exists.is_none(),
+                "Old local UUID should no longer exist"
+            );
 
-            let new_exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM clips WHERE uuid = 'remote-1'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let new_exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM clips WHERE uuid = 'remote-1'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
             assert!(new_exists.is_some(), "Remote UUID should now exist in DB");
 
             assert_eq!(report.pulled_clips, 1);
@@ -1531,17 +2206,30 @@ mod tests {
 
             let delta = make_delta(
                 vec![],
-                vec![make_sync_folder("folder-new-1", "Remote Folder", 0, "2024-01-15T00:00:00Z")],
+                vec![make_sync_folder(
+                    "folder-new-1",
+                    "Remote Folder",
+                    0,
+                    "2024-01-15T00:00:00Z",
+                )],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let name: Option<String> = sqlx::query_scalar(
-                "SELECT name FROM folders WHERE uuid = 'folder-new-1'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM folders WHERE uuid = 'folder-new-1'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert_eq!(name, Some("Remote Folder".to_string()), "New folder should be inserted");
+            assert_eq!(
+                name,
+                Some("Remote Folder".to_string()),
+                "New folder should be inserted"
+            );
             assert_eq!(report.pulled_folders, 1);
         }
 
@@ -1552,22 +2240,39 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert local folder with older timestamp
-            insert_folder_full(&db, "folder-upd-1", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_folder_full(
+                &db,
+                "folder-upd-1",
+                "Work",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Remote delta with newer timestamp and updated properties
-            let mut remote_folder = make_sync_folder("folder-upd-1", "Work", 5, "2024-01-02T00:00:00Z");
+            let mut remote_folder =
+                make_sync_folder("folder-upd-1", "Work", 5, "2024-01-02T00:00:00Z");
             remote_folder.color = Some("blue".to_string());
 
             let delta = make_delta(vec![], vec![remote_folder], vec![]);
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let (position, color): (i64, Option<String>) = sqlx::query_as(
-                "SELECT position, color FROM folders WHERE uuid = 'folder-upd-1'"
-            ).fetch_one(&db.pool).await.unwrap();
+            let (position, color): (i64, Option<String>) =
+                sqlx::query_as("SELECT position, color FROM folders WHERE uuid = 'folder-upd-1'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
             assert_eq!(position, 5, "Folder position should be updated");
-            assert_eq!(color, Some("blue".to_string()), "Folder color should be updated");
+            assert_eq!(
+                color,
+                Some("blue".to_string()),
+                "Folder color should be updated"
+            );
             assert_eq!(report.pulled_folders, 1);
         }
 
@@ -1577,21 +2282,41 @@ mod tests {
             let drive = fake_drive();
             let mut report = SyncReport::default();
 
-            insert_folder_full(&db, "folder-skip-1", "Projects", 0, "2024-01-02T00:00:00Z", "2024-01-02T00:00:00Z").await;
+            insert_folder_full(
+                &db,
+                "folder-skip-1",
+                "Projects",
+                0,
+                "2024-01-02T00:00:00Z",
+                "2024-01-02T00:00:00Z",
+            )
+            .await;
 
             let delta = make_delta(
                 vec![],
-                vec![make_sync_folder("folder-skip-1", "Projects", 10, "2024-01-01T00:00:00Z")],
+                vec![make_sync_folder(
+                    "folder-skip-1",
+                    "Projects",
+                    10,
+                    "2024-01-01T00:00:00Z",
+                )],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let position: i64 = sqlx::query_scalar(
-                "SELECT position FROM folders WHERE uuid = 'folder-skip-1'"
-            ).fetch_one(&db.pool).await.unwrap();
+            let position: i64 =
+                sqlx::query_scalar("SELECT position FROM folders WHERE uuid = 'folder-skip-1'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert_eq!(position, 0, "Folder should NOT be updated when local is newer");
+            assert_eq!(
+                position, 0,
+                "Folder should NOT be updated when local is newer"
+            );
             assert_eq!(report.pulled_folders, 0);
         }
 
@@ -1602,26 +2327,48 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert local folder with different UUID but same name
-            insert_folder_full(&db, "local-folder-uuid", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_folder_full(
+                &db,
+                "local-folder-uuid",
+                "Work",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Remote delta has a folder with different UUID but same name "Work"
             let delta = make_delta(
                 vec![],
-                vec![make_sync_folder("remote-folder-uuid", "Work", 3, "2024-01-02T00:00:00Z")],
+                vec![make_sync_folder(
+                    "remote-folder-uuid",
+                    "Work",
+                    3,
+                    "2024-01-02T00:00:00Z",
+                )],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // The local folder should now have the remote UUID
-            let old_exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM folders WHERE uuid = 'local-folder-uuid'"
-            ).fetch_optional(&db.pool).await.unwrap();
-            assert!(old_exists.is_none(), "Old local folder UUID should no longer exist");
+            let old_exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM folders WHERE uuid = 'local-folder-uuid'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
+            assert!(
+                old_exists.is_none(),
+                "Old local folder UUID should no longer exist"
+            );
 
-            let new_uuid: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM folders WHERE uuid = 'remote-folder-uuid'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let new_uuid: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM folders WHERE uuid = 'remote-folder-uuid'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
             assert!(new_uuid.is_some(), "Remote folder UUID should now exist");
 
             assert_eq!(report.pulled_folders, 1);
@@ -1634,7 +2381,16 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert a clip that will be tombstoned
-            insert_clip_full(&db, "clip-to-delete", "doomed text", "hash-doom", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "clip-to-delete",
+                "doomed text",
+                "hash-doom",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             let delta = make_delta(
                 vec![],
@@ -1646,11 +2402,15 @@ mod tests {
                 }],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM clips WHERE uuid = 'clip-to-delete'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM clips WHERE uuid = 'clip-to-delete'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
 
             assert!(exists.is_none(), "Tombstoned clip should be deleted");
             assert_eq!(report.deleted, 1);
@@ -1663,8 +2423,25 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert a folder and a clip inside it
-            let folder_id = insert_folder_full(&db, "folder-to-delete", "Doomed Folder", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
-            insert_clip_full(&db, "clip-in-folder", "inside doomed folder", "hash-inf", Some(folder_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            let folder_id = insert_folder_full(
+                &db,
+                "folder-to-delete",
+                "Doomed Folder",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
+            insert_clip_full(
+                &db,
+                "clip-in-folder",
+                "inside doomed folder",
+                "hash-inf",
+                Some(folder_id),
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             let delta = make_delta(
                 vec![],
@@ -1676,41 +2453,86 @@ mod tests {
                 }],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // Folder should be deleted
-            let folder_exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM folders WHERE uuid = 'folder-to-delete'"
-            ).fetch_optional(&db.pool).await.unwrap();
-            assert!(folder_exists.is_none(), "Tombstoned folder should be deleted");
+            let folder_exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM folders WHERE uuid = 'folder-to-delete'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
+            assert!(
+                folder_exists.is_none(),
+                "Tombstoned folder should be deleted"
+            );
 
             // Clip should still exist but with folder_id = NULL
-            let clip_folder: Option<Option<i64>> = sqlx::query_scalar(
-                "SELECT folder_id FROM clips WHERE uuid = 'clip-in-folder'"
-            ).fetch_optional(&db.pool).await.unwrap();
-            assert!(clip_folder.is_some(), "Clip should still exist after folder deletion");
-            assert_eq!(clip_folder.unwrap(), None, "Clip should be unfiled (folder_id = NULL)");
+            let clip_folder: Option<Option<i64>> =
+                sqlx::query_scalar("SELECT folder_id FROM clips WHERE uuid = 'clip-in-folder'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
+            assert!(
+                clip_folder.is_some(),
+                "Clip should still exist after folder deletion"
+            );
+            assert_eq!(
+                clip_folder.unwrap(),
+                None,
+                "Clip should be unfiled (folder_id = NULL)"
+            );
 
             assert_eq!(report.deleted, 1);
         }
 
         #[tokio::test]
         async fn apply_delta_folder_tombstone_clears_search_cache_folder_id() {
-            use crate::clipboard::{SEARCH_CACHE, add_to_search_cache};
+            use crate::clipboard::{add_to_search_cache, SEARCH_CACHE};
 
             let db = setup_test_db().await;
             let drive = fake_drive();
             let mut report = SyncReport::default();
 
             // Insert folder + 2 clips inside it
-            let folder_id = insert_folder_full(&db, "tomb-cache-folder", "Docker", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
-            insert_clip_full(&db, "tomb-clip-1", "docker compose up", "hash-tc1", Some(folder_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
-            insert_clip_full(&db, "tomb-clip-2", "docker ps", "hash-tc2", Some(folder_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            let folder_id = insert_folder_full(
+                &db,
+                "tomb-cache-folder",
+                "Docker",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
+            insert_clip_full(
+                &db,
+                "tomb-clip-1",
+                "docker compose up",
+                "hash-tc1",
+                Some(folder_id),
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
+            insert_clip_full(
+                &db,
+                "tomb-clip-2",
+                "docker ps",
+                "hash-tc2",
+                Some(folder_id),
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Seed search cache with the folder_id (mirrors what load_search_cache would do)
             add_to_search_cache("tomb-clip-1", "docker compose up", Some(folder_id));
             add_to_search_cache("tomb-clip-2", "docker ps", Some(folder_id));
-            assert_eq!(SEARCH_CACHE.read().get("tomb-clip-1").unwrap().1, Some(folder_id));
+            assert_eq!(
+                SEARCH_CACHE.read().get("tomb-clip-1").unwrap().1,
+                Some(folder_id)
+            );
 
             // Apply folder tombstone
             let delta = make_delta(
@@ -1722,12 +2544,22 @@ mod tests {
                     deleted_at: "2024-02-01T00:00:00Z".to_string(),
                 }],
             );
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // Cache entries should now have folder_id = None (matching DB state)
             let cache = SEARCH_CACHE.read();
-            assert_eq!(cache.get("tomb-clip-1").unwrap().1, None, "Cache folder_id must be cleared after folder tombstone");
-            assert_eq!(cache.get("tomb-clip-2").unwrap().1, None, "Cache folder_id must be cleared after folder tombstone");
+            assert_eq!(
+                cache.get("tomb-clip-1").unwrap().1,
+                None,
+                "Cache folder_id must be cleared after folder tombstone"
+            );
+            assert_eq!(
+                cache.get("tomb-clip-2").unwrap().1,
+                None,
+                "Cache folder_id must be cleared after folder tombstone"
+            );
         }
 
         #[tokio::test]
@@ -1739,17 +2571,29 @@ mod tests {
             // Delta with a folder that has "(synced)" suffix -- should be skipped
             let delta = make_delta(
                 vec![],
-                vec![make_sync_folder("synced-artifact", "Work (synced)", 0, "2024-01-15T00:00:00Z")],
+                vec![make_sync_folder(
+                    "synced-artifact",
+                    "Work (synced)",
+                    0,
+                    "2024-01-15T00:00:00Z",
+                )],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM folders WHERE uuid = 'synced-artifact'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM folders WHERE uuid = 'synced-artifact'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert!(exists.is_none(), "Folder with '(synced)' suffix should be skipped");
+            assert!(
+                exists.is_none(),
+                "Folder with '(synced)' suffix should be skipped"
+            );
             assert_eq!(report.pulled_folders, 0);
         }
 
@@ -1760,28 +2604,67 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert original "Work" folder and a "(synced)" artifact
-            let orig_id = insert_folder_full(&db, "orig-work", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
-            let synced_id = insert_folder_full(&db, "synced-work", "Work (synced)", 1, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            let orig_id = insert_folder_full(
+                &db,
+                "orig-work",
+                "Work",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
+            let synced_id = insert_folder_full(
+                &db,
+                "synced-work",
+                "Work (synced)",
+                1,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Put a clip in the "(synced)" folder
-            insert_clip_full(&db, "clip-in-synced", "text in synced", "hash-sync", Some(synced_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "clip-in-synced",
+                "text in synced",
+                "hash-sync",
+                Some(synced_id),
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Apply an empty delta -- the cleanup runs after delta application
             let delta = make_delta(vec![], vec![], vec![]);
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // "(synced)" folder should be deleted
-            let synced_exists: Option<String> = sqlx::query_scalar(
-                "SELECT name FROM folders WHERE name = 'Work (synced)'"
-            ).fetch_optional(&db.pool).await.unwrap();
-            assert!(synced_exists.is_none(), "'Work (synced)' folder should be merged/deleted");
+            let synced_exists: Option<String> =
+                sqlx::query_scalar("SELECT name FROM folders WHERE name = 'Work (synced)'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
+            assert!(
+                synced_exists.is_none(),
+                "'Work (synced)' folder should be merged/deleted"
+            );
 
             // Clip should have been moved to the original "Work" folder
-            let clip_folder_id: Option<i64> = sqlx::query_scalar(
-                "SELECT folder_id FROM clips WHERE uuid = 'clip-in-synced'"
-            ).fetch_optional(&db.pool).await.unwrap().unwrap();
-            assert_eq!(clip_folder_id, Some(orig_id), "Clip should be moved to original folder");
+            let clip_folder_id: Option<i64> =
+                sqlx::query_scalar("SELECT folder_id FROM clips WHERE uuid = 'clip-in-synced'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(
+                clip_folder_id,
+                Some(orig_id),
+                "Clip should be moved to original folder"
+            );
 
             assert_eq!(report.deleted, 1);
         }
@@ -1793,16 +2676,32 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert only a "(synced)" folder with no matching original
-            insert_folder_full(&db, "orphan-synced", "Projects (synced)", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_folder_full(
+                &db,
+                "orphan-synced",
+                "Projects (synced)",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             let delta = make_delta(vec![], vec![], vec![]);
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // Should be renamed to "Projects" (without suffix)
-            let renamed: Option<String> = sqlx::query_scalar(
-                "SELECT name FROM folders WHERE uuid = 'orphan-synced'"
-            ).fetch_optional(&db.pool).await.unwrap();
-            assert_eq!(renamed, Some("Projects".to_string()), "Orphan (synced) folder should be renamed");
+            let renamed: Option<String> =
+                sqlx::query_scalar("SELECT name FROM folders WHERE uuid = 'orphan-synced'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                renamed,
+                Some("Projects".to_string()),
+                "Orphan (synced) folder should be renamed"
+            );
 
             assert_eq!(report.deleted, 1);
         }
@@ -1815,11 +2714,24 @@ mod tests {
             // First delta: insert a clip and a folder
             let mut report1 = SyncReport::default();
             let delta1 = make_delta(
-                vec![make_sync_clip("seq-clip-1", "first", "hash-seq-1", None, "2024-01-01T00:00:00Z")],
-                vec![make_sync_folder("seq-folder-1", "SeqFolder", 0, "2024-01-01T00:00:00Z")],
+                vec![make_sync_clip(
+                    "seq-clip-1",
+                    "first",
+                    "hash-seq-1",
+                    None,
+                    "2024-01-01T00:00:00Z",
+                )],
+                vec![make_sync_folder(
+                    "seq-folder-1",
+                    "SeqFolder",
+                    0,
+                    "2024-01-01T00:00:00Z",
+                )],
                 vec![],
             );
-            apply_delta(&db, &delta1, false, &drive, &mut report1).await.unwrap();
+            apply_delta(&db, &delta1, false, &drive, &mut report1)
+                .await
+                .unwrap();
             assert_eq!(report1.pulled_clips, 1);
             assert_eq!(report1.pulled_folders, 1);
 
@@ -1827,27 +2739,51 @@ mod tests {
             let mut report2 = SyncReport::default();
             let delta2 = make_delta(
                 vec![
-                    make_sync_clip("seq-clip-1", "first updated", "hash-seq-1-upd", None, "2024-01-02T00:00:00Z"),
-                    make_sync_clip("seq-clip-2", "second", "hash-seq-2", Some("seq-folder-1"), "2024-01-02T00:00:00Z"),
+                    make_sync_clip(
+                        "seq-clip-1",
+                        "first updated",
+                        "hash-seq-1-upd",
+                        None,
+                        "2024-01-02T00:00:00Z",
+                    ),
+                    make_sync_clip(
+                        "seq-clip-2",
+                        "second",
+                        "hash-seq-2",
+                        Some("seq-folder-1"),
+                        "2024-01-02T00:00:00Z",
+                    ),
                 ],
                 vec![],
                 vec![],
             );
-            apply_delta(&db, &delta2, false, &drive, &mut report2).await.unwrap();
+            apply_delta(&db, &delta2, false, &drive, &mut report2)
+                .await
+                .unwrap();
             assert_eq!(report2.pulled_clips, 2);
 
             // Verify final state
-            let preview1: String = sqlx::query_scalar("SELECT text_preview FROM clips WHERE uuid = 'seq-clip-1'")
-                .fetch_one(&db.pool).await.unwrap();
+            let preview1: String =
+                sqlx::query_scalar("SELECT text_preview FROM clips WHERE uuid = 'seq-clip-1'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
             assert_eq!(preview1, "first updated");
 
-            let folder_id_of_clip2: Option<i64> = sqlx::query_scalar(
-                "SELECT folder_id FROM clips WHERE uuid = 'seq-clip-2'"
-            ).fetch_one(&db.pool).await.unwrap();
-            assert!(folder_id_of_clip2.is_some(), "Second clip should be in the folder");
+            let folder_id_of_clip2: Option<i64> =
+                sqlx::query_scalar("SELECT folder_id FROM clips WHERE uuid = 'seq-clip-2'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
+            assert!(
+                folder_id_of_clip2.is_some(),
+                "Second clip should be in the folder"
+            );
 
             let total_clips: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips")
-                .fetch_one(&db.pool).await.unwrap();
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
             assert_eq!(total_clips, 2);
         }
 
@@ -1858,13 +2794,27 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert a clip first
-            insert_clip_full(&db, "existing-clip", "pre-existing", "hash-exist", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "existing-clip",
+                "pre-existing",
+                "hash-exist",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             let delta = make_delta(vec![], vec![], vec![]);
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             // Nothing should change
-            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips").fetch_one(&db.pool).await.unwrap();
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips")
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
             assert_eq!(count, 1);
             assert_eq!(report.pulled_clips, 0);
             assert_eq!(report.pulled_folders, 0);
@@ -1887,8 +2837,13 @@ mod tests {
                 }],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
-            assert_eq!(report.deleted, 0, "Tombstone for nonexistent clip should be no-op");
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
+            assert_eq!(
+                report.deleted, 0,
+                "Tombstone for nonexistent clip should be no-op"
+            );
         }
 
         #[tokio::test]
@@ -1907,8 +2862,13 @@ mod tests {
                 }],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
-            assert_eq!(report.deleted, 0, "Tombstone for nonexistent folder should be no-op");
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
+            assert_eq!(
+                report.deleted, 0,
+                "Tombstone for nonexistent folder should be no-op"
+            );
         }
 
         #[tokio::test]
@@ -1918,22 +2878,44 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Insert a folder first
-            let folder_id = insert_folder_full(&db, "target-folder", "Target", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            let folder_id = insert_folder_full(
+                &db,
+                "target-folder",
+                "Target",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             // Insert a clip that references the folder by UUID
             let delta = make_delta(
-                vec![make_sync_clip("clip-with-folder", "text in folder", "hash-cwf", Some("target-folder"), "2024-01-15T00:00:00Z")],
+                vec![make_sync_clip(
+                    "clip-with-folder",
+                    "text in folder",
+                    "hash-cwf",
+                    Some("target-folder"),
+                    "2024-01-15T00:00:00Z",
+                )],
                 vec![],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let resolved_folder_id: Option<i64> = sqlx::query_scalar(
-                "SELECT folder_id FROM clips WHERE uuid = 'clip-with-folder'"
-            ).fetch_one(&db.pool).await.unwrap();
+            let resolved_folder_id: Option<i64> =
+                sqlx::query_scalar("SELECT folder_id FROM clips WHERE uuid = 'clip-with-folder'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert_eq!(resolved_folder_id, Some(folder_id), "Clip folder_id should resolve from folder UUID");
+            assert_eq!(
+                resolved_folder_id,
+                Some(folder_id),
+                "Clip folder_id should resolve from folder UUID"
+            );
         }
 
         #[tokio::test]
@@ -1944,19 +2926,33 @@ mod tests {
 
             // Insert a clip referencing a folder UUID that does not exist
             let delta = make_delta(
-                vec![make_sync_clip("clip-orphan-folder", "orphan text", "hash-orphan", Some("nonexistent-folder-uuid"), "2024-01-15T00:00:00Z")],
+                vec![make_sync_clip(
+                    "clip-orphan-folder",
+                    "orphan text",
+                    "hash-orphan",
+                    Some("nonexistent-folder-uuid"),
+                    "2024-01-15T00:00:00Z",
+                )],
                 vec![],
                 vec![],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let folder_id: Option<Option<i64>> = sqlx::query_scalar(
-                "SELECT folder_id FROM clips WHERE uuid = 'clip-orphan-folder'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let folder_id: Option<Option<i64>> =
+                sqlx::query_scalar("SELECT folder_id FROM clips WHERE uuid = 'clip-orphan-folder'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
 
             assert!(folder_id.is_some(), "Clip should exist");
-            assert_eq!(folder_id.unwrap(), None, "folder_id should be NULL when folder UUID is not found");
+            assert_eq!(
+                folder_id.unwrap(),
+                None,
+                "folder_id should be NULL when folder UUID is not found"
+            );
         }
 
         #[tokio::test]
@@ -1973,17 +2969,30 @@ mod tests {
             ).execute(&db.pool).await.unwrap();
 
             // Remote has paste_count = 5, but newer timestamp
-            let mut remote_clip = make_sync_clip("paste-count-clip", "hello", "hash-pc", None, "2024-01-02T00:00:00Z");
+            let mut remote_clip = make_sync_clip(
+                "paste-count-clip",
+                "hello",
+                "hash-pc",
+                None,
+                "2024-01-02T00:00:00Z",
+            );
             remote_clip.paste_count = 5;
 
             let delta = make_delta(vec![remote_clip], vec![], vec![]);
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let paste_count: i64 = sqlx::query_scalar(
-                "SELECT paste_count FROM clips WHERE uuid = 'paste-count-clip'"
-            ).fetch_one(&db.pool).await.unwrap();
+            let paste_count: i64 =
+                sqlx::query_scalar("SELECT paste_count FROM clips WHERE uuid = 'paste-count-clip'")
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert_eq!(paste_count, 10, "paste_count should be MAX(local=10, remote=5) = 10");
+            assert_eq!(
+                paste_count, 10,
+                "paste_count should be MAX(local=10, remote=5) = 10"
+            );
         }
 
         #[tokio::test]
@@ -1992,18 +3001,26 @@ mod tests {
             let drive = fake_drive();
             let mut report = SyncReport::default();
 
-            let mut image_clip = make_sync_clip("img-clip-1", "", "img-hash-1", None, "2024-01-15T00:00:00Z");
+            let mut image_clip =
+                make_sync_clip("img-clip-1", "", "img-hash-1", None, "2024-01-15T00:00:00Z");
             image_clip.clip_type = "image".to_string();
             image_clip.text_content = None;
 
             let delta = make_delta(vec![image_clip], vec![], vec![]);
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
-            let exists: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM clips WHERE uuid = 'img-clip-1'"
-            ).fetch_optional(&db.pool).await.unwrap();
+            let exists: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM clips WHERE uuid = 'img-clip-1'")
+                    .fetch_optional(&db.pool)
+                    .await
+                    .unwrap();
 
-            assert!(exists.is_none(), "Image clip should be skipped when sync_images=false");
+            assert!(
+                exists.is_none(),
+                "Image clip should be skipped when sync_images=false"
+            );
             assert_eq!(report.pulled_clips, 0);
         }
 
@@ -2013,19 +3030,34 @@ mod tests {
             let drive = fake_drive();
             let mut report = SyncReport::default();
 
-            let mut clip = make_sync_clip("pinned-noted-clip", "important", "hash-pn", None, "2024-01-15T00:00:00Z");
+            let mut clip = make_sync_clip(
+                "pinned-noted-clip",
+                "important",
+                "hash-pn",
+                None,
+                "2024-01-15T00:00:00Z",
+            );
             clip.is_pinned = true;
             clip.note = Some("This is important".to_string());
 
             let delta = make_delta(vec![clip], vec![], vec![]);
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             let (is_pinned, note): (bool, Option<String>) = sqlx::query_as(
-                "SELECT is_pinned, note FROM clips WHERE uuid = 'pinned-noted-clip'"
-            ).fetch_one(&db.pool).await.unwrap();
+                "SELECT is_pinned, note FROM clips WHERE uuid = 'pinned-noted-clip'",
+            )
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
 
             assert!(is_pinned, "is_pinned should be preserved");
-            assert_eq!(note, Some("This is important".to_string()), "note should be preserved");
+            assert_eq!(
+                note,
+                Some("This is important".to_string()),
+                "note should be preserved"
+            );
         }
 
         // ──────────────────────────────────────────────
@@ -2038,9 +3070,18 @@ mod tests {
 
             let state = build_full_state(&db, "test-device", true).await.unwrap();
 
-            assert!(state.clips.is_empty(), "Empty DB should produce empty clips");
-            assert!(state.folders.is_empty(), "Empty DB should produce empty folders");
-            assert!(state.tombstones.is_empty(), "Empty DB should produce empty tombstones");
+            assert!(
+                state.clips.is_empty(),
+                "Empty DB should produce empty clips"
+            );
+            assert!(
+                state.folders.is_empty(),
+                "Empty DB should produce empty folders"
+            );
+            assert!(
+                state.tombstones.is_empty(),
+                "Empty DB should produce empty tombstones"
+            );
             assert_eq!(state.device_id, "test-device");
         }
 
@@ -2049,9 +3090,35 @@ mod tests {
             let db = setup_test_db().await;
 
             // Insert clips and folders
-            let folder_id = insert_folder_full(&db, "state-folder-1", "Work", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
-            insert_clip_full(&db, "state-clip-1", "hello world", "hash-sc1", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
-            insert_clip_full(&db, "state-clip-2", "in folder", "hash-sc2", Some(folder_id), "2024-01-02T00:00:00Z", "2024-01-02T00:00:00Z").await;
+            let folder_id = insert_folder_full(
+                &db,
+                "state-folder-1",
+                "Work",
+                0,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
+            insert_clip_full(
+                &db,
+                "state-clip-1",
+                "hello world",
+                "hash-sc1",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
+            insert_clip_full(
+                &db,
+                "state-clip-2",
+                "in folder",
+                "hash-sc2",
+                Some(folder_id),
+                "2024-01-02T00:00:00Z",
+                "2024-01-02T00:00:00Z",
+            )
+            .await;
 
             let state = build_full_state(&db, "test-device", true).await.unwrap();
 
@@ -2060,11 +3127,22 @@ mod tests {
             assert_eq!(state.folders[0].name, "Work");
 
             // Clip in folder should have folder_uuid populated
-            let clip_in_folder = state.clips.iter().find(|c| c.uuid == "state-clip-2").unwrap();
-            assert_eq!(clip_in_folder.folder_uuid, Some("state-folder-1".to_string()));
+            let clip_in_folder = state
+                .clips
+                .iter()
+                .find(|c| c.uuid == "state-clip-2")
+                .unwrap();
+            assert_eq!(
+                clip_in_folder.folder_uuid,
+                Some("state-folder-1".to_string())
+            );
 
             // Clip not in folder should have folder_uuid = None
-            let clip_no_folder = state.clips.iter().find(|c| c.uuid == "state-clip-1").unwrap();
+            let clip_no_folder = state
+                .clips
+                .iter()
+                .find(|c| c.uuid == "state-clip-1")
+                .unwrap();
             assert_eq!(clip_no_folder.folder_uuid, None);
         }
 
@@ -2073,7 +3151,16 @@ mod tests {
             let db = setup_test_db().await;
 
             // Insert a text clip and an image clip
-            insert_clip_full(&db, "text-clip-for-state", "some text", "hash-text-state", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "text-clip-for-state",
+                "some text",
+                "hash-text-state",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             sqlx::query(
                 "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash,
@@ -2083,7 +3170,11 @@ mod tests {
 
             let state = build_full_state(&db, "test-device", false).await.unwrap();
 
-            assert_eq!(state.clips.len(), 1, "Should only include text clips when sync_images=false");
+            assert_eq!(
+                state.clips.len(),
+                1,
+                "Should only include text clips when sync_images=false"
+            );
             assert_eq!(state.clips[0].uuid, "text-clip-for-state");
         }
 
@@ -2108,13 +3199,25 @@ mod tests {
         async fn build_full_state_text_content_populated_for_text_clips() {
             let db = setup_test_db().await;
 
-            insert_clip_full(&db, "content-clip", "full text content here", "hash-ftc", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "content-clip",
+                "full text content here",
+                "hash-ftc",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             let state = build_full_state(&db, "test-device", true).await.unwrap();
 
             assert_eq!(state.clips.len(), 1);
-            assert_eq!(state.clips[0].text_content, Some("full text content here".to_string()),
-                "text_content should contain the full text for text clips");
+            assert_eq!(
+                state.clips[0].text_content,
+                Some("full text content here".to_string()),
+                "text_content should contain the full text for text clips"
+            );
         }
 
         // ──────────────────────────────────────────────
@@ -2128,26 +3231,50 @@ mod tests {
             let mut report = SyncReport::default();
 
             // Pre-insert a clip to be tombstoned
-            insert_clip_full(&db, "to-delete-for-report", "delete me", "hash-del-rep", None, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(
+                &db,
+                "to-delete-for-report",
+                "delete me",
+                "hash-del-rep",
+                None,
+                "2024-01-01T00:00:00Z",
+                "2024-01-01T00:00:00Z",
+            )
+            .await;
 
             let delta = make_delta(
                 vec![
-                    make_sync_clip("report-clip-1", "new clip one", "hash-r1", None, "2024-01-15T00:00:00Z"),
-                    make_sync_clip("report-clip-2", "new clip two", "hash-r2", None, "2024-01-15T00:00:00Z"),
+                    make_sync_clip(
+                        "report-clip-1",
+                        "new clip one",
+                        "hash-r1",
+                        None,
+                        "2024-01-15T00:00:00Z",
+                    ),
+                    make_sync_clip(
+                        "report-clip-2",
+                        "new clip two",
+                        "hash-r2",
+                        None,
+                        "2024-01-15T00:00:00Z",
+                    ),
                 ],
-                vec![
-                    make_sync_folder("report-folder-1", "ReportFolder", 0, "2024-01-15T00:00:00Z"),
-                ],
-                vec![
-                    Tombstone {
-                        uuid: "to-delete-for-report".to_string(),
-                        entity_type: "clip".to_string(),
-                        deleted_at: "2024-01-15T00:00:00Z".to_string(),
-                    },
-                ],
+                vec![make_sync_folder(
+                    "report-folder-1",
+                    "ReportFolder",
+                    0,
+                    "2024-01-15T00:00:00Z",
+                )],
+                vec![Tombstone {
+                    uuid: "to-delete-for-report".to_string(),
+                    entity_type: "clip".to_string(),
+                    deleted_at: "2024-01-15T00:00:00Z".to_string(),
+                }],
             );
 
-            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+            apply_delta(&db, &delta, false, &drive, &mut report)
+                .await
+                .unwrap();
 
             assert_eq!(report.pulled_clips, 2, "Should report 2 pulled clips");
             assert_eq!(report.pulled_folders, 1, "Should report 1 pulled folder");

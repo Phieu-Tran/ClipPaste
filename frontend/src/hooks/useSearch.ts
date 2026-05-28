@@ -21,14 +21,17 @@ export function useSearch(opts: UseSearchOptions) {
   const [clipFilter, setClipFilter] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSearch = useCallback((query: string) => {
-    setSearchInput(query);
-    setPreviewFolder(undefined);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => {
-      setSearchQuery(query);
-    }, 100);
-  }, [setPreviewFolder]);
+  const handleSearch = useCallback(
+    (query: string) => {
+      setSearchInput(query);
+      setPreviewFolder(undefined);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = setTimeout(() => {
+        setSearchQuery(query);
+      }, 100);
+    },
+    [setPreviewFolder]
+  );
 
   // Auto-show search bar on mount
   useEffect(() => {
@@ -40,9 +43,11 @@ export function useSearch(opts: UseSearchOptions) {
     if (CLIP_TYPE_KEYS.has(filter)) {
       if (filter === 'text') {
         // "text" = pure text, not url/path/file subtypes
-        return clip.clip_type === 'text'
-          && !RE_URL.test(clip.content.trim())
-          && !RE_FILE_PATH.test(clip.content.trim());
+        return (
+          clip.clip_type === 'text' &&
+          !RE_URL.test(clip.content.trim()) &&
+          !RE_FILE_PATH.test(clip.content.trim())
+        );
       }
       return clip.clip_type === filter;
     }

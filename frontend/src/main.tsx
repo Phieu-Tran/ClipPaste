@@ -13,6 +13,12 @@ const windowType = urlParams.get('window');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
-    {windowType === 'settings' ? <SettingsWindow /> : windowType === 'scratchpad' ? <ScratchpadWindow /> : <App />}
+    {windowType === 'settings' ? (
+      <SettingsWindow />
+    ) : windowType === 'scratchpad' ? (
+      <ScratchpadWindow />
+    ) : (
+      <App />
+    )}
   </ErrorBoundary>
 );

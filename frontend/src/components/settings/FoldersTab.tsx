@@ -170,7 +170,7 @@ export function FoldersTab({
   const handleMoveClip = async (
     clipUuid: string,
     fromFolderId: string,
-    toFolderId: string | null,
+    toFolderId: string | null
   ) => {
     try {
       await invoke('move_to_folder', { clipId: clipUuid, folderId: toFolderId });
@@ -363,7 +363,7 @@ export function FoldersTab({
                               <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                                 {formatRelativeTime(clip.created_at)}
                               </span>
-                              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -409,9 +409,7 @@ export function FoldersTab({
                                     {/* Move to home */}
                                     {'home'.includes(moveSearch.toLowerCase()) && (
                                       <button
-                                        onClick={() =>
-                                          handleMoveClip(clip.id, folder.id, null)
-                                        }
+                                        onClick={() => handleMoveClip(clip.id, folder.id, null)}
                                         className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
                                       >
                                         <Inbox size={13} className="text-muted-foreground" />
@@ -421,14 +419,12 @@ export function FoldersTab({
                                     {customFolders
                                       .filter((f) => f.id !== folder.id)
                                       .filter((f) =>
-                                        f.name.toLowerCase().includes(moveSearch.toLowerCase()),
+                                        f.name.toLowerCase().includes(moveSearch.toLowerCase())
                                       )
                                       .map((f) => (
                                         <button
                                           key={f.id}
-                                          onClick={() =>
-                                            handleMoveClip(clip.id, folder.id, f.id)
-                                          }
+                                          onClick={() => handleMoveClip(clip.id, folder.id, f.id)}
                                           className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
                                         >
                                           <FolderIcon size={13} className="text-blue-400" />
@@ -441,7 +437,7 @@ export function FoldersTab({
                                     {customFolders.filter(
                                       (f) =>
                                         f.id !== folder.id &&
-                                        f.name.toLowerCase().includes(moveSearch.toLowerCase()),
+                                        f.name.toLowerCase().includes(moveSearch.toLowerCase())
                                     ).length === 0 &&
                                       !'home'.includes(moveSearch.toLowerCase()) && (
                                         <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">

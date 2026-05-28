@@ -15,6 +15,43 @@ const MAX_OPS_BEFORE_COMPACT: usize = 30;
 /// …or when their total size exceeds this many bytes.
 const MAX_OPS_BYTES_BEFORE_COMPACT: u64 = 2 * 1024 * 1024;
 
+type SyncClipRow = (
+    String,
+    String,
+    Vec<u8>,
+    String,
+    String,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    i64,
+    bool,
+    bool,
+    String,
+    String,
+);
+type SyncFolderRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    i64,
+    String,
+    String,
+);
+type SyncScratchpadRow = (
+    String,
+    String,
+    String,
+    bool,
+    Option<String>,
+    i64,
+    String,
+    String,
+);
+
 /// Full snapshot — uploaded once, then compacted periodically.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub(crate) struct SyncState {
@@ -75,7 +112,8 @@ pub async fn sync_now(
 ) -> Result<SyncReport, SyncError> {
     let mut report = SyncReport::default();
 
-    let device_id = super::get_device_id(db).await
+    let device_id = super::get_device_id(db)
+        .await
         .unwrap_or_else(|| "unknown".to_string());
 
     // Captured once at the start: becomes the new push_base if the cycle succeeds.
@@ -93,7 +131,9 @@ pub async fn sync_now(
         log::info!("SYNC: First sync — uploading full state");
         let state = build_full_state(db, &device_id, sync_images).await?;
         let json = serde_json::to_vec(&state)?;
-        let uploaded = drive.upsert_file(STATE_FILE, &json, "application/json").await?;
+        let uploaded = drive
+            .upsert_file(STATE_FILE, &json, "application/json")
+            .await?;
         report.pushed_clips = state.clips.len() as u64;
         report.pushed_folders = state.folders.len() as u64;
 
@@ -102,29 +142,52 @@ pub async fn sync_now(
         }
 
         save_setting(&db.pool, "sync_push_base_at", &cycle_started_iso).await?;
-        save_setting(&db.pool, "sync_ops_cursor_ms", &cycle_started_at.timestamp_millis().to_string()).await?;
+        save_setting(
+            &db.pool,
+            "sync_ops_cursor_ms",
+            &cycle_started_at.timestamp_millis().to_string(),
+        )
+        .await?;
         if let Some(modified) = uploaded.modified_time.as_deref() {
             save_setting(&db.pool, "sync_state_seen_modified", modified).await?;
         }
         save_setting(&db.pool, "sync_last_sync_at", &cycle_started_iso).await?;
-        log::info!("SYNC: First sync complete — {} clips, {} folders", report.pushed_clips, report.pushed_folders);
+        log::info!(
+            "SYNC: First sync complete — {} clips, {} folders",
+            report.pushed_clips,
+            report.pushed_folders
+        );
         return Ok(report);
     }
     let state_meta = state_meta.unwrap();
 
     // Partition once, reuse everywhere downstream.
-    let op_files: Vec<super::drive::DriveFile> = all_files.iter()
-        .filter(|f| f.name.starts_with(OP_PREFIX)).cloned().collect();
-    let legacy_files: Vec<super::drive::DriveFile> = all_files.iter()
-        .filter(|f| f.name.starts_with(LEGACY_DELTA_PREFIX)).cloned().collect();
-    let remote_image_hashes: std::collections::HashSet<String> = all_files.iter()
-        .filter_map(|f| f.name.strip_prefix("img_").and_then(|n| n.strip_suffix(".png")).map(String::from))
+    let op_files: Vec<super::drive::DriveFile> = all_files
+        .iter()
+        .filter(|f| f.name.starts_with(OP_PREFIX))
+        .cloned()
+        .collect();
+    let legacy_files: Vec<super::drive::DriveFile> = all_files
+        .iter()
+        .filter(|f| f.name.starts_with(LEGACY_DELTA_PREFIX))
+        .cloned()
+        .collect();
+    let remote_image_hashes: std::collections::HashSet<String> = all_files
+        .iter()
+        .filter_map(|f| {
+            f.name
+                .strip_prefix("img_")
+                .and_then(|n| n.strip_suffix(".png"))
+                .map(String::from)
+        })
         .collect();
 
     // Load local cursors (with defaults for upgraded installs).
-    let push_base_at = db.get_setting("sync_push_base_at").await
+    let push_base_at = db
+        .get_setting("sync_push_base_at")
+        .await
         .map_err(|e| SyncError::Database(e.to_string()))?
-        .or_else(|| {
+        .or({
             // Migration: fall back to legacy `sync_last_sync_at` so we don't re-push everything.
             // On first sync with the new code, this just means we treat the last successful
             // legacy sync as the push watermark.
@@ -133,12 +196,16 @@ pub async fn sync_now(
         .or(db.get_setting("sync_last_sync_at").await.ok().flatten())
         .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
 
-    let ops_cursor_ms: i64 = db.get_setting("sync_ops_cursor_ms").await
+    let ops_cursor_ms: i64 = db
+        .get_setting("sync_ops_cursor_ms")
+        .await
         .map_err(|e| SyncError::Database(e.to_string()))?
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let state_seen_modified = db.get_setting("sync_state_seen_modified").await
+    let state_seen_modified = db
+        .get_setting("sync_state_seen_modified")
+        .await
         .map_err(|e| SyncError::Database(e.to_string()))?;
 
     // 2. Reconcile against sync_state.json if a peer compacted since we last looked.
@@ -174,7 +241,8 @@ pub async fn sync_now(
     let own_legacy_name = format!("{}{}.json", LEGACY_DELTA_PREFIX, device_id);
 
     // Apply new-style ops in chronological order, skipping our own and anything ≤ cursor.
-    let mut sorted_ops: Vec<(&super::drive::DriveFile, i64)> = op_files.iter()
+    let mut sorted_ops: Vec<(&super::drive::DriveFile, i64)> = op_files
+        .iter()
         .filter(|f| f.name.starts_with(OP_PREFIX) && !f.name.starts_with(&own_op_prefix))
         .filter_map(|f| parse_op_millis(&f.name).map(|ms| (f, ms)))
         .filter(|(_, ms)| *ms > ops_cursor_ms)
@@ -194,7 +262,8 @@ pub async fn sync_now(
     }
 
     // Apply legacy delta files once (idempotent via LWW). They'll be deleted at next compact.
-    for legacy in legacy_files.iter()
+    for legacy in legacy_files
+        .iter()
         .filter(|f| f.name.starts_with(LEGACY_DELTA_PREFIX) && f.name != own_legacy_name)
     {
         let data = drive.download_file(&legacy.id).await?;
@@ -214,7 +283,10 @@ pub async fn sync_now(
     let changed_scratchpads = get_changed_scratchpads(db, &push_base_at).await?;
     let tombstones = get_tombstones(db).await?;
 
-    let has_local_changes = !changed_clips.is_empty() || !changed_folders.is_empty() || !changed_scratchpads.is_empty() || !tombstones.is_empty();
+    let has_local_changes = !changed_clips.is_empty()
+        || !changed_folders.is_empty()
+        || !changed_scratchpads.is_empty()
+        || !tombstones.is_empty();
 
     if has_local_changes {
         let delta = SyncDelta {
@@ -228,11 +300,23 @@ pub async fn sync_now(
         report.pushed_clips = delta.clips.len() as u64;
         report.pushed_folders = delta.folders.len() as u64;
 
-        let op_name = format!("{}{}_{}.json", OP_PREFIX, device_id, cycle_started_at.timestamp_millis());
+        let op_name = format!(
+            "{}{}_{}.json",
+            OP_PREFIX,
+            device_id,
+            cycle_started_at.timestamp_millis()
+        );
         let json = serde_json::to_vec(&delta)?;
-        log::info!("SYNC: Uploading op {} ({} bytes, {} clips, {} folders)",
-            op_name, json.len(), delta.clips.len(), delta.folders.len());
-        drive.create_file(&op_name, &json, "application/json").await?;
+        log::info!(
+            "SYNC: Uploading op {} ({} bytes, {} clips, {} folders)",
+            op_name,
+            json.len(),
+            delta.clips.len(),
+            delta.folders.len()
+        );
+        drive
+            .create_file(&op_name, &json, "application/json")
+            .await?;
 
         if sync_images {
             push_new_images(db, drive, &remote_image_hashes, &mut report).await?;
@@ -243,17 +327,42 @@ pub async fn sync_now(
     }
 
     // 5. Compact if the op log is getting large. Includes legacy files in the size/count check.
-    let total_op_count = op_files.iter().filter(|f| f.name.starts_with(OP_PREFIX)).count()
-        + legacy_files.iter().filter(|f| f.name.starts_with(LEGACY_DELTA_PREFIX)).count();
-    let total_op_bytes: u64 = op_files.iter().chain(legacy_files.iter())
+    let total_op_count = op_files
+        .iter()
+        .filter(|f| f.name.starts_with(OP_PREFIX))
+        .count()
+        + legacy_files
+            .iter()
+            .filter(|f| f.name.starts_with(LEGACY_DELTA_PREFIX))
+            .count();
+    let total_op_bytes: u64 = op_files
+        .iter()
+        .chain(legacy_files.iter())
         .filter(|f| f.name.starts_with(OP_PREFIX) || f.name.starts_with(LEGACY_DELTA_PREFIX))
         .filter_map(|f| f.size.as_deref().and_then(|s| s.parse::<u64>().ok()))
         .sum();
 
     if total_op_count >= MAX_OPS_BEFORE_COMPACT || total_op_bytes >= MAX_OPS_BYTES_BEFORE_COMPACT {
-        log::info!("SYNC: Compacting {} op files ({} bytes) into fresh state", total_op_count, total_op_bytes);
-        let merged_files: Vec<super::drive::DriveFile> = op_files.iter().chain(legacy_files.iter()).cloned().collect();
-        if let Some(new_state_meta) = compact(db, drive, &device_id, sync_images, &merged_files, &all_files).await? {
+        log::info!(
+            "SYNC: Compacting {} op files ({} bytes) into fresh state",
+            total_op_count,
+            total_op_bytes
+        );
+        let merged_files: Vec<super::drive::DriveFile> = op_files
+            .iter()
+            .chain(legacy_files.iter())
+            .cloned()
+            .collect();
+        if let Some(new_state_meta) = compact(
+            db,
+            drive,
+            &device_id,
+            sync_images,
+            &merged_files,
+            &all_files,
+        )
+        .await?
+        {
             if let Some(modified) = new_state_meta.modified_time.as_deref() {
                 save_setting(&db.pool, "sync_state_seen_modified", modified).await?;
             }
@@ -264,12 +373,23 @@ pub async fn sync_now(
 
     // 6. Advance watermarks and save.
     save_setting(&db.pool, "sync_push_base_at", &cycle_started_iso).await?;
-    save_setting(&db.pool, "sync_ops_cursor_ms", &next_ops_cursor_ms.to_string()).await?;
+    save_setting(
+        &db.pool,
+        "sync_ops_cursor_ms",
+        &next_ops_cursor_ms.to_string(),
+    )
+    .await?;
     save_setting(&db.pool, "sync_last_sync_at", &cycle_started_iso).await?;
     super::cleanup_tombstones(db).await.ok();
 
-    log::info!("SYNC: Complete — pushed {}/{}, pulled {}/{}, deleted {}",
-        report.pushed_clips, report.pushed_folders, report.pulled_clips, report.pulled_folders, report.deleted);
+    log::info!(
+        "SYNC: Complete — pushed {}/{}, pulled {}/{}, deleted {}",
+        report.pushed_clips,
+        report.pushed_folders,
+        report.pulled_clips,
+        report.pulled_folders,
+        report.deleted
+    );
 
     Ok(report)
 }
@@ -284,7 +404,11 @@ fn parse_op_millis(name: &str) -> Option<i64> {
 
 // ── Build state from DB ──
 
-pub(crate) async fn build_full_state(db: &Database, device_id: &str, sync_images: bool) -> Result<SyncState, SyncError> {
+pub(crate) async fn build_full_state(
+    db: &Database,
+    device_id: &str,
+    sync_images: bool,
+) -> Result<SyncState, SyncError> {
     let clips = get_all_clips(db, sync_images).await?;
     let folders = get_all_folders(db).await?;
     let scratchpads = get_all_scratchpads(db).await?;
@@ -301,129 +425,260 @@ pub(crate) async fn build_full_state(db: &Database, device_id: &str, sync_images
 }
 
 async fn get_all_clips(db: &Database, sync_images: bool) -> Result<Vec<SyncClip>, SyncError> {
-    let rows: Vec<(String, String, Vec<u8>, String, String, Option<i64>, Option<String>,
-                    Option<String>, Option<String>, Option<String>, i64, bool, bool,
-                    String, String)> =
-        sqlx::query_as(
-            "SELECT uuid, clip_type, content, text_preview, content_hash, folder_id,
+    let rows: Vec<SyncClipRow> = sqlx::query_as(
+        "SELECT uuid, clip_type, content, text_preview, content_hash, folder_id,
                     source_app, metadata, subtype, note, paste_count, is_pinned, is_sensitive,
                     created_at, COALESCE(updated_at, created_at)
-             FROM clips ORDER BY created_at DESC"
-        ).fetch_all(&db.pool).await?;
+             FROM clips ORDER BY created_at DESC",
+    )
+    .fetch_all(&db.pool)
+    .await?;
 
     let mut clips = Vec::with_capacity(rows.len());
-    for (uuid, clip_type, content, preview, hash, folder_id, source_app,
-         metadata, subtype, note, paste_count, is_pinned, is_sensitive,
-         created_at, updated_at) in rows {
-
-        if clip_type == "image" && !sync_images { continue; }
+    for (
+        uuid,
+        clip_type,
+        content,
+        preview,
+        hash,
+        folder_id,
+        source_app,
+        metadata,
+        subtype,
+        note,
+        paste_count,
+        is_pinned,
+        is_sensitive,
+        created_at,
+        updated_at,
+    ) in rows
+    {
+        if clip_type == "image" && !sync_images {
+            continue;
+        }
 
         let folder_uuid = resolve_folder_uuid(db, folder_id).await?;
         let text_content = if clip_type != "image" {
             Some(String::from_utf8_lossy(&content).into_owned())
-        } else { None };
+        } else {
+            None
+        };
 
         clips.push(SyncClip {
-            uuid, clip_type, text_preview: preview, content_hash: hash,
-            folder_uuid, source_app, metadata, subtype, note,
-            paste_count, is_pinned, is_sensitive, created_at, updated_at, text_content,
+            uuid,
+            clip_type,
+            text_preview: preview,
+            content_hash: hash,
+            folder_uuid,
+            source_app,
+            metadata,
+            subtype,
+            note,
+            paste_count,
+            is_pinned,
+            is_sensitive,
+            created_at,
+            updated_at,
+            text_content,
         });
     }
     Ok(clips)
 }
 
-async fn get_changed_clips(db: &Database, since: &str, sync_images: bool) -> Result<Vec<SyncClip>, SyncError> {
-    let rows: Vec<(String, String, Vec<u8>, String, String, Option<i64>, Option<String>,
-                    Option<String>, Option<String>, Option<String>, i64, bool, bool,
-                    String, String)> =
-        sqlx::query_as(
-            "SELECT uuid, clip_type, content, text_preview, content_hash, folder_id,
+async fn get_changed_clips(
+    db: &Database,
+    since: &str,
+    sync_images: bool,
+) -> Result<Vec<SyncClip>, SyncError> {
+    let rows: Vec<SyncClipRow> = sqlx::query_as(
+        "SELECT uuid, clip_type, content, text_preview, content_hash, folder_id,
                     source_app, metadata, subtype, note, paste_count, is_pinned, is_sensitive,
                     created_at, COALESCE(updated_at, created_at)
-             FROM clips WHERE COALESCE(updated_at, created_at) > ?"
-        ).bind(since).fetch_all(&db.pool).await?;
+             FROM clips WHERE COALESCE(updated_at, created_at) > ?",
+    )
+    .bind(since)
+    .fetch_all(&db.pool)
+    .await?;
 
     let mut clips = Vec::new();
-    for (uuid, clip_type, content, preview, hash, folder_id, source_app,
-         metadata, subtype, note, paste_count, is_pinned, is_sensitive,
-         created_at, updated_at) in rows {
-
-        if clip_type == "image" && !sync_images { continue; }
+    for (
+        uuid,
+        clip_type,
+        content,
+        preview,
+        hash,
+        folder_id,
+        source_app,
+        metadata,
+        subtype,
+        note,
+        paste_count,
+        is_pinned,
+        is_sensitive,
+        created_at,
+        updated_at,
+    ) in rows
+    {
+        if clip_type == "image" && !sync_images {
+            continue;
+        }
 
         let folder_uuid = resolve_folder_uuid(db, folder_id).await?;
         let text_content = if clip_type != "image" {
             Some(String::from_utf8_lossy(&content).into_owned())
-        } else { None };
+        } else {
+            None
+        };
 
         clips.push(SyncClip {
-            uuid, clip_type, text_preview: preview, content_hash: hash,
-            folder_uuid, source_app, metadata, subtype, note,
-            paste_count, is_pinned, is_sensitive, created_at, updated_at, text_content,
+            uuid,
+            clip_type,
+            text_preview: preview,
+            content_hash: hash,
+            folder_uuid,
+            source_app,
+            metadata,
+            subtype,
+            note,
+            paste_count,
+            is_pinned,
+            is_sensitive,
+            created_at,
+            updated_at,
+            text_content,
         });
     }
     Ok(clips)
 }
 
 async fn get_all_folders(db: &Database) -> Result<Vec<SyncFolder>, SyncError> {
-    let rows: Vec<(String, String, Option<String>, Option<String>, i64, String, String)> =
-        sqlx::query_as(
-            "SELECT uuid, name, icon, color, position, created_at, COALESCE(updated_at, created_at)
-             FROM folders WHERE uuid IS NOT NULL"
-        ).fetch_all(&db.pool).await?;
+    let rows: Vec<SyncFolderRow> = sqlx::query_as(
+        "SELECT uuid, name, icon, color, position, created_at, COALESCE(updated_at, created_at)
+             FROM folders WHERE uuid IS NOT NULL",
+    )
+    .fetch_all(&db.pool)
+    .await?;
 
-    Ok(rows.into_iter().map(|(uuid, name, icon, color, position, created_at, updated_at)| {
-        SyncFolder { uuid, name, icon, color, position, created_at, updated_at }
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(
+            |(uuid, name, icon, color, position, created_at, updated_at)| SyncFolder {
+                uuid,
+                name,
+                icon,
+                color,
+                position,
+                created_at,
+                updated_at,
+            },
+        )
+        .collect())
 }
 
 async fn get_changed_folders(db: &Database, since: &str) -> Result<Vec<SyncFolder>, SyncError> {
-    let rows: Vec<(String, String, Option<String>, Option<String>, i64, String, String)> =
-        sqlx::query_as(
-            "SELECT uuid, name, icon, color, position, created_at, COALESCE(updated_at, created_at)
-             FROM folders WHERE uuid IS NOT NULL AND COALESCE(updated_at, created_at) > ?"
-        ).bind(since).fetch_all(&db.pool).await?;
+    let rows: Vec<SyncFolderRow> = sqlx::query_as(
+        "SELECT uuid, name, icon, color, position, created_at, COALESCE(updated_at, created_at)
+             FROM folders WHERE uuid IS NOT NULL AND COALESCE(updated_at, created_at) > ?",
+    )
+    .bind(since)
+    .fetch_all(&db.pool)
+    .await?;
 
-    Ok(rows.into_iter().map(|(uuid, name, icon, color, position, created_at, updated_at)| {
-        SyncFolder { uuid, name, icon, color, position, created_at, updated_at }
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(
+            |(uuid, name, icon, color, position, created_at, updated_at)| SyncFolder {
+                uuid,
+                name,
+                icon,
+                color,
+                position,
+                created_at,
+                updated_at,
+            },
+        )
+        .collect())
 }
 
 async fn get_all_scratchpads(db: &Database) -> Result<Vec<SyncScratchpad>, SyncError> {
-    let rows: Vec<(String, String, String, bool, Option<String>, i64, String, String)> = sqlx::query_as(
+    let rows: Vec<SyncScratchpadRow> = sqlx::query_as(
         "SELECT uuid, title, content, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
          FROM scratchpads ORDER BY position ASC"
     ).fetch_all(&db.pool).await?;
 
-    Ok(rows.into_iter().map(|(uuid, title, content, is_pinned, color, position, created_at, updated_at)| {
-        SyncScratchpad { uuid, title, content, is_pinned, color, position, created_at, updated_at }
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(
+            |(uuid, title, content, is_pinned, color, position, created_at, updated_at)| {
+                SyncScratchpad {
+                    uuid,
+                    title,
+                    content,
+                    is_pinned,
+                    color,
+                    position,
+                    created_at,
+                    updated_at,
+                }
+            },
+        )
+        .collect())
 }
 
-async fn get_changed_scratchpads(db: &Database, since: &str) -> Result<Vec<SyncScratchpad>, SyncError> {
-    let rows: Vec<(String, String, String, bool, Option<String>, i64, String, String)> = sqlx::query_as(
+async fn get_changed_scratchpads(
+    db: &Database,
+    since: &str,
+) -> Result<Vec<SyncScratchpad>, SyncError> {
+    let rows: Vec<SyncScratchpadRow> = sqlx::query_as(
         "SELECT uuid, title, content, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
          FROM scratchpads WHERE COALESCE(updated_at, created_at) > ?"
     ).bind(since).fetch_all(&db.pool).await?;
 
-    Ok(rows.into_iter().map(|(uuid, title, content, is_pinned, color, position, created_at, updated_at)| {
-        SyncScratchpad { uuid, title, content, is_pinned, color, position, created_at, updated_at }
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(
+            |(uuid, title, content, is_pinned, color, position, created_at, updated_at)| {
+                SyncScratchpad {
+                    uuid,
+                    title,
+                    content,
+                    is_pinned,
+                    color,
+                    position,
+                    created_at,
+                    updated_at,
+                }
+            },
+        )
+        .collect())
 }
 
 async fn get_tombstones(db: &Database) -> Result<Vec<Tombstone>, SyncError> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT uuid, entity_type, deleted_at FROM sync_tombstones"
-    ).fetch_all(&db.pool).await?;
+    let rows: Vec<(String, String, String)> =
+        sqlx::query_as("SELECT uuid, entity_type, deleted_at FROM sync_tombstones")
+            .fetch_all(&db.pool)
+            .await?;
 
-    Ok(rows.into_iter().map(|(uuid, et, da)| Tombstone {
-        uuid, entity_type: et, deleted_at: da,
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(uuid, et, da)| Tombstone {
+            uuid,
+            entity_type: et,
+            deleted_at: da,
+        })
+        .collect())
 }
 
-async fn resolve_folder_uuid(db: &Database, folder_id: Option<i64>) -> Result<Option<String>, SyncError> {
+async fn resolve_folder_uuid(
+    db: &Database,
+    folder_id: Option<i64>,
+) -> Result<Option<String>, SyncError> {
     if let Some(fid) = folder_id {
         Ok(sqlx::query_scalar("SELECT uuid FROM folders WHERE id = ?")
-            .bind(fid).fetch_optional(&db.pool).await?.flatten())
+            .bind(fid)
+            .fetch_optional(&db.pool)
+            .await?
+            .flatten())
     } else {
         Ok(None)
     }
@@ -439,28 +694,46 @@ pub(crate) async fn apply_delta(
     report: &mut SyncReport,
 ) -> Result<(), SyncError> {
     // Build local lookup for conflict resolution
-    let local_clips: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
-        "SELECT uuid, COALESCE(updated_at, created_at) FROM clips"
-    ).fetch_all(&db.pool).await?.into_iter().collect();
+    let local_clips: std::collections::HashMap<String, String> =
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT uuid, COALESCE(updated_at, created_at) FROM clips",
+        )
+        .fetch_all(&db.pool)
+        .await?
+        .into_iter()
+        .collect();
 
-    let local_folders: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
-        "SELECT uuid, COALESCE(updated_at, created_at) FROM folders WHERE uuid IS NOT NULL"
-    ).fetch_all(&db.pool).await?.into_iter().collect();
+    let local_folders: std::collections::HashMap<String, String> =
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT uuid, COALESCE(updated_at, created_at) FROM folders WHERE uuid IS NOT NULL",
+        )
+        .fetch_all(&db.pool)
+        .await?
+        .into_iter()
+        .collect();
 
     // Apply clip changes
     for clip in &delta.clips {
-        if clip.clip_type == "image" && !sync_images { continue; }
+        if clip.clip_type == "image" && !sync_images {
+            continue;
+        }
 
         let should_apply = match local_clips.get(&clip.uuid) {
             None => true,
             Some(local_ts) => clip.updated_at > *local_ts,
         };
-        if !should_apply { continue; }
+        if !should_apply {
+            continue;
+        }
 
         let folder_id: Option<i64> = if let Some(ref fuuid) = clip.folder_uuid {
             sqlx::query_scalar("SELECT id FROM folders WHERE uuid = ?")
-                .bind(fuuid).fetch_optional(&db.pool).await?
-        } else { None };
+                .bind(fuuid)
+                .fetch_optional(&db.pool)
+                .await?
+        } else {
+            None
+        };
 
         let content: Vec<u8> = if clip.clip_type == "image" {
             let img_filename = format!("{}.png", clip.content_hash);
@@ -471,8 +744,12 @@ pub(crate) async fn apply_delta(
                     if let Some(img_file) = drive.find_file_by_name(&drive_img_name).await? {
                         if let Ok(img_bytes) = drive.download_file(&img_file.id).await {
                             if std::fs::write(&image_path, &img_bytes).is_ok() {
-                                if let Some(thumb) = crate::clipboard::generate_thumbnail(&img_bytes) {
-                                    let thumb_path = db.images_dir.join(format!("{}_thumb.jpg", clip.content_hash));
+                                if let Some(thumb) =
+                                    crate::clipboard::generate_thumbnail(&img_bytes)
+                                {
+                                    let thumb_path = db
+                                        .images_dir
+                                        .join(format!("{}_thumb.jpg", clip.content_hash));
                                     let _ = std::fs::write(&thumb_path, &thumb);
                                 }
                             }
@@ -482,7 +759,11 @@ pub(crate) async fn apply_delta(
             }
             img_filename.into_bytes()
         } else {
-            clip.text_content.as_deref().unwrap_or("").as_bytes().to_vec()
+            clip.text_content
+                .as_deref()
+                .unwrap_or("")
+                .as_bytes()
+                .to_vec()
         };
 
         if local_clips.contains_key(&clip.uuid) {
@@ -491,19 +772,31 @@ pub(crate) async fn apply_delta(
                 "UPDATE clips SET clip_type=?, content=?, text_preview=?, content_hash=?,
                         folder_id=?, source_app=?, metadata=?, subtype=?, note=?,
                         paste_count=MAX(paste_count,?), is_pinned=?, is_sensitive=?, updated_at=?
-                 WHERE uuid=?"
+                 WHERE uuid=?",
             )
-            .bind(&clip.clip_type).bind(&content).bind(&clip.text_preview)
-            .bind(&clip.content_hash).bind(folder_id).bind(&clip.source_app)
-            .bind(&clip.metadata).bind(&clip.subtype).bind(&clip.note)
-            .bind(clip.paste_count).bind(clip.is_pinned).bind(clip.is_sensitive)
-            .bind(&clip.updated_at).bind(&clip.uuid)
-            .execute(&db.pool).await?;
+            .bind(&clip.clip_type)
+            .bind(&content)
+            .bind(&clip.text_preview)
+            .bind(&clip.content_hash)
+            .bind(folder_id)
+            .bind(&clip.source_app)
+            .bind(&clip.metadata)
+            .bind(&clip.subtype)
+            .bind(&clip.note)
+            .bind(clip.paste_count)
+            .bind(clip.is_pinned)
+            .bind(clip.is_sensitive)
+            .bind(&clip.updated_at)
+            .bind(&clip.uuid)
+            .execute(&db.pool)
+            .await?;
         } else {
             // UUID not found locally — check if same content already exists (e.g. after DB repair)
-            let existing_by_hash: Option<String> = sqlx::query_scalar(
-                "SELECT uuid FROM clips WHERE content_hash = ? LIMIT 1"
-            ).bind(&clip.content_hash).fetch_optional(&db.pool).await?;
+            let existing_by_hash: Option<String> =
+                sqlx::query_scalar("SELECT uuid FROM clips WHERE content_hash = ? LIMIT 1")
+                    .bind(&clip.content_hash)
+                    .fetch_optional(&db.pool)
+                    .await?;
 
             if let Some(local_uuid) = existing_by_hash {
                 // Same content exists with different UUID — adopt remote UUID and update
@@ -544,7 +837,11 @@ pub(crate) async fn apply_delta(
     for folder in &delta.folders {
         // Skip folders with "(synced)" suffix — these are artifacts from a previous bug
         if folder.name.ends_with(" (synced)") {
-            log::info!("Sync: skipping artifact folder '{}' (uuid={})", folder.name, folder.uuid);
+            log::info!(
+                "Sync: skipping artifact folder '{}' (uuid={})",
+                folder.name,
+                folder.uuid
+            );
             continue;
         }
 
@@ -552,22 +849,37 @@ pub(crate) async fn apply_delta(
             None => true,
             Some(local_ts) => folder.updated_at > *local_ts,
         };
-        if !should_apply { continue; }
+        if !should_apply {
+            continue;
+        }
 
         if local_folders.contains_key(&folder.uuid) {
             // UUID match — update in place (keep local name to preserve user's organization)
-            sqlx::query("UPDATE folders SET icon=?, color=?, position=?, updated_at=? WHERE uuid=?")
-                .bind(&folder.icon).bind(&folder.color)
-                .bind(folder.position).bind(&folder.updated_at).bind(&folder.uuid)
-                .execute(&db.pool).await?;
+            sqlx::query(
+                "UPDATE folders SET icon=?, color=?, position=?, updated_at=? WHERE uuid=?",
+            )
+            .bind(&folder.icon)
+            .bind(&folder.color)
+            .bind(folder.position)
+            .bind(&folder.updated_at)
+            .bind(&folder.uuid)
+            .execute(&db.pool)
+            .await?;
         } else {
             // UUID not found locally — check if same-name folder exists (e.g. after DB repair)
-            let existing_by_name: Option<i64> = sqlx::query_scalar("SELECT id FROM folders WHERE name = ?")
-                .bind(&folder.name).fetch_optional(&db.pool).await?;
+            let existing_by_name: Option<i64> =
+                sqlx::query_scalar("SELECT id FROM folders WHERE name = ?")
+                    .bind(&folder.name)
+                    .fetch_optional(&db.pool)
+                    .await?;
 
             if let Some(local_id) = existing_by_name {
                 // Same-name folder exists — adopt remote UUID (reconcile identity)
-                log::info!("Sync: reconciling folder '{}' — adopting remote uuid={}", folder.name, folder.uuid);
+                log::info!(
+                    "Sync: reconciling folder '{}' — adopting remote uuid={}",
+                    folder.name,
+                    folder.uuid
+                );
                 sqlx::query("UPDATE folders SET uuid=?, icon=?, color=?, position=?, updated_at=? WHERE id=?")
                     .bind(&folder.uuid).bind(&folder.icon).bind(&folder.color)
                     .bind(folder.position).bind(&folder.updated_at).bind(local_id)
@@ -584,38 +896,63 @@ pub(crate) async fn apply_delta(
     }
 
     // Cleanup: merge any existing "(synced)" folders into their originals
-    let synced_folders: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, name FROM folders WHERE name LIKE '% (synced)'"
-    ).fetch_all(&db.pool).await.unwrap_or_default();
+    let synced_folders: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, name FROM folders WHERE name LIKE '% (synced)'")
+            .fetch_all(&db.pool)
+            .await
+            .unwrap_or_default();
     for (synced_id, synced_name) in &synced_folders {
         let orig_name = synced_name.trim_end_matches(" (synced)");
         let orig_id: Option<i64> = sqlx::query_scalar("SELECT id FROM folders WHERE name = ?")
-            .bind(orig_name).fetch_optional(&db.pool).await.unwrap_or(None);
+            .bind(orig_name)
+            .fetch_optional(&db.pool)
+            .await
+            .unwrap_or(None);
         if let Some(oid) = orig_id {
             let _ = sqlx::query("UPDATE clips SET folder_id = ? WHERE folder_id = ?")
-                .bind(oid).bind(synced_id).execute(&db.pool).await;
+                .bind(oid)
+                .bind(synced_id)
+                .execute(&db.pool)
+                .await;
             let _ = sqlx::query("DELETE FROM folders WHERE id = ?")
-                .bind(synced_id).execute(&db.pool).await;
-            log::info!("Sync cleanup: merged '{}' into '{}'", synced_name, orig_name);
+                .bind(synced_id)
+                .execute(&db.pool)
+                .await;
+            log::info!(
+                "Sync cleanup: merged '{}' into '{}'",
+                synced_name,
+                orig_name
+            );
         } else {
             let _ = sqlx::query("UPDATE folders SET name = ? WHERE id = ?")
-                .bind(orig_name).bind(synced_id).execute(&db.pool).await;
+                .bind(orig_name)
+                .bind(synced_id)
+                .execute(&db.pool)
+                .await;
             log::info!("Sync cleanup: renamed '{}' → '{}'", synced_name, orig_name);
         }
         report.deleted += 1;
     }
 
     // Apply scratchpad changes
-    let local_scratchpads: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
-        "SELECT uuid, COALESCE(updated_at, created_at) FROM scratchpads"
-    ).fetch_all(&db.pool).await.unwrap_or_default().into_iter().collect();
+    let local_scratchpads: std::collections::HashMap<String, String> =
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT uuid, COALESCE(updated_at, created_at) FROM scratchpads",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
     for sp in &delta.scratchpads {
         let should_apply = match local_scratchpads.get(&sp.uuid) {
             None => true,
             Some(local_ts) => sp.updated_at > *local_ts,
         };
-        if !should_apply { continue; }
+        if !should_apply {
+            continue;
+        }
 
         if local_scratchpads.contains_key(&sp.uuid) {
             sqlx::query("UPDATE scratchpads SET title=?, content=?, is_pinned=?, color=?, position=?, updated_at=? WHERE uuid=?")
@@ -635,27 +972,43 @@ pub(crate) async fn apply_delta(
         match tombstone.entity_type.as_str() {
             "clip" => {
                 if let Some((clip_type, content)) = sqlx::query_as::<_, (String, Vec<u8>)>(
-                    "SELECT clip_type, content FROM clips WHERE uuid=?"
-                ).bind(&tombstone.uuid).fetch_optional(&db.pool).await? {
+                    "SELECT clip_type, content FROM clips WHERE uuid=?",
+                )
+                .bind(&tombstone.uuid)
+                .fetch_optional(&db.pool)
+                .await?
+                {
                     if clip_type == "image" {
                         db.remove_image_and_thumb(&String::from_utf8_lossy(&content));
                     }
                     sqlx::query("DELETE FROM clips WHERE uuid=?")
-                        .bind(&tombstone.uuid).execute(&db.pool).await?;
+                        .bind(&tombstone.uuid)
+                        .execute(&db.pool)
+                        .await?;
                     crate::clipboard::remove_from_search_cache(&tombstone.uuid);
                     report.deleted += 1;
                 }
             }
             "folder" => {
-                if let Some(fid) = sqlx::query_scalar::<_, i64>("SELECT id FROM folders WHERE uuid=?")
-                    .bind(&tombstone.uuid).fetch_optional(&db.pool).await? {
+                if let Some(fid) =
+                    sqlx::query_scalar::<_, i64>("SELECT id FROM folders WHERE uuid=?")
+                        .bind(&tombstone.uuid)
+                        .fetch_optional(&db.pool)
+                        .await?
+                {
                     // Collect affected clip uuids BEFORE the update so we can patch the cache
-                    let affected: Vec<String> = sqlx::query_scalar(
-                        "SELECT uuid FROM clips WHERE folder_id=?"
-                    ).bind(fid).fetch_all(&db.pool).await.unwrap_or_default();
+                    let affected: Vec<String> =
+                        sqlx::query_scalar("SELECT uuid FROM clips WHERE folder_id=?")
+                            .bind(fid)
+                            .fetch_all(&db.pool)
+                            .await
+                            .unwrap_or_default();
                     sqlx::query("UPDATE clips SET folder_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE folder_id=?")
                         .bind(fid).execute(&db.pool).await?;
-                    sqlx::query("DELETE FROM folders WHERE id=?").bind(fid).execute(&db.pool).await?;
+                    sqlx::query("DELETE FROM folders WHERE id=?")
+                        .bind(fid)
+                        .execute(&db.pool)
+                        .await?;
                     // Patch in-memory search cache so clips are no longer associated with the deleted folder
                     {
                         let mut cache = crate::clipboard::SEARCH_CACHE.write();
@@ -670,7 +1023,9 @@ pub(crate) async fn apply_delta(
             }
             "scratchpad" => {
                 let deleted = sqlx::query("DELETE FROM scratchpads WHERE uuid=?")
-                    .bind(&tombstone.uuid).execute(&db.pool).await?;
+                    .bind(&tombstone.uuid)
+                    .execute(&db.pool)
+                    .await?;
                 if deleted.rows_affected() > 0 {
                     report.deleted += 1;
                 }
@@ -695,15 +1050,17 @@ async fn compact(
     // Upload fresh full state
     let state = build_full_state(db, device_id, sync_images).await?;
     let json = serde_json::to_vec(&state)?;
-    let new_state_meta = drive.upsert_file(STATE_FILE, &json, "application/json").await?;
+    let new_state_meta = drive
+        .upsert_file(STATE_FILE, &json, "application/json")
+        .await?;
 
     // Delete all op log files (both new-style and legacy)
     let mut removed = 0usize;
     for file in op_files {
-        if file.name.starts_with(OP_PREFIX) || file.name.starts_with(LEGACY_DELTA_PREFIX) {
-            if drive.delete_file(&file.id).await.is_ok() {
-                removed += 1;
-            }
+        if (file.name.starts_with(OP_PREFIX) || file.name.starts_with(LEGACY_DELTA_PREFIX))
+            && drive.delete_file(&file.id).await.is_ok()
+        {
+            removed += 1;
         }
     }
 
@@ -711,12 +1068,16 @@ async fn compact(
     // Reuses the file list fetched at the start of sync_now — no extra Drive call.
     let mut orphan_images = 0usize;
     if sync_images {
-        let referenced: std::collections::HashSet<String> = state.clips.iter()
+        let referenced: std::collections::HashSet<String> = state
+            .clips
+            .iter()
             .filter(|c| c.clip_type == "image")
             .map(|c| c.content_hash.clone())
             .collect();
         for img in all_files {
-            let is_orphan = img.name.strip_prefix("img_")
+            let is_orphan = img
+                .name
+                .strip_prefix("img_")
                 .and_then(|n| n.strip_suffix(".png"))
                 .map(|hash| !referenced.contains(hash))
                 .unwrap_or(false);
@@ -741,36 +1102,51 @@ async fn push_new_images(
 ) -> Result<(), SyncError> {
     use futures::stream::{self, StreamExt};
 
-    let local_images: Vec<(String, Vec<u8>)> = sqlx::query_as(
-        "SELECT content_hash, content FROM clips WHERE clip_type = 'image'"
-    ).fetch_all(&db.pool).await?;
+    let local_images: Vec<(String, Vec<u8>)> =
+        sqlx::query_as("SELECT content_hash, content FROM clips WHERE clip_type = 'image'")
+            .fetch_all(&db.pool)
+            .await?;
 
     // Build upload work set — read bytes upfront so the concurrent tasks don't fight over the disk.
-    let to_upload: Vec<(String, Vec<u8>)> = local_images.into_iter()
+    let to_upload: Vec<(String, Vec<u8>)> = local_images
+        .into_iter()
         .filter(|(hash, _)| !remote_hashes.contains(hash))
         .filter_map(|(hash, content)| {
             let filename = String::from_utf8_lossy(&content).into_owned();
             let path = db.images_dir.join(&filename);
-            if !path.exists() { return None; }
+            if !path.exists() {
+                return None;
+            }
             match std::fs::read(&path) {
                 Ok(bytes) if bytes.len() <= 10_000_000 => Some((hash, bytes)),
                 Ok(bytes) => {
-                    log::info!("SYNC: Skipping large image {} ({}MB)", hash, bytes.len() / 1_000_000);
+                    log::info!(
+                        "SYNC: Skipping large image {} ({}MB)",
+                        hash,
+                        bytes.len() / 1_000_000
+                    );
                     None
                 }
-                Err(e) => { log::warn!("SYNC: Failed to read image {}: {}", filename, e); None }
+                Err(e) => {
+                    log::warn!("SYNC: Failed to read image {}: {}", filename, e);
+                    None
+                }
             }
         })
         .collect();
 
-    if to_upload.is_empty() { return Ok(()); }
+    if to_upload.is_empty() {
+        return Ok(());
+    }
 
     // Upload up to 4 images concurrently — bounded so we don't DOS Drive's rate limits.
     const IMAGE_UPLOAD_CONCURRENCY: usize = 4;
     let results: Vec<Result<(), String>> = stream::iter(to_upload)
         .map(|(hash, bytes)| async move {
             let drive_name = format!("img_{}.png", hash);
-            drive.upsert_file(&drive_name, &bytes, "image/png").await
+            drive
+                .upsert_file(&drive_name, &bytes, "image/png")
+                .await
                 .map(|_| ())
                 .map_err(|e| format!("push image {}: {}", hash, e))
         })
@@ -791,6 +1167,9 @@ async fn push_new_images(
 
 async fn save_setting(pool: &sqlx::SqlitePool, key: &str, value: &str) -> Result<(), SyncError> {
     sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
-        .bind(key).bind(value).execute(pool).await?;
+        .bind(key)
+        .bind(value)
+        .execute(pool)
+        .await?;
     Ok(())
 }

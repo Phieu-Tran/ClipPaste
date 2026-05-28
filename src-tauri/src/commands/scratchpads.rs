@@ -23,7 +23,7 @@ pub async fn get_scratchpads(
 ) -> Result<Vec<ScratchpadItem>, String> {
     let rows: Vec<Scratchpad> = sqlx::query_as(
         "SELECT id, uuid, title, content, is_pinned, color, position, created_at, updated_at
-         FROM scratchpads ORDER BY is_pinned DESC, position ASC, id ASC"
+         FROM scratchpads ORDER BY is_pinned DESC, position ASC, id ASC",
     )
     .fetch_all(&db.pool)
     .await
@@ -79,20 +79,39 @@ pub async fn update_scratchpad(
     let id_num: i64 = id.parse().map_err(|_| "Invalid scratchpad id")?;
 
     if let Some(t) = &title {
-        sqlx::query("UPDATE scratchpads SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(t).bind(id_num)
-            .execute(&db.pool).await.map_err(|e| e.to_string())?;
+        sqlx::query(
+            "UPDATE scratchpads SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(t)
+        .bind(id_num)
+        .execute(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     }
     if let Some(c) = &content {
-        sqlx::query("UPDATE scratchpads SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(c).bind(id_num)
-            .execute(&db.pool).await.map_err(|e| e.to_string())?;
+        sqlx::query(
+            "UPDATE scratchpads SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(c)
+        .bind(id_num)
+        .execute(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     }
     if let Some(col) = &color {
-        let val = if col.is_empty() { None } else { Some(col.as_str()) };
-        sqlx::query("UPDATE scratchpads SET color = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(val).bind(id_num)
-            .execute(&db.pool).await.map_err(|e| e.to_string())?;
+        let val = if col.is_empty() {
+            None
+        } else {
+            Some(col.as_str())
+        };
+        sqlx::query(
+            "UPDATE scratchpads SET color = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(val)
+        .bind(id_num)
+        .execute(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -111,7 +130,9 @@ pub async fn delete_scratchpad(
         .map_err(|e| e.to_string())?;
 
     if let Some(uuid) = uuid {
-        crate::sync::record_tombstone(&db, &uuid, "scratchpad").await.ok();
+        crate::sync::record_tombstone(&db, &uuid, "scratchpad")
+            .await
+            .ok();
     }
 
     sqlx::query("DELETE FROM scratchpads WHERE id = ?")
@@ -129,12 +150,14 @@ pub async fn reorder_scratchpads(
 ) -> Result<(), String> {
     for (i, id) in ids.iter().enumerate() {
         let id_num: i64 = id.parse().map_err(|_| "Invalid scratchpad id")?;
-        sqlx::query("UPDATE scratchpads SET position = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(i as i64)
-            .bind(id_num)
-            .execute(&db.pool)
-            .await
-            .map_err(|e| e.to_string())?;
+        sqlx::query(
+            "UPDATE scratchpads SET position = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(i as i64)
+        .bind(id_num)
+        .execute(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -146,10 +169,19 @@ pub async fn toggle_scratchpad_pin(
 ) -> Result<bool, String> {
     let id_num: i64 = id.parse().map_err(|_| "Invalid scratchpad id")?;
     let current: bool = sqlx::query_scalar("SELECT is_pinned FROM scratchpads WHERE id = ?")
-        .bind(id_num).fetch_one(&db.pool).await.map_err(|e| e.to_string())?;
+        .bind(id_num)
+        .fetch_one(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     let new_val = !current;
-    sqlx::query("UPDATE scratchpads SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(new_val).bind(id_num).execute(&db.pool).await.map_err(|e| e.to_string())?;
+    sqlx::query(
+        "UPDATE scratchpads SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .bind(new_val)
+    .bind(id_num)
+    .execute(&db.pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(new_val)
 }
 
@@ -160,7 +192,7 @@ pub async fn scratchpad_paste(
     window: tauri::WebviewWindow,
     db: tauri::State<'_, Arc<Database>>,
 ) -> Result<(), String> {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());

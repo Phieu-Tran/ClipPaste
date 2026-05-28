@@ -1,50 +1,177 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FolderItem } from '../types';
-import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Link, EyeOff, Flame, Sparkles, Mail, Palette, FolderOpen, Phone, Braces, Code2, StickyNote } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  MoreHorizontal,
+  X,
+  Layers,
+  FileText,
+  Image,
+  Link,
+  EyeOff,
+  Flame,
+  Sparkles,
+  Mail,
+  Palette,
+  FolderOpen,
+  Phone,
+  Braces,
+  Code2,
+  StickyNote,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
 
 const FOLDER_COLORS_LIGHT = [
-  { active: 'bg-red-600 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400 text-white hover:bg-red-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-amber-600 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400 text-white hover:bg-amber-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-green-600 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400 text-white hover:bg-green-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-emerald-600 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400 text-white hover:bg-emerald-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-teal-600 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400 text-white hover:bg-teal-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-cyan-600 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400 text-white hover:bg-cyan-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-sky-600 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400 text-white hover:bg-sky-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-blue-600 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400 text-white hover:bg-blue-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-indigo-600 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400 text-white hover:bg-indigo-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-purple-600 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400 text-white hover:bg-purple-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-fuchsia-600 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400 text-white hover:bg-fuchsia-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-pink-600 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400 text-white hover:bg-pink-500 hover:text-white drop-shadow-sm' },
-  { active: 'bg-rose-600 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400 text-white hover:bg-rose-500 hover:text-white drop-shadow-sm' },
+  {
+    active: 'bg-red-600 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-red-400 text-white hover:bg-red-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-amber-600 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-amber-400 text-white hover:bg-amber-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-green-600 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-green-400 text-white hover:bg-green-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-emerald-600 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-emerald-400 text-white hover:bg-emerald-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-teal-600 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-teal-400 text-white hover:bg-teal-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-cyan-600 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-cyan-400 text-white hover:bg-cyan-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-sky-600 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-sky-400 text-white hover:bg-sky-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-blue-600 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-blue-400 text-white hover:bg-blue-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-indigo-600 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-indigo-400 text-white hover:bg-indigo-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-purple-600 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-purple-400 text-white hover:bg-purple-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-fuchsia-600 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-fuchsia-400 text-white hover:bg-fuchsia-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-pink-600 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-pink-400 text-white hover:bg-pink-500 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-rose-600 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-rose-400 text-white hover:bg-rose-500 hover:text-white drop-shadow-sm',
+  },
 ];
 
 const FOLDER_COLORS_DARK = [
-  { active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400/20 text-white/90 hover:bg-red-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400/20 text-white/90 hover:bg-orange-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400/20 text-white/90 hover:bg-amber-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400/20 text-white/90 hover:bg-green-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400/20 text-white/90 hover:bg-emerald-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400/20 text-white/90 hover:bg-teal-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400/20 text-white/90 hover:bg-cyan-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400/20 text-white/90 hover:bg-sky-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400/20 text-white/90 hover:bg-blue-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400/20 text-white/90 hover:bg-indigo-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400/20 text-white/90 hover:bg-violet-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400/20 text-white/90 hover:bg-purple-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400/20 text-white/90 hover:bg-fuchsia-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400/20 text-white/90 hover:bg-pink-400/30 hover:text-white drop-shadow-sm' },
-  { active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400/20 text-white/90 hover:bg-rose-400/30 hover:text-white drop-shadow-sm' },
+  {
+    active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-red-400/20 text-white/90 hover:bg-red-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm',
+    inactive:
+      'bg-orange-400/20 text-white/90 hover:bg-orange-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-amber-400/20 text-white/90 hover:bg-amber-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-green-400/20 text-white/90 hover:bg-green-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm',
+    inactive:
+      'bg-emerald-400/20 text-white/90 hover:bg-emerald-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-teal-400/20 text-white/90 hover:bg-teal-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-cyan-400/20 text-white/90 hover:bg-cyan-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-sky-400/20 text-white/90 hover:bg-sky-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-blue-400/20 text-white/90 hover:bg-blue-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm',
+    inactive:
+      'bg-indigo-400/20 text-white/90 hover:bg-indigo-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm',
+    inactive:
+      'bg-violet-400/20 text-white/90 hover:bg-violet-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm',
+    inactive:
+      'bg-purple-400/20 text-white/90 hover:bg-purple-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm',
+    inactive:
+      'bg-fuchsia-400/20 text-white/90 hover:bg-fuchsia-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-pink-400/20 text-white/90 hover:bg-pink-400/30 hover:text-white drop-shadow-sm',
+  },
+  {
+    active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm',
+    inactive: 'bg-rose-400/20 text-white/90 hover:bg-rose-400/30 hover:text-white drop-shadow-sm',
+  },
 ];
 
 const COLOR_KEY_TO_INDEX: Record<string, number> = {
-  red: 0, orange: 1, amber: 2, green: 3, emerald: 4, teal: 5,
-  cyan: 6, sky: 7, blue: 8, indigo: 9, violet: 10, purple: 11,
-  fuchsia: 12, pink: 13, rose: 14,
+  red: 0,
+  orange: 1,
+  amber: 2,
+  green: 3,
+  emerald: 4,
+  teal: 5,
+  cyan: 6,
+  sky: 7,
+  blue: 8,
+  indigo: 9,
+  violet: 10,
+  purple: 11,
+  fuchsia: 12,
+  pink: 13,
+  rose: 14,
 };
 
 /** All clip filters — compact inline row */
@@ -164,7 +291,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       let side: 'left' | 'right' = 'left';
       buttons.forEach((btn) => {
         const rect = btn.getBoundingClientRect();
-        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        if (
+          e.clientX >= rect.left &&
+          e.clientX <= rect.right &&
+          e.clientY >= rect.top &&
+          e.clientY <= rect.bottom
+        ) {
           hoveredId = btn.getAttribute('data-folder-id');
           // Determine if cursor is on left or right half of the button
           side = e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
@@ -221,15 +353,22 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   }, [selectedFolder]);
 
   const allCategories = useMemo(() => {
-    const raw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null; isVirtual?: boolean }[] = [
+    const raw: {
+      id: string | null;
+      name: string;
+      count: number;
+      color?: string | null;
+      icon?: string | null;
+      isVirtual?: boolean;
+    }[] = [
       { id: null, name: 'All', count: totalClipCount, icon: null },
       { id: '__frequent__', name: 'Frequent', count: 0, icon: null, color: null, isVirtual: true },
       { id: '__smart__', name: 'Smart', count: 0, icon: null, color: null, isVirtual: true },
       ...folders.map((f) => ({ ...f, count: f.item_count })),
     ];
     if (!searchQuery.trim()) return raw;
-    return raw.filter((cat) =>
-      cat.id === null || cat.name.toLowerCase().includes(searchQuery.toLowerCase())
+    return raw.filter(
+      (cat) => cat.id === null || cat.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [folders, totalClipCount, searchQuery]);
 
@@ -260,17 +399,20 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     onFolderHoverEnd?.();
   };
 
-  const getFolderColor = useCallback((name: string, colorKey?: string | null) => {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const colors = theme === 'light' ? FOLDER_COLORS_LIGHT : FOLDER_COLORS_DARK;
-    if (colorKey && colorKey in COLOR_KEY_TO_INDEX) {
-      return colors[COLOR_KEY_TO_INDEX[colorKey]];
-    }
-    return colors[Math.abs(hash) % colors.length];
-  }, [theme]);
+  const getFolderColor = useCallback(
+    (name: string, colorKey?: string | null) => {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const colors = theme === 'light' ? FOLDER_COLORS_LIGHT : FOLDER_COLORS_DARK;
+      if (colorKey && colorKey in COLOR_KEY_TO_INDEX) {
+        return colors[COLOR_KEY_TO_INDEX[colorKey]];
+      }
+      return colors[Math.abs(hash) % colors.length];
+    },
+    [theme]
+  );
 
   return (
     <div className="drag-area flex min-h-[52px] items-center gap-4 border-b border-border/50 bg-gradient-to-r from-background/95 via-background/90 to-background/95 px-6 py-2 backdrop-blur-sm">
@@ -312,7 +454,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
       {/* Clip Filters — compact inline */}
       {showSearch && (
-        <div className="no-drag flex items-center gap-px" role="toolbar" aria-label="Filter clips" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <div
+          className="no-drag flex items-center gap-px"
+          role="toolbar"
+          aria-label="Filter clips"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
           {CLIP_FILTERS.map(({ key, label, Icon }) => (
             <button
               key={key}
@@ -366,20 +513,20 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
             }
           } else if (cat.id === '__frequent__') {
             colorClass = isActive
-              ? (theme === 'light'
+              ? theme === 'light'
                 ? 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm'
-                : 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm')
-              : (theme === 'light'
+                : 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm'
+              : theme === 'light'
                 ? 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm'
-                : 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm');
+                : 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm';
           } else if (cat.id === '__smart__') {
             colorClass = isActive
-              ? (theme === 'light'
+              ? theme === 'light'
                 ? 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm'
-                : 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm')
-              : (theme === 'light'
+                : 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm'
+              : theme === 'light'
                 ? 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm'
-                : 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm');
+                : 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm';
           } else {
             const style = getFolderColor(cat.name, cat.color);
             colorClass = isActive ? style.active : style.inactive;
@@ -396,7 +543,13 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 onSelectFolder(cat.id);
               }}
               onMouseDown={(e) => {
-                if (e.button !== 0 || !cat.id || cat.id === '__frequent__' || cat.id === '__smart__') return;
+                if (
+                  e.button !== 0 ||
+                  !cat.id ||
+                  cat.id === '__frequent__' ||
+                  cat.id === '__smart__'
+                )
+                  return;
                 folderDragRef.current = { id: cat.id, startX: e.clientX, started: false };
               }}
               onMouseEnter={() => handleMouseEnter(cat.id)}
@@ -416,7 +569,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 // Drop is handled by App.tsx finishDrag via dragStateRef
               }}
               onContextMenu={(e) => {
-                if (onFolderContextMenu && cat.id && cat.id !== '__frequent__' && cat.id !== '__smart__') {
+                if (
+                  onFolderContextMenu &&
+                  cat.id &&
+                  cat.id !== '__frequent__' &&
+                  cat.id !== '__smart__'
+                ) {
                   onFolderContextMenu(e, cat.id);
                 }
               }}
@@ -432,13 +590,13 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 'whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all duration-200',
                 colorClass,
                 isDragging && cat.id === dragTargetFolderId && 'bg-accent ring-2 ring-primary',
-                folderDragId === cat.id && 'opacity-30 scale-90',
+                folderDragId === cat.id && 'scale-90 opacity-30',
                 // Drop target: highlight with indicator line on the side where item will be inserted
-                folderDropTargetId === cat.id && folderDragId && (
-                  folderDropSide === 'left'
-                    ? 'border-l-[3px] border-l-white/80 scale-[1.02]'
-                    : 'border-r-[3px] border-r-white/80 scale-[1.02]'
-                )
+                folderDropTargetId === cat.id &&
+                  folderDragId &&
+                  (folderDropSide === 'left'
+                    ? 'scale-[1.02] border-l-[3px] border-l-white/80'
+                    : 'scale-[1.02] border-r-[3px] border-r-white/80')
               )}
             >
               {cat.id === null ? (
@@ -450,7 +608,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               ) : cat.icon && FOLDER_ICON_MAP[cat.icon] ? (
                 (() => {
                   const { Icon: FolderIcon, color } = FOLDER_ICON_MAP[cat.icon];
-                  return <FolderIcon size={14} className={clsx('mr-1 inline-block', color || 'opacity-80')} />;
+                  return (
+                    <FolderIcon
+                      size={14}
+                      className={clsx('mr-1 inline-block', color || 'opacity-80')}
+                    />
+                  );
                 })()
               ) : null}
               {cat.name}
@@ -471,33 +634,39 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       </div>
 
       {/* Drag ghost */}
-      {folderDragId && (() => {
-        const dragFolder = allCategories.find((c) => c.id === folderDragId);
-        if (!dragFolder) return null;
-        const style = dragFolder.id ? getFolderColor(dragFolder.name, dragFolder.color) : null;
-        const colorClass = style ? style.active : 'bg-indigo-500/30 text-white';
-        const iconEntry = dragFolder.icon && FOLDER_ICON_MAP[dragFolder.icon] ? FOLDER_ICON_MAP[dragFolder.icon] : null;
-        const DragIcon = iconEntry?.Icon || null;
-        const dragIconColor = iconEntry?.color || '';
-        return (
-          <div
-            className={clsx(
-              'pointer-events-none fixed z-[9999] rounded-lg px-3.5 py-1.5 text-sm font-bold shadow-2xl',
-              colorClass,
-              'opacity-90 scale-105'
-            )}
-            style={{
-              left: folderDragPos.x,
-              top: folderDragPos.y,
-              transform: 'translate(-50%, -50%)',
-              textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-            }}
-          >
-            {DragIcon && <DragIcon size={14} className={clsx('mr-1 inline-block', dragIconColor)} />}
-            {dragFolder.name}
-          </div>
-        );
-      })()}
+      {folderDragId &&
+        (() => {
+          const dragFolder = allCategories.find((c) => c.id === folderDragId);
+          if (!dragFolder) return null;
+          const style = dragFolder.id ? getFolderColor(dragFolder.name, dragFolder.color) : null;
+          const colorClass = style ? style.active : 'bg-indigo-500/30 text-white';
+          const iconEntry =
+            dragFolder.icon && FOLDER_ICON_MAP[dragFolder.icon]
+              ? FOLDER_ICON_MAP[dragFolder.icon]
+              : null;
+          const DragIcon = iconEntry?.Icon || null;
+          const dragIconColor = iconEntry?.color || '';
+          return (
+            <div
+              className={clsx(
+                'pointer-events-none fixed z-[9999] rounded-lg px-3.5 py-1.5 text-sm font-bold shadow-2xl',
+                colorClass,
+                'scale-105 opacity-90'
+              )}
+              style={{
+                left: folderDragPos.x,
+                top: folderDragPos.y,
+                transform: 'translate(-50%, -50%)',
+                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
+              }}
+            >
+              {DragIcon && (
+                <DragIcon size={14} className={clsx('mr-1 inline-block', dragIconColor)} />
+              )}
+              {dragFolder.name}
+            </div>
+          );
+        })()}
 
       {/* Actions */}
       <div

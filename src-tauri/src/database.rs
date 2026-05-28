@@ -1,10 +1,35 @@
+use serde::Serialize;
 use sqlx::SqlitePool;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct Database {
     pub pool: SqlitePool,
     pub images_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ImageCleanupPreview {
+    pub days: i64,
+    pub count: i64,
+    pub bytes: u64,
+    pub protected_count: i64,
+    pub oldest_created_at: Option<String>,
+    pub newest_created_at: Option<String>,
+}
+
+fn is_hex_hash(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn is_managed_image_file(filename: &str) -> bool {
+    if let Some(hash) = filename.strip_suffix(".png") {
+        return is_hex_hash(hash);
+    }
+    if let Some(hash) = filename.strip_suffix("_thumb.jpg") {
+        return is_hex_hash(hash);
+    }
+    false
 }
 
 impl Database {
@@ -23,16 +48,28 @@ impl Database {
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     // Per-connection PRAGMAs — applied to every connection in the pool
-                    if let Err(e) = sqlx::query("PRAGMA cache_size = -8000").execute(&mut *conn).await {
+                    if let Err(e) = sqlx::query("PRAGMA cache_size = -8000")
+                        .execute(&mut *conn)
+                        .await
+                    {
                         log::warn!("PRAGMA cache_size failed: {}", e);
                     }
-                    if let Err(e) = sqlx::query("PRAGMA temp_store = MEMORY").execute(&mut *conn).await {
+                    if let Err(e) = sqlx::query("PRAGMA temp_store = MEMORY")
+                        .execute(&mut *conn)
+                        .await
+                    {
                         log::warn!("PRAGMA temp_store failed: {}", e);
                     }
-                    if let Err(e) = sqlx::query("PRAGMA mmap_size = 67108864").execute(&mut *conn).await {
+                    if let Err(e) = sqlx::query("PRAGMA mmap_size = 67108864")
+                        .execute(&mut *conn)
+                        .await
+                    {
                         log::warn!("PRAGMA mmap_size failed: {}", e);
                     }
-                    if let Err(e) = sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await {
+                    if let Err(e) = sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(&mut *conn)
+                        .await
+                    {
                         log::warn!("PRAGMA foreign_keys failed: {}", e);
                     }
                     Ok(())
@@ -52,9 +89,11 @@ impl Database {
     /// Uses batched SQL updates (500 per batch) instead of individual UPDATE per row.
     /// Returns (rows_updated, total_scanned).
     pub async fn rescan_sensitive(&self) -> (u64, usize) {
-        let rows: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
-        ).fetch_all(&self.pool).await.unwrap_or_default();
+        let rows: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id, text_preview FROM clips WHERE clip_type = 'text'")
+                .fetch_all(&self.pool)
+                .await
+                .unwrap_or_default();
 
         let total = rows.len();
 
@@ -80,7 +119,9 @@ impl Database {
                 placeholders
             );
             let mut query = sqlx::query(&sql);
-            for id in chunk { query = query.bind(id); }
+            for id in chunk {
+                query = query.bind(id);
+            }
             if let Ok(r) = query.execute(&self.pool).await {
                 updated += r.rows_affected();
             }
@@ -94,7 +135,9 @@ impl Database {
                 placeholders
             );
             let mut query = sqlx::query(&sql);
-            for id in chunk { query = query.bind(id); }
+            for id in chunk {
+                query = query.bind(id);
+            }
             if let Ok(r) = query.execute(&self.pool).await {
                 updated += r.rows_affected();
             }
@@ -111,12 +154,18 @@ impl Database {
     /// preventing corruption if the process is killed before the next checkpoint.
     pub async fn shutdown(&self) {
         // Checkpoint WAL → flush all pending writes to main DB file
-        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&self.pool).await {
+        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.pool)
+            .await
+        {
             log::warn!("Shutdown: WAL checkpoint failed (non-fatal): {}", e);
         } else {
             log::info!("Shutdown: WAL checkpoint complete");
         }
-        sqlx::query("PRAGMA optimize").execute(&self.pool).await.ok();
+        sqlx::query("PRAGMA optimize")
+            .execute(&self.pool)
+            .await
+            .ok();
         self.pool.close().await;
     }
 
@@ -162,7 +211,11 @@ impl Database {
     async fn attempt_repair(db_path: &str, _data_dir: &std::path::Path) -> bool {
         log::info!("DB repair: attempting auto-repair...");
 
-        let backup_path = format!("{}.corrupt-{}", db_path, chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let backup_path = format!(
+            "{}.corrupt-{}",
+            db_path,
+            chrono::Local::now().format("%Y%m%d%H%M%S")
+        );
         let new_path = format!("{}.repaired", db_path);
 
         // Open corrupt DB read-only
@@ -219,9 +272,11 @@ impl Database {
         }
 
         // Copy indexes
-        let indexes: Vec<(String,)> = sqlx::query_as(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
-        ).fetch_all(&src_pool).await.unwrap_or_default();
+        let indexes: Vec<(String,)> =
+            sqlx::query_as("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+                .fetch_all(&src_pool)
+                .await
+                .unwrap_or_default();
         for (sql,) in &indexes {
             let _ = sqlx::query(sql).execute(&dst_pool).await;
         }
@@ -246,7 +301,10 @@ impl Database {
             return false;
         }
 
-        log::info!("DB repair: success! Corrupt backup saved to: {}", backup_path);
+        log::info!(
+            "DB repair: success! Corrupt backup saved to: {}",
+            backup_path
+        );
         log::info!("DB repair: data will be re-populated by migrations. Some history may be lost.");
         true
     }
@@ -254,24 +312,33 @@ impl Database {
     async fn get_schema_version(&self) -> i64 {
         // Create version table if not exists
         let _ = sqlx::query("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
-            .execute(&self.pool).await;
+            .execute(&self.pool)
+            .await;
         sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM schema_version")
-            .fetch_one(&self.pool).await.unwrap_or(0)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0)
     }
 
     async fn set_schema_version(&self, version: i64) {
-        if let Err(e) = sqlx::query("DELETE FROM schema_version").execute(&self.pool).await {
+        if let Err(e) = sqlx::query("DELETE FROM schema_version")
+            .execute(&self.pool)
+            .await
+        {
             log::error!("Failed to clear schema_version table: {}", e);
         }
         if let Err(e) = sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
-            .bind(version).execute(&self.pool).await
+            .bind(version)
+            .execute(&self.pool)
+            .await
         {
             log::error!("Failed to set schema_version to {}: {}", version, e);
         }
     }
 
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS folders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -280,9 +347,13 @@ impl Database {
                 is_system INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS clips (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 uuid TEXT NOT NULL UNIQUE,
@@ -298,64 +369,96 @@ impl Database {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_accessed DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_clips_hash ON clips(content_hash);
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_clips_folder ON clips(folder_id);
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at);
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         // idx_clips_deleted_created removed in migration v4 — soft-delete no longer used
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS ignored_apps (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 app_name TEXT NOT NULL UNIQUE
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         // === Version-tracked migrations ===
         let version = self.get_schema_version().await;
 
         if version < 1 {
-            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN last_pasted_at DATETIME DEFAULT NULL")
-                .execute(&self.pool).await;
+            let _ =
+                sqlx::query("ALTER TABLE clips ADD COLUMN last_pasted_at DATETIME DEFAULT NULL")
+                    .execute(&self.pool)
+                    .await;
             let _ = sqlx::query("ALTER TABLE folders ADD COLUMN position INTEGER DEFAULT 0")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_pinned INTEGER DEFAULT 0")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             self.set_schema_version(1).await;
             log::info!("DB: Applied migration v1 (last_pasted_at, position, is_pinned)");
         }
 
         if version < 2 {
             let _ = sqlx::query("ALTER TABLE clips ADD COLUMN subtype TEXT DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             let _ = sqlx::query("ALTER TABLE clips ADD COLUMN note TEXT DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             let _ = sqlx::query("ALTER TABLE clips ADD COLUMN paste_count INTEGER DEFAULT 0")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             self.set_schema_version(2).await;
             log::info!("DB: Applied migration v2 (subtype, note, paste_count)");
         }
 
         if version < 3 {
-            let _ = sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_name ON folders(name)")
-                .execute(&self.pool).await;
+            let _ =
+                sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_name ON folders(name)")
+                    .execute(&self.pool)
+                    .await;
             self.set_schema_version(3).await;
             log::info!("DB: Applied migration v3 (unique folder names)");
         }
@@ -363,10 +466,14 @@ impl Database {
         if version < 4 {
             // Drop unused index — soft-delete no longer used, all deletes are hard deletes
             let _ = sqlx::query("DROP INDEX IF EXISTS idx_clips_deleted_created")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             // Final cleanup of any remaining soft-deleted rows
             let cleaned: u64 = sqlx::query("DELETE FROM clips WHERE is_deleted = 1")
-                .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+                .execute(&self.pool)
+                .await
+                .map(|r| r.rows_affected())
+                .unwrap_or(0);
             if cleaned > 0 {
                 log::info!("DB: Final purge of {} legacy soft-deleted clips", cleaned);
             }
@@ -380,7 +487,8 @@ impl Database {
                 .execute(&self.pool).await;
             // Add is_sensitive column for sensitive content detection
             let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_sensitive INTEGER DEFAULT 0")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             self.set_schema_version(5).await;
             log::info!("DB: Applied migration v5 (covering index, is_sensitive column)");
         }
@@ -394,13 +502,21 @@ impl Database {
                 "INSERT OR IGNORE INTO app_icons (app_name, icon)
                  SELECT source_app, source_icon FROM clips
                  WHERE source_app IS NOT NULL AND source_icon IS NOT NULL AND source_icon != ''
-                 GROUP BY source_app"
-            ).execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+                 GROUP BY source_app",
+            )
+            .execute(&self.pool)
+            .await
+            .map(|r| r.rows_affected())
+            .unwrap_or(0);
             // Clear duplicate icons from clips (now served from app_icons cache)
             let cleared: u64 = sqlx::query("UPDATE clips SET source_icon = NULL WHERE source_app IN (SELECT app_name FROM app_icons)")
                 .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
             self.set_schema_version(6).await;
-            log::info!("DB: Applied migration v6 (app_icons: {} apps migrated, {} clip icons cleared)", migrated, cleared);
+            log::info!(
+                "DB: Applied migration v6 (app_icons: {} apps migrated, {} clip icons cleared)",
+                migrated,
+                cleared
+            );
         }
 
         if version < 7 {
@@ -408,32 +524,49 @@ impl Database {
 
             // Add updated_at to clips (tracks last mutation for sync delta detection)
             let _ = sqlx::query("ALTER TABLE clips ADD COLUMN updated_at DATETIME DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             // Backfill: set updated_at = created_at for existing clips
-            let _ = sqlx::query("UPDATE clips SET updated_at = created_at WHERE updated_at IS NULL")
-                .execute(&self.pool).await;
+            let _ =
+                sqlx::query("UPDATE clips SET updated_at = created_at WHERE updated_at IS NULL")
+                    .execute(&self.pool)
+                    .await;
 
             // Add uuid + updated_at to folders (folders previously had no UUID)
             let _ = sqlx::query("ALTER TABLE folders ADD COLUMN uuid TEXT DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             let _ = sqlx::query("ALTER TABLE folders ADD COLUMN updated_at DATETIME DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             // Generate UUIDs for existing folders
-            let folder_ids: Vec<(i64,)> = sqlx::query_as("SELECT id FROM folders WHERE uuid IS NULL")
-                .fetch_all(&self.pool).await.unwrap_or_default();
+            let folder_ids: Vec<(i64,)> =
+                sqlx::query_as("SELECT id FROM folders WHERE uuid IS NULL")
+                    .fetch_all(&self.pool)
+                    .await
+                    .unwrap_or_default();
             for (fid,) in &folder_ids {
                 let uuid = uuid::Uuid::new_v4().to_string();
-                let _ = sqlx::query("UPDATE folders SET uuid = ?, updated_at = created_at WHERE id = ?")
-                    .bind(&uuid).bind(fid).execute(&self.pool).await;
+                let _ = sqlx::query(
+                    "UPDATE folders SET uuid = ?, updated_at = created_at WHERE id = ?",
+                )
+                .bind(&uuid)
+                .bind(fid)
+                .execute(&self.pool)
+                .await;
             }
             // Unique index on folder uuid
-            let _ = sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_uuid ON folders(uuid)")
-                .execute(&self.pool).await;
+            let _ =
+                sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_uuid ON folders(uuid)")
+                    .execute(&self.pool)
+                    .await;
 
             // Sync metadata key-value store (device_id, last_sync_at, encryption_salt, etc.)
             let _ = sqlx::query(
-                "CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-            ).execute(&self.pool).await;
+                "CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            )
+            .execute(&self.pool)
+            .await;
 
             // Deletion tombstones — propagate deletes to other devices
             let _ = sqlx::query(
@@ -441,19 +574,29 @@ impl Database {
                     uuid TEXT PRIMARY KEY,
                     entity_type TEXT NOT NULL,
                     deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )"
-            ).execute(&self.pool).await;
+                )",
+            )
+            .execute(&self.pool)
+            .await;
 
             // Indexes for efficient sync queries (find what changed since last sync)
-            let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_clips_updated ON clips(updated_at)")
-                .execute(&self.pool).await;
-            let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_folders_updated ON folders(updated_at)")
-                .execute(&self.pool).await;
+            let _ =
+                sqlx::query("CREATE INDEX IF NOT EXISTS idx_clips_updated ON clips(updated_at)")
+                    .execute(&self.pool)
+                    .await;
+            let _ = sqlx::query(
+                "CREATE INDEX IF NOT EXISTS idx_folders_updated ON folders(updated_at)",
+            )
+            .execute(&self.pool)
+            .await;
 
             // Generate device_id for this installation
             let device_id = uuid::Uuid::new_v4().to_string();
-            let _ = sqlx::query("INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('device_id', ?)")
-                .bind(&device_id).execute(&self.pool).await;
+            let _ =
+                sqlx::query("INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('device_id', ?)")
+                    .bind(&device_id)
+                    .execute(&self.pool)
+                    .await;
 
             self.set_schema_version(7).await;
             log::info!("DB: Applied migration v7 (sync: updated_at, folder UUIDs, sync_meta, tombstones, device_id={})", device_id);
@@ -461,7 +604,8 @@ impl Database {
 
         if version < 8 {
             // --- Scratchpad: persistent notes/snippets (not clips) ---
-            sqlx::query(r#"
+            sqlx::query(
+                r#"
                 CREATE TABLE IF NOT EXISTS scratchpads (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     uuid TEXT NOT NULL UNIQUE,
@@ -470,39 +614,50 @@ impl Database {
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            "#).execute(&self.pool).await?;
+            "#,
+            )
+            .execute(&self.pool)
+            .await?;
 
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_scratchpads_updated ON scratchpads(updated_at)")
-                .execute(&self.pool).await?;
+            sqlx::query(
+                "CREATE INDEX IF NOT EXISTS idx_scratchpads_updated ON scratchpads(updated_at)",
+            )
+            .execute(&self.pool)
+            .await?;
 
             self.set_schema_version(8).await;
             log::info!("DB: Applied migration v8 (scratchpads table)");
         }
 
         if version < 9 {
-            let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN title TEXT NOT NULL DEFAULT ''")
-                .execute(&self.pool).await;
+            let _ =
+                sqlx::query("ALTER TABLE scratchpads ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                    .execute(&self.pool)
+                    .await;
             self.set_schema_version(9).await;
             log::info!("DB: Applied migration v9 (scratchpad title column)");
         }
 
         if version < 10 {
             let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN fields_json TEXT DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             self.set_schema_version(10).await;
             log::info!("DB: Applied migration v10 (scratchpad fields_json)");
         }
 
         if version < 11 {
             let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN is_pinned INTEGER DEFAULT 0")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             self.set_schema_version(11).await;
             log::info!("DB: Applied migration v11 (scratchpad is_pinned)");
         }
 
         if version < 12 {
             let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN color TEXT DEFAULT NULL")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             self.set_schema_version(12).await;
             log::info!("DB: Applied migration v12 (scratchpad color)");
         }
@@ -511,7 +666,8 @@ impl Database {
             // Drop the unused fields_json column (template feature was never wired up).
             // SQLite supports DROP COLUMN since 3.35 (2021); modern bundled sqlx is newer.
             let drop_result = sqlx::query("ALTER TABLE scratchpads DROP COLUMN fields_json")
-                .execute(&self.pool).await;
+                .execute(&self.pool)
+                .await;
             match drop_result {
                 Ok(_) => log::info!("DB: Applied migration v13 (drop scratchpads.fields_json)"),
                 Err(e) => log::warn!("DB: migration v13 drop column failed (non-fatal): {}", e),
@@ -529,16 +685,25 @@ impl Database {
 
         // Rebuild text_preview for existing clips that have short previews (< 500 chars)
         // This upgrades old 200-char previews to 2000-char previews
-        let upgraded: u64 = sqlx::query(r#"
+        let upgraded: u64 = sqlx::query(
+            r#"
             UPDATE clips SET text_preview = SUBSTR(CAST(content AS TEXT), 1, 2000)
             WHERE clip_type != 'image' AND LENGTH(text_preview) < 500
             AND LENGTH(CAST(content AS TEXT)) > LENGTH(text_preview)
-        "#).execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+        "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map(|r| r.rows_affected())
+        .unwrap_or(0);
         if upgraded > 0 {
-            log::info!("DB: Upgraded text_preview for {} clips (200 → 2000 chars)", upgraded);
+            log::info!(
+                "DB: Upgraded text_preview for {} clips (200 → 2000 chars)",
+                upgraded
+            );
         }
 
-       Ok(())
+        Ok(())
     }
 
     /// Returns the full path for an image filename
@@ -550,11 +715,26 @@ impl Database {
     /// `filename` is the DB content value, e.g. "abc123.png".
     pub fn remove_image_and_thumb(&self, filename: &str) {
         let path = self.images_dir.join(filename);
-        if path.exists() { let _ = std::fs::remove_file(&path); }
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+        }
         // Thumbnail: {hash}_thumb.jpg
         let hash = filename.trim_end_matches(".png");
         let thumb = self.images_dir.join(format!("{}_thumb.jpg", hash));
-        if thumb.exists() { let _ = std::fs::remove_file(&thumb); }
+        if thumb.exists() {
+            let _ = std::fs::remove_file(&thumb);
+        }
+    }
+
+    fn image_file_total_size(&self, filename: &str) -> u64 {
+        let image_size = std::fs::metadata(self.images_dir.join(filename))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let hash = filename.trim_end_matches(".png");
+        let thumb_size = std::fs::metadata(self.images_dir.join(format!("{}_thumb.jpg", hash)))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        image_size + thumb_size
     }
 
     /// Enforce max_items setting — delete oldest non-folder clips exceeding the limit.
@@ -562,9 +742,12 @@ impl Database {
     /// Image files are cleaned up after the transaction commits.
     pub async fn enforce_max_items(&self) {
         // Only enforce if user explicitly set max_items in settings
-        let max_items: Option<i64> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_items'")
-            .fetch_optional(&self.pool).await.unwrap_or(None)
-            .and_then(|v: String| v.parse().ok());
+        let max_items: Option<i64> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_items'")
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None)
+                .and_then(|v: String| v.parse().ok());
 
         let max_items = match max_items {
             Some(v) if v > 0 => v,
@@ -573,13 +756,19 @@ impl Database {
 
         let mut tx = match self.pool.begin().await {
             Ok(tx) => tx,
-            Err(e) => { log::error!("enforce_max_items: failed to begin tx: {}", e); return; }
+            Err(e) => {
+                log::error!("enforce_max_items: failed to begin tx: {}", e);
+                return;
+            }
         };
 
         // Count only unprotected clips (not in folder, not pinned)
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM clips WHERE folder_id IS NULL AND is_pinned = 0"
-        ).fetch_one(&mut *tx).await.unwrap_or(0);
+            "SELECT COUNT(*) FROM clips WHERE folder_id IS NULL AND is_pinned = 0",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(0);
 
         if count <= max_items {
             let _ = tx.commit().await;
@@ -587,23 +776,35 @@ impl Database {
         }
 
         let excess = count - max_items;
-        log::info!("DB: Trimming {} clips exceeding max_items={}", excess, max_items);
+        log::info!(
+            "DB: Trimming {} clips exceeding max_items={}",
+            excess,
+            max_items
+        );
 
         // Collect uuids + image filenames of the rows we're about to delete.
         // Must match the same ORDER BY as the DELETE to identify the right rows.
         let doomed: Vec<(String, String, Vec<u8>)> = sqlx::query_as(
             "SELECT uuid, clip_type, content FROM clips
              WHERE folder_id IS NULL AND is_pinned = 0
-             ORDER BY created_at ASC LIMIT ?"
-        ).bind(excess).fetch_all(&mut *tx).await.unwrap_or_default();
+             ORDER BY created_at ASC LIMIT ?",
+        )
+        .bind(excess)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
 
         // Delete oldest unprotected clips (folder + pinned items are safe)
         if let Err(e) = sqlx::query(
             "DELETE FROM clips WHERE id IN (
                 SELECT id FROM clips WHERE folder_id IS NULL AND is_pinned = 0
                 ORDER BY created_at ASC LIMIT ?
-            )"
-        ).bind(excess).execute(&mut *tx).await {
+            )",
+        )
+        .bind(excess)
+        .execute(&mut *tx)
+        .await
+        {
             log::error!("Failed to trim excess clips: {}", e);
             let _ = tx.rollback().await;
             return;
@@ -627,9 +828,12 @@ impl Database {
     /// Delete clips older than auto_delete_days (only unprotected: not in folder, not pinned).
     /// Uses a transaction to atomically collect + delete.
     pub async fn enforce_auto_delete(&self) {
-        let days: Option<i64> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'auto_delete_days'")
-            .fetch_optional(&self.pool).await.unwrap_or(None)
-            .and_then(|v: String| v.parse().ok());
+        let days: Option<i64> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'auto_delete_days'")
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None)
+                .and_then(|v: String| v.parse().ok());
 
         let days = match days {
             Some(v) if v > 0 => v,
@@ -638,20 +842,30 @@ impl Database {
 
         let mut tx = match self.pool.begin().await {
             Ok(tx) => tx,
-            Err(e) => { log::error!("enforce_auto_delete: failed to begin tx: {}", e); return; }
+            Err(e) => {
+                log::error!("enforce_auto_delete: failed to begin tx: {}", e);
+                return;
+            }
         };
 
         // Collect uuids + image filenames before deleting (within same transaction)
         let doomed: Vec<(String, String, Vec<u8>)> = sqlx::query_as(
             "SELECT uuid, clip_type, content FROM clips
              WHERE folder_id IS NULL AND is_pinned = 0
-             AND created_at < datetime('now', '-' || ? || ' days')"
-        ).bind(days).fetch_all(&mut *tx).await.unwrap_or_default();
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
 
         let result = sqlx::query(
             "DELETE FROM clips WHERE folder_id IS NULL AND is_pinned = 0
-             AND created_at < datetime('now', '-' || ? || ' days')"
-        ).bind(days).execute(&mut *tx).await;
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .execute(&mut *tx)
+        .await;
 
         match result {
             Ok(r) if r.rows_affected() > 0 => {
@@ -659,7 +873,11 @@ impl Database {
                     log::error!("enforce_auto_delete: commit failed: {}", e);
                     return;
                 }
-                log::info!("DB: Auto-deleted {} clips older than {} days", r.rows_affected(), days);
+                log::info!(
+                    "DB: Auto-deleted {} clips older than {} days",
+                    r.rows_affected(),
+                    days
+                );
                 for (uuid, clip_type, content) in &doomed {
                     if clip_type == "image" {
                         let filename = String::from_utf8_lossy(content).into_owned();
@@ -668,11 +886,174 @@ impl Database {
                     crate::clipboard::remove_from_search_cache(uuid);
                 }
             }
-            Ok(_) => { let _ = tx.commit().await; }
+            Ok(_) => {
+                let _ = tx.commit().await;
+            }
             Err(e) => {
                 log::error!("enforce_auto_delete failed: {}", e);
                 let _ = tx.rollback().await;
             }
+        }
+    }
+
+    /// Delete image clips older than `days` (only unprotected: not in folder, not pinned).
+    /// Returns the number of removed image clips.
+    pub async fn delete_old_image_clips(&self, days: i64) -> u64 {
+        if days <= 0 {
+            return 0;
+        }
+
+        let mut tx = match self.pool.begin().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                log::error!("delete_old_image_clips: failed to begin tx: {}", e);
+                return 0;
+            }
+        };
+
+        let doomed: Vec<(String, Vec<u8>)> = sqlx::query_as(
+            "SELECT uuid, content FROM clips
+             WHERE clip_type = 'image'
+             AND folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
+
+        if doomed.is_empty() {
+            let _ = tx.commit().await;
+            return 0;
+        }
+
+        let result = sqlx::query(
+            "DELETE FROM clips
+             WHERE clip_type = 'image'
+             AND folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .execute(&mut *tx)
+        .await;
+
+        let removed = match result {
+            Ok(r) => r.rows_affected(),
+            Err(e) => {
+                log::error!("delete_old_image_clips failed: {}", e);
+                let _ = tx.rollback().await;
+                return 0;
+            }
+        };
+
+        if let Err(e) = tx.commit().await {
+            log::error!("delete_old_image_clips: commit failed: {}", e);
+            return 0;
+        }
+
+        for (uuid, content) in &doomed {
+            let filename = String::from_utf8_lossy(content).into_owned();
+            self.remove_image_and_thumb(&filename);
+            crate::clipboard::remove_from_search_cache(uuid);
+        }
+
+        if removed > 0 {
+            log::info!(
+                "DB: Deleted {} image clips older than {} days",
+                removed,
+                days
+            );
+        }
+
+        removed
+    }
+
+    /// Preview what delete_old_image_clips would remove without changing data.
+    pub async fn preview_old_image_cleanup(&self, days: i64) -> ImageCleanupPreview {
+        let days = days.clamp(1, 3650);
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT CAST(content AS TEXT), CAST(created_at AS TEXT) FROM clips
+             WHERE clip_type = 'image'
+             AND folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+
+        let protected_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM clips
+             WHERE clip_type = 'image'
+             AND (folder_id IS NOT NULL OR is_pinned = 1)
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+
+        let mut filenames = std::collections::HashSet::new();
+        let mut oldest_created_at: Option<String> = None;
+        let mut newest_created_at: Option<String> = None;
+        for (filename, created_at) in &rows {
+            filenames.insert(filename.clone());
+            if oldest_created_at
+                .as_ref()
+                .map(|oldest| created_at < oldest)
+                .unwrap_or(true)
+            {
+                oldest_created_at = Some(created_at.clone());
+            }
+            if newest_created_at
+                .as_ref()
+                .map(|newest| created_at > newest)
+                .unwrap_or(true)
+            {
+                newest_created_at = Some(created_at.clone());
+            }
+        }
+
+        let bytes = filenames
+            .iter()
+            .map(|filename| self.image_file_total_size(filename))
+            .sum();
+
+        ImageCleanupPreview {
+            days,
+            count: rows.len() as i64,
+            bytes,
+            protected_count,
+            oldest_created_at,
+            newest_created_at,
+        }
+    }
+
+    /// Enforce image_auto_delete + image_delete_days settings.
+    pub async fn enforce_image_auto_delete(&self) {
+        let enabled = sqlx::query_scalar::<_, String>(
+            "SELECT value FROM settings WHERE key = 'image_auto_delete'",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|value| value == "true")
+        .unwrap_or(false);
+
+        if !enabled {
+            return;
+        }
+
+        let days: Option<i64> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'image_delete_days'")
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None)
+                .and_then(|v: String| v.parse().ok());
+
+        if let Some(days) = days.filter(|days| *days > 0) {
+            self.delete_old_image_clips(days).await;
         }
     }
 
@@ -685,52 +1066,108 @@ impl Database {
 
         // Load all image filenames from DB in one query
         let db_files: std::collections::HashSet<String> = sqlx::query_scalar::<_, String>(
-            "SELECT CAST(content AS TEXT) FROM clips WHERE clip_type = 'image'"
-        ).fetch_all(&self.pool).await.unwrap_or_default().into_iter().collect();
+            "SELECT CAST(content AS TEXT) FROM clips WHERE clip_type = 'image'",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
         let mut orphans = 0u64;
         for entry in entries.flatten() {
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
+            if !file_type.is_file() {
+                continue;
+            }
+
             let filename = entry.file_name().to_string_lossy().to_string();
+            if !is_managed_image_file(&filename) {
+                continue;
+            }
+
             // Thumbnails ({hash}_thumb.jpg) are not orphans if their original exists in DB
             if filename.ends_with("_thumb.jpg") {
                 let base = filename.trim_end_matches("_thumb.jpg");
                 let original = format!("{}.png", base);
-                if !db_files.contains(&original) {
-                    let _ = std::fs::remove_file(entry.path());
+                if !db_files.contains(&original) && self.quarantine_orphan_image(&entry.path()) {
                     orphans += 1;
                 }
                 continue;
             }
-            if !db_files.contains(&filename) {
-                let _ = std::fs::remove_file(entry.path());
+            if !db_files.contains(&filename) && self.quarantine_orphan_image(&entry.path()) {
                 orphans += 1;
             }
         }
 
         if orphans > 0 {
-            log::info!("DB: Cleaned up {} orphan image files", orphans);
+            log::info!("DB: Quarantined {} orphan image files", orphans);
         }
     }
 
     /// Remove image clips whose file has been manually deleted from disk.
     pub async fn cleanup_missing_image_clips(&self) {
-        let clips: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT id, CAST(content AS TEXT) FROM clips WHERE clip_type = 'image'"
-        ).fetch_all(&self.pool).await.unwrap_or_default();
+        let clips: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id, CAST(content AS TEXT) FROM clips WHERE clip_type = 'image'")
+                .fetch_all(&self.pool)
+                .await
+                .unwrap_or_default();
 
-        let mut removed = 0u64;
+        let mut missing = Vec::new();
         for (id, filename) in &clips {
             let path = self.images_dir.join(filename);
             if !path.exists() {
-                let _ = sqlx::query("DELETE FROM clips WHERE id = ?")
-                    .bind(id).execute(&self.pool).await;
-                removed += 1;
+                missing.push(*id);
             }
         }
 
-        if removed > 0 {
-            log::info!("DB: Removed {} image clips with missing files", removed);
+        if missing.is_empty() {
+            return;
         }
+
+        let delete_missing = std::env::var("CLIPPASTE_DELETE_MISSING_IMAGE_CLIPS")
+            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+
+        if !delete_missing {
+            log::warn!(
+                "DB: Found {} image clips with missing files; leaving rows intact",
+                missing.len()
+            );
+            return;
+        }
+
+        let mut removed = 0u64;
+        for id in &missing {
+            let _ = sqlx::query("DELETE FROM clips WHERE id = ?")
+                .bind(id)
+                .execute(&self.pool)
+                .await;
+            removed += 1;
+        }
+
+        if removed > 0 {
+            log::warn!("DB: Removed {} image clips with missing files", removed);
+        }
+    }
+
+    fn quarantine_orphan_image(&self, path: &Path) -> bool {
+        let quarantine_dir = self
+            .images_dir
+            .join(".cleanup_quarantine")
+            .join(chrono::Local::now().format("%Y%m%d%H%M%S").to_string());
+        if std::fs::create_dir_all(&quarantine_dir).is_err() {
+            return false;
+        }
+
+        let Some(file_name) = path.file_name() else {
+            return false;
+        };
+        let target = quarantine_dir.join(file_name);
+        std::fs::rename(path, &target).is_ok()
     }
 
     /// Migrate existing image BLOBs from the database to disk files.
@@ -741,7 +1178,9 @@ impl Database {
             "SELECT id, content, content_hash FROM clips WHERE clip_type = 'image' AND LENGTH(content) > 260"
         ).fetch_all(&self.pool).await.unwrap_or_default();
 
-        if rows.is_empty() { return; }
+        if rows.is_empty() {
+            return;
+        }
 
         log::info!("DB: Migrating {} image BLOBs to disk...", rows.len());
         let mut migrated = 0u64;
@@ -765,7 +1204,11 @@ impl Database {
                 .execute(&self.pool)
                 .await
             {
-                log::error!("DB: Failed to update clip {} after image migration: {}", id, e);
+                log::error!(
+                    "DB: Failed to update clip {} after image migration: {}",
+                    id,
+                    e
+                );
                 continue;
             }
             migrated += 1;
@@ -786,14 +1229,17 @@ impl Database {
     /// Groups clips by detected subtype and batch-updates each group.
     /// Returns (rows_updated, total_scanned).
     pub async fn rescan_subtypes(&self) -> (u64, usize) {
-        let rows: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
-        ).fetch_all(&self.pool).await.unwrap_or_default();
+        let rows: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id, text_preview FROM clips WHERE clip_type = 'text'")
+                .fetch_all(&self.pool)
+                .await
+                .unwrap_or_default();
 
         let total = rows.len();
 
         // Group IDs by their detected subtype
-        let mut by_subtype: std::collections::HashMap<Option<String>, Vec<i64>> = std::collections::HashMap::new();
+        let mut by_subtype: std::collections::HashMap<Option<String>, Vec<i64>> =
+            std::collections::HashMap::new();
         for (id, preview) in &rows {
             let subtype = crate::clipboard::detect_subtype(preview);
             by_subtype.entry(subtype).or_default().push(*id);
@@ -810,7 +1256,9 @@ impl Database {
                     placeholders
                 );
                 let mut query = sqlx::query(&sql).bind(subtype).bind(subtype);
-                for id in chunk { query = query.bind(id); }
+                for id in chunk {
+                    query = query.bind(id);
+                }
                 if let Ok(r) = query.execute(&self.pool).await {
                     updated += r.rows_affected();
                 }
@@ -834,12 +1282,16 @@ impl Database {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
             // Only process original PNGs, skip thumbnails
-            if !filename.ends_with(".png") || filename.contains("_thumb") { continue; }
+            if !filename.ends_with(".png") || filename.contains("_thumb") {
+                continue;
+            }
 
             let hash = filename.trim_end_matches(".png");
             let thumb_filename = format!("{}_thumb.jpg", hash);
             let thumb_path = self.images_dir.join(&thumb_filename);
-            if thumb_path.exists() { continue; }
+            if thumb_path.exists() {
+                continue;
+            }
 
             // Read original and generate thumbnail
             if let Ok(bytes) = std::fs::read(entry.path()) {
@@ -873,9 +1325,10 @@ impl Database {
     }
 
     pub async fn get_ignored_apps(&self) -> Result<Vec<String>, sqlx::Error> {
-        let apps = sqlx::query_scalar::<_, String>("SELECT app_name FROM ignored_apps ORDER BY app_name")
-            .fetch_all(&self.pool)
-            .await?;
+        let apps =
+            sqlx::query_scalar::<_, String>("SELECT app_name FROM ignored_apps ORDER BY app_name")
+                .fetch_all(&self.pool)
+                .await?;
         log::info!("DB: Ignored apps: {:?}", apps);
         Ok(apps)
     }
@@ -894,17 +1347,19 @@ impl Database {
                 OR LOWER(app_name) = LOWER(?2) \
                 OR LOWER(REPLACE(REPLACE(app_name, '.exe', ''), '.EXE', '')) = LOWER(?2)",
         )
-            .bind(app_name)
-            .bind(stripped)
-            .fetch_one(&self.pool)
-            .await?;
+        .bind(app_name)
+        .bind(stripped)
+        .fetch_one(&self.pool)
+        .await?;
         Ok(count > 0)
     }
 
     pub async fn get_setting(&self, key: &str) -> Result<Option<String>, sqlx::Error> {
-        let value = sqlx::query_scalar(r#"
+        let value = sqlx::query_scalar(
+            r#"
             SELECT value FROM settings WHERE key = ?
-        "#)
+        "#,
+        )
         .bind(key)
         .fetch_optional(&self.pool)
         .await?;

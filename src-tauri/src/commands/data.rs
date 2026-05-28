@@ -1,10 +1,14 @@
-use tauri::{AppHandle, Emitter, Manager};
-use std::sync::Arc;
-use std::io::{Read as IoRead, Write as IoWrite};
+use super::helpers::clip_to_item_async;
 use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
 use crate::utils;
-use super::helpers::clip_to_item_async;
+use std::fs;
+use std::io::{Read as IoRead, Write as IoWrite};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
+
+const DATA_DB_FILE: &str = "clipboard.db";
 
 #[tauri::command]
 pub fn get_data_directory() -> Result<String, String> {
@@ -22,14 +26,137 @@ pub fn get_data_directory() -> Result<String, String> {
     Ok(default_dir.to_string_lossy().to_string())
 }
 
+fn save_data_directory_config(new_path: &str) -> Result<(), String> {
+    let config_path = utils::get_config_path();
+    if let Some(config_dir) = config_path.parent() {
+        fs::create_dir_all(config_dir).ok();
+    }
+
+    let mut config = fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    config.insert(
+        "data_directory".to_string(),
+        serde_json::Value::String(new_path.to_string()),
+    );
+
+    let config_json = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    fs::write(&config_path, config_json).map_err(|e| format!("Failed to save config: {}", e))
+}
+
+fn ensure_writable_directory(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|e| format!("Cannot create directory: {}", e))?;
+
+    let probe = path.join(".clippaste-write-test");
+    fs::write(&probe, b"ok").map_err(|e| format!("Directory is not writable: {}", e))?;
+    let _ = fs::remove_file(probe);
+
+    Ok(())
+}
+
+fn copy_file_replace(src: &Path, dst: &Path) -> Result<(), String> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Cannot create directory: {}", e))?;
+    }
+    fs::copy(src, dst)
+        .map(|_| ())
+        .map_err(|e| format!("Failed to copy {:?} to {:?}: {}", src, dst, e))
+}
+
+fn copy_image_files(src_images: &Path, stage_images: &Path) -> Result<(), String> {
+    if !src_images.exists() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(stage_images).map_err(|e| format!("Cannot create image stage: {}", e))?;
+    for entry in fs::read_dir(src_images).map_err(|e| format!("Cannot read images: {}", e))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if !file_type.is_file() {
+            continue;
+        }
+        copy_file_replace(&entry.path(), &stage_images.join(entry.file_name()))?;
+    }
+
+    Ok(())
+}
+
+fn install_staged_images(stage_images: &Path, target_images: &Path) -> Result<(), String> {
+    if !stage_images.exists() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(target_images).map_err(|e| format!("Cannot create image dir: {}", e))?;
+    for entry in
+        fs::read_dir(stage_images).map_err(|e| format!("Cannot read staged images: {}", e))?
+    {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let dst = target_images.join(entry.file_name());
+        if dst.exists() {
+            continue;
+        }
+        copy_file_replace(&entry.path(), &dst)?;
+    }
+
+    Ok(())
+}
+
+async fn stage_current_data_for_target(
+    db: &Database,
+    current_data_dir: &Path,
+    target_data_dir: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let target_db = target_data_dir.join(DATA_DB_FILE);
+    if target_db.exists() {
+        log::info!(
+            "Data directory target already has {}, switching without copying current data",
+            DATA_DB_FILE
+        );
+        return Ok(None);
+    }
+
+    let source_db = current_data_dir.join(DATA_DB_FILE);
+    if !source_db.exists() {
+        return Ok(None);
+    }
+
+    let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(&db.pool)
+        .await;
+
+    let stamp = chrono::Local::now().format("%Y%m%d%H%M%S%3f");
+    let stage_dir = target_data_dir.join(format!(".clippaste-migration-{}", stamp));
+    let stage_db = stage_dir.join(DATA_DB_FILE);
+    let stage_images = stage_dir.join("images");
+
+    fs::create_dir_all(&stage_dir).map_err(|e| format!("Cannot create migration stage: {}", e))?;
+    copy_file_replace(&source_db, &stage_db)?;
+    copy_image_files(&current_data_dir.join("images"), &stage_images)?;
+
+    Ok(Some(stage_dir))
+}
+
+fn install_staged_data(stage_dir: &Path, target_data_dir: &Path) -> Result<(), String> {
+    let stage_db = stage_dir.join(DATA_DB_FILE);
+    let target_db = target_data_dir.join(DATA_DB_FILE);
+    let target_images = target_data_dir.join("images");
+
+    install_staged_images(&stage_dir.join("images"), &target_images)?;
+    copy_file_replace(&stage_db, &target_db)?;
+    let _ = fs::remove_dir_all(stage_dir);
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn set_data_directory(
     new_path: String,
-    _db: tauri::State<'_, Arc<Database>>,
+    db: tauri::State<'_, Arc<Database>>,
     app: AppHandle,
 ) -> Result<(), String> {
-    use std::path::PathBuf;
-
     let new_path_buf = PathBuf::from(&new_path);
 
     // Security: reject relative paths
@@ -48,40 +175,46 @@ pub async fn set_data_directory(
         return Err("Path traversal is not allowed".to_string());
     }
 
-    // Validate path exists or can be created
-    if !new_path_buf.exists() {
-        if let Some(parent) = new_path_buf.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create directory: {}", e))?;
-        } else {
-            return Err("Invalid path".to_string());
+    // Require a dedicated folder, not a drive root.
+    if new_path_buf.parent().is_none() {
+        return Err("Choose a dedicated folder, not a drive root".to_string());
+    }
+
+    // Ensure the target exists and is writable before staging data.
+    ensure_writable_directory(&new_path_buf)?;
+
+    let current_data_dir = db
+        .images_dir
+        .parent()
+        .ok_or_else(|| "Cannot determine current data directory".to_string())?
+        .to_path_buf();
+    let same_dir = current_data_dir == new_path_buf;
+
+    let stage_dir = if same_dir {
+        None
+    } else {
+        stage_current_data_for_target(&db, &current_data_dir, &new_path_buf).await?
+    };
+
+    if let Some(stage) = &stage_dir {
+        if let Err(e) = install_staged_data(stage, &new_path_buf) {
+            let _ = fs::remove_dir_all(stage);
+            return Err(e);
         }
     }
 
-    // Ensure new directory exists — a fresh DB will be created on next restart
-    std::fs::create_dir_all(&new_path_buf).map_err(|e| format!("Cannot create directory: {}", e))?;
-
-    // Save config
-    let config_path = utils::get_config_path();
-    if let Some(config_dir) = config_path.parent() {
-        std::fs::create_dir_all(config_dir).ok();
-    }
-
-    let config = serde_json::json!({
-        "data_directory": new_path
-    });
-
-    let config_json = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    std::fs::write(&config_path, config_json)
-        .map_err(|e| format!("Failed to save config: {}", e))?;
+    save_data_directory_config(&new_path)?;
 
     log::info!("Data directory set to: {}", new_path);
 
     // Notify frontend that restart is needed
-    let _ = app.emit("data-directory-changed", &serde_json::json!({
-        "message": "Data directory changed. Please restart the application.",
-        "new_path": new_path
-    }));
+    let _ = app.emit(
+        "data-directory-changed",
+        &serde_json::json!({
+            "message": "Data directory changed. Please restart the application.",
+            "new_path": new_path
+        }),
+    );
 
     Ok(())
 }
@@ -115,7 +248,9 @@ pub async fn pick_file() -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         if output.status.success() {
             let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if p.is_empty() { return Err("No file selected".to_string()); }
+            if p.is_empty() {
+                return Err("No file selected".to_string());
+            }
             p
         } else {
             return Err("No file selected".to_string());
@@ -129,7 +264,9 @@ pub async fn pick_file() -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         if output.status.success() {
             let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if p.is_empty() { return Err("No file selected".to_string()); }
+            if p.is_empty() {
+                return Err("No file selected".to_string());
+            }
             p
         } else {
             return Err("No file selected".to_string());
@@ -150,11 +287,11 @@ pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::System::Com::{
-            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize,
-            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
         };
         use windows::Win32::UI::Shell::{
-            FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH, FOS_PICKFOLDERS,
+            FileOpenDialog, IFileOpenDialog, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         };
 
         let hwnd = app
@@ -177,7 +314,9 @@ pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
                     .SetOptions(options | FOS_PICKFOLDERS)
                     .map_err(|e| e.to_string())?;
 
-                dialog.Show(Some(hwnd)).map_err(|_| "No folder selected".to_string())?;
+                dialog
+                    .Show(Some(hwnd))
+                    .map_err(|_| "No folder selected".to_string())?;
 
                 let item = dialog.GetResult().map_err(|e| e.to_string())?;
                 let pwstr = item
@@ -202,7 +341,9 @@ pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if path.is_empty() { return Err("No folder selected".to_string()); }
+            if path.is_empty() {
+                return Err("No folder selected".to_string());
+            }
             Ok(path)
         } else {
             Err("No folder selected".to_string())
@@ -218,7 +359,9 @@ pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if path.is_empty() { return Err("No folder selected".to_string()); }
+            if path.is_empty() {
+                return Err("No folder selected".to_string());
+            }
             Ok(path)
         } else {
             Err("No folder selected".to_string())
@@ -234,7 +377,10 @@ pub fn get_layout_config() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
+pub async fn export_data(
+    _app: AppHandle,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<String, String> {
     // Let user pick save location (spawn blocking to avoid Tokio stall)
     #[cfg(target_os = "windows")]
     let save_path = {
@@ -243,9 +389,14 @@ pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
             std::process::Command::new("powershell")
                 .args(["-NoProfile", "-STA", "-Command", ps_script])
                 .output()
-        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() { return Err("Export cancelled".to_string()); }
+        if path.is_empty() {
+            return Err("Export cancelled".to_string());
+        }
         path
     };
     #[cfg(target_os = "macos")]
@@ -256,26 +407,40 @@ pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
                 .output()
         }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() { return Err("Export cancelled".to_string()); }
+        if path.is_empty() {
+            return Err("Export cancelled".to_string());
+        }
         path
     };
     #[cfg(target_os = "linux")]
     let save_path = {
         let output = tokio::task::spawn_blocking(|| {
             std::process::Command::new("zenity")
-                .args(["--file-selection", "--save", "--filename=ClipPaste-backup.zip"])
+                .args([
+                    "--file-selection",
+                    "--save",
+                    "--filename=ClipPaste-backup.zip",
+                ])
                 .output()
-        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() { return Err("Export cancelled".to_string()); }
+        if path.is_empty() {
+            return Err("Export cancelled".to_string());
+        }
         path
     };
 
     // Checkpoint WAL to ensure all data is in the main DB file
     let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-        .execute(&db.pool).await;
+        .execute(&db.pool)
+        .await;
 
-    let data_dir = db.images_dir.parent()
+    let data_dir = db
+        .images_dir
+        .parent()
         .ok_or_else(|| "Cannot determine data directory".to_string())?
         .to_path_buf();
     let db_path = data_dir.join("clipboard.db");
@@ -296,11 +461,12 @@ pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
 
         // Add DB file from temp copy
         if temp_db.exists() {
-            let mut db_file = std::fs::File::open(&temp_db)
-                .map_err(|e| format!("Failed to read DB: {}", e))?;
+            let mut db_file =
+                std::fs::File::open(&temp_db).map_err(|e| format!("Failed to read DB: {}", e))?;
             let mut buf = Vec::new();
             db_file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            zip.start_file("clipboard.db", options).map_err(|e| e.to_string())?;
+            zip.start_file("clipboard.db", options)
+                .map_err(|e| e.to_string())?;
             zip.write_all(&buf).map_err(|e| e.to_string())?;
             drop(db_file);
             let _ = std::fs::remove_file(&temp_db);
@@ -324,7 +490,9 @@ pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
 
         zip.finish().map_err(|e| e.to_string())?;
         Ok(())
-    }).await.map_err(|e| e.to_string())??;
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     // Verify zip integrity by attempting to open and read the archive
     let verify_path = save_path.clone();
@@ -334,20 +502,30 @@ pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| format!("Export verification failed: invalid zip: {}", e))?;
         let has_db = (0..archive.len()).any(|i| {
-            archive.by_index_raw(i).map(|f| f.name() == "clipboard.db").unwrap_or(false)
+            archive
+                .by_index_raw(i)
+                .map(|f| f.name() == "clipboard.db")
+                .unwrap_or(false)
         });
         if !has_db {
-            return Err("Export verification failed: clipboard.db not found in archive".to_string());
+            return Err(
+                "Export verification failed: clipboard.db not found in archive".to_string(),
+            );
         }
         Ok(())
-    }).await.map_err(|e| e.to_string())??;
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     log::info!("Exported backup to: {}", save_path);
     Ok(save_path)
 }
 
 #[tauri::command]
-pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+pub async fn import_data(
+    app: AppHandle,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<(), String> {
     // Let user pick zip file (spawn blocking to avoid Tokio stall)
     #[cfg(target_os = "windows")]
     let zip_path = {
@@ -356,9 +534,14 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             std::process::Command::new("powershell")
                 .args(["-NoProfile", "-STA", "-Command", ps_script])
                 .output()
-        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() { return Err("Import cancelled".to_string()); }
+        if path.is_empty() {
+            return Err("Import cancelled".to_string());
+        }
         path
     };
     #[cfg(target_os = "macos")]
@@ -369,7 +552,9 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
                 .output()
         }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() { return Err("Import cancelled".to_string()); }
+        if path.is_empty() {
+            return Err("Import cancelled".to_string());
+        }
         path
     };
     #[cfg(target_os = "linux")]
@@ -378,13 +563,20 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             std::process::Command::new("zenity")
                 .args(["--file-selection", "--file-filter=*.zip"])
                 .output()
-        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() { return Err("Import cancelled".to_string()); }
+        if path.is_empty() {
+            return Err("Import cancelled".to_string());
+        }
         path
     };
 
-    let data_dir = db.images_dir.parent()
+    let data_dir = db
+        .images_dir
+        .parent()
         .ok_or_else(|| "Cannot determine data directory".to_string())?
         .to_path_buf();
     let data_dir_clone = data_dir.clone();
@@ -398,14 +590,16 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
     let temp_dir_clone = temp_dir.clone();
 
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let file = std::fs::File::open(&zip_path)
-            .map_err(|e| format!("Failed to open zip: {}", e))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| format!("Invalid zip: {}", e))?;
+        let file =
+            std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
 
         // Validate: must contain clipboard.db
         let has_db = (0..archive.len()).any(|i| {
-            archive.by_index(i).map(|f| f.name() == "clipboard.db").unwrap_or(false)
+            archive
+                .by_index(i)
+                .map(|f| f.name() == "clipboard.db")
+                .unwrap_or(false)
         });
         if !has_db {
             return Err("Invalid backup: clipboard.db not found in zip".to_string());
@@ -428,8 +622,8 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             }
 
             // Only allow known safe paths: clipboard.db and images/*
-            let is_safe = name == "clipboard.db"
-                || (name.starts_with("images/") && !name.contains(".."));
+            let is_safe =
+                name == "clipboard.db" || (name.starts_with("images/") && !name.contains(".."));
             if !is_safe {
                 log::warn!("Import: skipping unexpected entry: {}", name);
                 continue;
@@ -452,7 +646,11 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
             // Limit individual file size to 500MB to prevent zip bombs
             let size = entry.size();
             if size > 500 * 1024 * 1024 {
-                log::warn!("Import: file too large ({}MB), skipping: {}", size / 1024 / 1024, name);
+                log::warn!(
+                    "Import: file too large ({}MB), skipping: {}",
+                    size / 1024 / 1024,
+                    name
+                );
                 continue;
             }
 
@@ -484,14 +682,13 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
         let _ = std::fs::remove_file(dst_db.with_extension("db-shm"));
 
         // Copy new DB over the current one
-        std::fs::copy(&src_db, &dst_db)
-            .map_err(|e| {
-                // Restore backup on failure
-                if backup_db.exists() {
-                    let _ = std::fs::copy(&backup_db, &dst_db);
-                }
-                format!("Failed to copy imported DB: {}", e)
-            })?;
+        std::fs::copy(&src_db, &dst_db).map_err(|e| {
+            // Restore backup on failure
+            if backup_db.exists() {
+                let _ = std::fs::copy(&backup_db, &dst_db);
+            }
+            format!("Failed to copy imported DB: {}", e)
+        })?;
 
         // Move images
         let src_images = temp_dir_clone.join("images");
@@ -510,7 +707,9 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
         let _ = std::fs::remove_dir_all(&temp_dir_clone);
 
         Ok(())
-    }).await.map_err(|e| e.to_string())??;
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     log::info!("Imported backup from zip");
 
@@ -519,50 +718,81 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
     crate::clipboard::load_settings_cache(&db.pool).await;
 
     // Notify frontend to restart
-    let _ = app.emit("data-directory-changed", &serde_json::json!({
-        "message": "Backup imported. Please restart the application.",
-        "new_path": data_dir.to_string_lossy()
-    }));
+    let _ = app.emit(
+        "data-directory-changed",
+        &serde_json::json!({
+            "message": "Backup imported. Please restart the application.",
+            "new_path": data_dir.to_string_lossy()
+        }),
+    );
 
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<serde_json::Value, String> {
+pub async fn get_dashboard_stats(
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<serde_json::Value, String> {
     let pool = &db.pool;
 
-    // Consolidate 4 count queries into 1
-    let (total, today, images, folders): (i64, i64, i64, i64) = sqlx::query_as(
+    // Consolidate count queries into 1.
+    let (
+        total,
+        today,
+        images,
+        text,
+        folders,
+        pinned,
+        sensitive,
+        in_folders,
+        urls,
+    ): (i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT
             (SELECT COUNT(*) FROM clips) as total,
             (SELECT COUNT(*) FROM clips WHERE date(created_at,'localtime') = date('now','localtime')) as today,
             (SELECT COUNT(*) FROM clips WHERE clip_type = 'image') as images,
-            (SELECT COUNT(*) FROM folders) as folders"
+            (SELECT COUNT(*) FROM clips WHERE clip_type != 'image') as text,
+            (SELECT COUNT(*) FROM folders) as folders,
+            (SELECT COUNT(*) FROM clips WHERE is_pinned = 1) as pinned,
+            (SELECT COUNT(*) FROM clips WHERE is_sensitive = 1) as sensitive,
+            (SELECT COUNT(*) FROM clips WHERE folder_id IS NOT NULL) as in_folders,
+            (SELECT COUNT(*) FROM clips WHERE subtype = 'url') as urls"
     ).fetch_one(pool).await.map_err(|e| e.to_string())?;
 
     // Clips per day (last 7 days)
     let daily: Vec<(String, i64)> = sqlx::query_as(
         "SELECT date(created_at, 'localtime') as day, COUNT(*) as count
          FROM clips WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-6 days')
-         GROUP BY date(created_at, 'localtime') ORDER BY day ASC"
-    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+         GROUP BY date(created_at, 'localtime') ORDER BY day ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Top source apps (top 5)
     let top_apps: Vec<(String, i64)> = sqlx::query_as(
         "SELECT COALESCE(source_app, 'Unknown') as app, COUNT(*) as count
          FROM clips WHERE source_app IS NOT NULL
-         GROUP BY source_app ORDER BY count DESC LIMIT 5"
-    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+         GROUP BY source_app ORDER BY count DESC LIMIT 5",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Most pasted clips (top 5)
     let most_pasted: Vec<(String, String, i64)> = sqlx::query_as(
         "SELECT uuid, SUBSTR(text_preview, 1, 80), paste_count
          FROM clips WHERE paste_count > 0
-         ORDER BY paste_count DESC LIMIT 5"
-    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+         ORDER BY paste_count DESC LIMIT 5",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     // DB file size
-    let db_path = db.images_dir.parent()
+    let db_path = db
+        .images_dir
+        .parent()
         .ok_or_else(|| "Cannot determine data directory".to_string())?
         .join("clipboard.db");
     let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
@@ -575,11 +805,18 @@ pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<
         }
     }
 
+    let old_images_14d = db.preview_old_image_cleanup(14).await;
+
     Ok(serde_json::json!({
         "total": total,
         "today": today,
         "images": images,
+        "text": text,
         "folders": folders,
+        "pinned": pinned,
+        "sensitive": sensitive,
+        "in_folders": in_folders,
+        "urls": urls,
         "daily": daily.iter().map(|(day, count)| {
             serde_json::json!({ "day": day, "count": count })
         }).collect::<Vec<_>>(),
@@ -591,11 +828,17 @@ pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<
         }).collect::<Vec<_>>(),
         "db_size": db_size,
         "images_size": images_size,
+        "old_images_14d": old_images_14d,
     }))
 }
 
 #[tauri::command]
-pub async fn get_clips_by_date(date: String, search: Option<String>, source_app: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
+pub async fn get_clips_by_date(
+    date: String,
+    search: Option<String>,
+    source_app: Option<String>,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
     let has_search = search.as_ref().is_some_and(|s| !s.is_empty());
@@ -608,15 +851,23 @@ pub async fn get_clips_by_date(date: String, search: Option<String>, source_app:
                 folder_id, is_deleted, source_app, source_icon, metadata,
                 created_at, last_accessed, last_pasted_at, is_pinned,
                 subtype, note, paste_count, is_sensitive, updated_at
-         FROM clips WHERE date(created_at, 'localtime') = ?"
+         FROM clips WHERE date(created_at, 'localtime') = ?",
     );
-    if has_search { sql.push_str(" AND text_preview LIKE ?"); }
-    if has_app { sql.push_str(" AND source_app = ?"); }
+    if has_search {
+        sql.push_str(" AND text_preview LIKE ?");
+    }
+    if has_app {
+        sql.push_str(" AND source_app = ?");
+    }
     sql.push_str(" ORDER BY created_at DESC LIMIT 100");
 
     let mut query = sqlx::query_as::<_, Clip>(&sql).bind(&date);
-    if has_search { query = query.bind(format!("%{}%", search.as_ref().unwrap())); }
-    if has_app { query = query.bind(source_app.as_ref().unwrap()); }
+    if has_search {
+        query = query.bind(format!("%{}%", search.as_ref().unwrap()));
+    }
+    if has_app {
+        query = query.bind(source_app.as_ref().unwrap());
+    }
 
     let clips: Vec<Clip> = query.fetch_all(pool).await.map_err(|e| e.to_string())?;
 
@@ -630,14 +881,20 @@ pub async fn get_clips_by_date(date: String, search: Option<String>, source_app:
 
 /// Get list of dates that have clips (for calendar highlighting)
 #[tauri::command]
-pub async fn get_clip_dates(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn get_clip_dates(
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<serde_json::Value>, String> {
     let pool = &db.pool;
     let dates: Vec<(String, i64)> = sqlx::query_as(
         "SELECT date(created_at, 'localtime') as day, COUNT(*) as count FROM clips
-         GROUP BY date(created_at, 'localtime') ORDER BY day DESC LIMIT 365"
-    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+         GROUP BY date(created_at, 'localtime') ORDER BY day DESC LIMIT 365",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    Ok(dates.iter().map(|(day, count)| {
-        serde_json::json!({ "date": day, "count": count })
-    }).collect())
+    Ok(dates
+        .iter()
+        .map(|(day, count)| serde_json::json!({ "date": day, "count": count }))
+        .collect())
 }

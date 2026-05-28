@@ -49,10 +49,14 @@ export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
     <div
       className="absolute inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} /* bg-black/50 */
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="flex w-[90%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">
-        <p className="text-xs text-muted-foreground">Edit before paste · Enter to paste · Shift+Enter for new line · Esc to cancel</p>
+        <p className="text-xs text-muted-foreground">
+          Edit before paste · Enter to paste · Shift+Enter for new line · Esc to cancel
+        </p>
         <textarea
           ref={textareaRef}
           value={text}

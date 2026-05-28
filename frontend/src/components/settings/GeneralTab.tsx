@@ -6,6 +6,9 @@ import {
   Plus,
   FolderOpen,
   Crosshair,
+  ImageOff,
+  HardDrive,
+  Database,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -36,14 +39,55 @@ interface GeneralTabProps {
   // Data directory
   dataDirectory: string;
   handleSelectDataDirectory: () => void;
+  dashStats: DashboardStats | null;
+  refreshDashboardStats: () => Promise<void>;
+  requestConfirm: (options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    details?: string[];
+    action: () => Promise<void>;
+  }) => void;
   // History
   setHistorySize: React.Dispatch<React.SetStateAction<number>>;
   confirmClearHistory: () => void;
+  handleRemoveDuplicates: () => Promise<void>;
+  handleExportBackup: () => Promise<void>;
+  handleImportBackup: () => Promise<void>;
   // Update
   updateProgress: { percent: number; downloaded: number; total: number } | null;
   handleCheckUpdate: () => void;
   // App version
   appVersion: string;
+}
+
+const IMAGE_DELETE_DAY_OPTIONS = [7, 14, 30, 60, 90, 180, 365];
+const CLIP_DELETE_DAY_OPTIONS = [0, 7, 14, 30, 60, 90, 180, 365];
+const MAX_ITEM_OPTIONS = [0, 500, 1000, 2000, 5000, 10000];
+
+interface ImageCleanupPreview {
+  days: number;
+  count: number;
+  bytes: number;
+  protected_count: number;
+  oldest_created_at: string | null;
+  newest_created_at: string | null;
+}
+
+interface DashboardStats {
+  total: number;
+  images: number;
+  db_size: number;
+  images_size: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export function GeneralTab({
@@ -63,9 +107,18 @@ export function GeneralTab({
   setNewIgnoredApp,
   dataDirectory,
   handleSelectDataDirectory,
+  dashStats,
+  refreshDashboardStats,
+  requestConfirm,
   setHistorySize,
   confirmClearHistory,
+  handleRemoveDuplicates,
+  handleExportBackup,
+  handleImportBackup,
 }: GeneralTabProps) {
+  const [cleanupPreview, setCleanupPreview] = useState<ImageCleanupPreview | null>(null);
+  const [cleanupPreviewLoading, setCleanupPreviewLoading] = useState(false);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
 
   const handleAddIgnoredApp = async () => {
     if (!newIgnoredApp.trim()) return;
@@ -98,7 +151,9 @@ export function GeneralTab({
       // Prefer exe name (what the ignore check compares against). Fall back to display name.
       const target = picked.exe_name || picked.app_name || '';
       if (!target || target.toLowerCase().includes('clippaste')) {
-        toast.error('Could not capture a different app — try again and switch to the target app before the countdown ends.');
+        toast.error(
+          'Could not capture a different app — try again and switch to the target app before the countdown ends.'
+        );
       } else {
         setNewIgnoredApp(target);
         toast.success(`Captured: ${target} — click + to block`);
@@ -121,6 +176,55 @@ export function GeneralTab({
     }
   };
 
+  const previewOldImages = async () => {
+    const days = Math.max(1, settings.image_delete_days || 14);
+    setCleanupPreviewLoading(true);
+    try {
+      const preview = await invoke<ImageCleanupPreview>('preview_old_image_cleanup', { days });
+      setCleanupPreview(preview);
+    } catch (error) {
+      console.error(error);
+      toast.error(`Failed to preview old images: ${error}`);
+    } finally {
+      setCleanupPreviewLoading(false);
+    }
+  };
+
+  const handleCleanupOldImages = async () => {
+    const days = cleanupPreview?.days || Math.max(1, settings.image_delete_days || 14);
+    const count = cleanupPreview?.count ?? 0;
+    const reclaimable = cleanupPreview ? formatBytes(cleanupPreview.bytes) : 'unknown size';
+
+    requestConfirm({
+      title: 'Delete Old Images',
+      message: `Delete ${count.toLocaleString()} unpinned image clips older than ${days} days?`,
+      confirmText: 'Delete Images',
+      variant: 'danger',
+      details: [
+        `${reclaimable} estimated reclaimable storage.`,
+        `${(cleanupPreview?.protected_count ?? 0).toLocaleString()} old image clips are protected because they are pinned or in folders.`,
+      ],
+      action: async () => {
+        try {
+          setCleanupRunning(true);
+          const deleted = await invoke<number>('cleanup_old_image_clips', { days });
+          toast.success(
+            deleted === 1 ? 'Deleted 1 old image clip' : `Deleted ${deleted} old image clips`
+          );
+          const newSize = await invoke<number>('get_clipboard_history_size');
+          setHistorySize(newSize);
+          setCleanupPreview(null);
+          await refreshDashboardStats();
+        } catch (error) {
+          console.error(error);
+          toast.error(`Failed to clean old images: ${error}`);
+        } finally {
+          setCleanupRunning(false);
+        }
+      },
+    });
+  };
+
   const handleRemoveIgnoredApp = async (app: string) => {
     try {
       await invoke('remove_ignored_app', { appName: app });
@@ -135,9 +239,7 @@ export function GeneralTab({
   return (
     <>
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground">
-          Appearance & Behavior
-        </h3>
+        <h3 className="text-sm font-medium text-muted-foreground">Appearance & Behavior</h3>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-3">
@@ -176,14 +278,10 @@ export function GeneralTab({
         <div className="flex items-center justify-between rounded-lg border border-border bg-accent/20 p-3">
           <div>
             <span className="text-sm font-medium">Startup with Windows</span>
-            <p className="text-xs text-muted-foreground">
-              Automatically start when Windows boots
-            </p>
+            <p className="text-xs text-muted-foreground">Automatically start when Windows boots</p>
           </div>
           <button
-            onClick={() =>
-              updateSetting('startup_with_windows', !settings.startup_with_windows)
-            }
+            onClick={() => updateSetting('startup_with_windows', !settings.startup_with_windows)}
             className={`h-6 w-11 rounded-full transition-colors ${settings.startup_with_windows ? 'bg-primary' : 'bg-accent'}`}
           >
             <div
@@ -217,9 +315,7 @@ export function GeneralTab({
             </p>
           </div>
           <button
-            onClick={() =>
-              updateSetting('ignore_ghost_clips', !settings.ignore_ghost_clips)
-            }
+            onClick={() => updateSetting('ignore_ghost_clips', !settings.ignore_ghost_clips)}
             className={`h-6 w-11 rounded-full transition-colors ${settings.ignore_ghost_clips ? 'bg-primary' : 'bg-accent'}`}
           >
             <div
@@ -277,9 +373,7 @@ export function GeneralTab({
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground">
-          Privacy Exceptions
-        </h3>
+        <h3 className="text-sm font-medium text-muted-foreground">Privacy Exceptions</h3>
         <div className="space-y-3">
           <label className="block">
             <span className="text-sm font-medium">Ignored Applications</span>
@@ -352,12 +446,37 @@ export function GeneralTab({
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground">Data Storage</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">Storage & Retention</h3>
+        {dashStats && (
+          <div className="grid grid-cols-4 gap-2">
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <Database size={14} className="mb-1 text-indigo-400" />
+              <div className="text-sm font-semibold">{dashStats.total.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">Clips</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <ImageOff size={14} className="mb-1 text-cyan-400" />
+              <div className="text-sm font-semibold">{dashStats.images.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">Images</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <HardDrive size={14} className="mb-1 text-emerald-400" />
+              <div className="text-sm font-semibold">{formatBytes(dashStats.db_size)}</div>
+              <div className="text-[10px] text-muted-foreground">Database</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <FolderOpen size={14} className="mb-1 text-amber-400" />
+              <div className="text-sm font-semibold">{formatBytes(dashStats.images_size)}</div>
+              <div className="text-[10px] text-muted-foreground">Image files</div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-3">
           <label className="block">
             <span className="text-sm font-medium">Data Directory</span>
             <p className="text-xs text-muted-foreground">
-              Choose where to store clipboard database (e.g., Google Drive folder for sync)
+              Choose where to store the database and image files.
             </p>
           </label>
           <div className="flex gap-2">
@@ -381,15 +500,12 @@ export function GeneralTab({
             Current: {dataDirectory || 'Default location'}
           </p>
         </div>
-      </section>
 
-      <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground">Clip Limits</h3>
-        <div className="space-y-3">
+        <div className="space-y-3 rounded-lg border border-border bg-card/30 p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Max Clips</span>
             <select
-              value={[0, 500, 1000, 2000, 5000, 10000].includes(settings.max_items) ? settings.max_items : 'custom'}
+              value={MAX_ITEM_OPTIONS.includes(settings.max_items) ? settings.max_items : 'custom'}
               onChange={(e) => {
                 const v = e.target.value;
                 if (v === 'custom') updateSetting('max_items', 1000);
@@ -407,7 +523,7 @@ export function GeneralTab({
               <option value="custom">Custom...</option>
             </select>
           </div>
-          {![0, 500, 1000, 2000, 5000, 10000].includes(settings.max_items) && (
+          {!MAX_ITEM_OPTIONS.includes(settings.max_items) && (
             <div className="flex items-center justify-end gap-2">
               <input
                 type="number"
@@ -425,9 +541,13 @@ export function GeneralTab({
             </div>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Auto-delete after</span>
+            <span className="text-sm font-medium">Auto-delete clips after</span>
             <select
-              value={[0, 7, 14, 30, 60, 90, 180, 365].includes(settings.auto_delete_days) ? settings.auto_delete_days : 'custom'}
+              value={
+                CLIP_DELETE_DAY_OPTIONS.includes(settings.auto_delete_days)
+                  ? settings.auto_delete_days
+                  : 'custom'
+              }
               onChange={(e) => {
                 const v = e.target.value;
                 if (v === 'custom') updateSetting('auto_delete_days', 30);
@@ -447,7 +567,7 @@ export function GeneralTab({
               <option value="custom">Custom...</option>
             </select>
           </div>
-          {![0, 7, 14, 30, 60, 90, 180, 365].includes(settings.auto_delete_days) && (
+          {!CLIP_DELETE_DAY_OPTIONS.includes(settings.auto_delete_days) && (
             <div className="flex items-center justify-end gap-2">
               <input
                 type="number"
@@ -464,9 +584,106 @@ export function GeneralTab({
               <span className="text-xs text-muted-foreground">days</span>
             </div>
           )}
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-border bg-card/30 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Auto-delete image clips</span>
+            <button
+              onClick={() => updateSetting('image_auto_delete', !settings.image_auto_delete)}
+              className={`h-6 w-11 rounded-full transition-colors ${
+                settings.image_auto_delete ? 'bg-primary' : 'bg-accent'
+              }`}
+              aria-label="Toggle image auto-delete"
+            >
+              <span
+                className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                  settings.image_auto_delete ? 'translate-x-5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Delete images older than</span>
+            <select
+              value={
+                IMAGE_DELETE_DAY_OPTIONS.includes(settings.image_delete_days)
+                  ? settings.image_delete_days
+                  : 'custom'
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                setCleanupPreview(null);
+                if (v === 'custom') updateSetting('image_delete_days', 14);
+                else updateSetting('image_delete_days', parseInt(v));
+              }}
+              className="rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={{ colorScheme: 'dark' }}
+            >
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+              <option value={90}>90 days</option>
+              <option value={180}>6 months</option>
+              <option value={365}>1 year</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </div>
+          {!IMAGE_DELETE_DAY_OPTIONS.includes(settings.image_delete_days) && (
+            <div className="flex items-center justify-end gap-2">
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                value={settings.image_delete_days}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  if (v >= 1) updateSetting('image_delete_days', v);
+                }}
+                className="w-28 rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Enter days"
+              />
+              <span className="text-xs text-muted-foreground">days</span>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
-            Only applies to clips not in folders and not pinned.
+            Cleanup only applies to clips not in folders and not pinned.
           </p>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/40 p-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Cleanup preview</div>
+              <div className="text-xs text-muted-foreground">
+                {cleanupPreview
+                  ? `${cleanupPreview.count.toLocaleString()} image clips, ${formatBytes(
+                      cleanupPreview.bytes
+                    )} reclaimable`
+                  : 'Preview what will be deleted before running cleanup.'}
+              </div>
+              {cleanupPreview && cleanupPreview.protected_count > 0 && (
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {cleanupPreview.protected_count.toLocaleString()} old image clips are kept because
+                  they are pinned or in folders.
+                </div>
+              )}
+            </div>
+            <div className="flex flex-shrink-0 gap-2">
+              <button
+                onClick={previewOldImages}
+                disabled={cleanupPreviewLoading || cleanupRunning}
+                className="btn btn-secondary text-xs"
+              >
+                {cleanupPreviewLoading ? 'Checking...' : 'Preview'}
+              </button>
+              <button
+                onClick={handleCleanupOldImages}
+                disabled={!cleanupPreview || cleanupPreview.count === 0 || cleanupRunning}
+                className="btn border border-destructive/20 bg-destructive/10 text-xs text-destructive hover:bg-destructive/20 disabled:opacity-50"
+              >
+                {cleanupRunning ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -481,52 +698,15 @@ export function GeneralTab({
             Clear History
           </button>
 
-          <button
-            onClick={async () => {
-              try {
-                const count = await invoke<number>('remove_duplicate_clips');
-                toast.success(`Removed ${count} duplicate clips`);
-                const newSize = await invoke<number>('get_clipboard_history_size');
-                setHistorySize(newSize);
-              } catch (error) {
-                console.error(error);
-                toast.error(`Failed to remove duplicates: ${error}`);
-              }
-            }}
-            className="btn btn-secondary text-xs"
-          >
+          <button onClick={handleRemoveDuplicates} className="btn btn-secondary text-xs">
             Remove Duplicates
           </button>
 
-          <button
-            onClick={async () => {
-              try {
-                const path = await invoke<string>('export_data');
-                toast.success(`Exported to ${path}`);
-              } catch (error) {
-                if (String(error) !== 'Export cancelled') {
-                  toast.error(`Export failed: ${error}`);
-                }
-              }
-            }}
-            className="btn btn-secondary text-xs"
-          >
+          <button onClick={handleExportBackup} className="btn btn-secondary text-xs">
             Export Backup
           </button>
 
-          <button
-            onClick={async () => {
-              try {
-                await invoke('import_data');
-                toast.success('Backup imported. Restart to apply.');
-              } catch (error) {
-                if (String(error) !== 'Import cancelled') {
-                  toast.error(`Import failed: ${error}`);
-                }
-              }
-            }}
-            className="btn btn-secondary text-xs"
-          >
+          <button onClick={handleImportBackup} className="btn btn-secondary text-xs">
             Import Backup
           </button>
         </div>

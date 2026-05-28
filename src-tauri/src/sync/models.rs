@@ -8,6 +8,8 @@ pub struct SyncStatus {
     pub pending_changes: u64,
     pub error_message: Option<String>,
     pub connected_email: Option<String>,
+    pub last_report: Option<SyncRunReport>,
+    pub token_expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,6 +20,18 @@ pub enum SyncState {
     Syncing,
     Error,
     Offline,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncRunReport {
+    pub pushed_clips: u64,
+    pub pushed_folders: u64,
+    pub pulled_clips: u64,
+    pub pulled_folders: u64,
+    pub deleted: u64,
+    pub skipped: bool,
+    pub completed_at: String,
+    pub message: String,
 }
 
 /// Sync settings stored in DB (sync_meta + settings tables)

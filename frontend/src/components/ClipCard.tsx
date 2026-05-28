@@ -1,29 +1,81 @@
 import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
 import { useMemo, memo, useState, useRef, useEffect, useCallback } from 'react';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert, Phone, Braces, Code2 } from 'lucide-react';
+import {
+  Copy,
+  Check,
+  Pin,
+  Link,
+  Mail,
+  Palette,
+  FolderOpen,
+  StickyNote,
+  Image as ImageIcon,
+  Folder,
+  ShieldAlert,
+  Phone,
+  Braces,
+  Code2,
+} from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { enqueue } from '../imageQueue';
 import { getIcon } from '../iconCache';
 
-/** Image component that tries asset protocol first, falls back to base64 via get_clip.
- *  Fallback requests go through a concurrency-limited queue (max 3) to avoid UI stutter. */
-function ImageWithFallback({ src, clipId, alt, className }: { src: string; clipId: string; alt: string; className: string }) {
-  const [imgSrc, setImgSrc] = useState(src);
+/** Loads images through the backend so custom data directories stay supported. */
+function ImageWithFallback({
+  clipId,
+  alt,
+  className,
+}: {
+  clipId: string;
+  alt: string;
+  className: string;
+}) {
+  const [imgSrc, setImgSrc] = useState('');
   const [failed, setFailed] = useState(false);
-  const handleError = useCallback(() => {
-    if (failed) return;
-    setFailed(true);
-    enqueue(() => invoke<{ content: string; clip_type: string }>('get_clip', { id: clipId }))
-      .then((clip) => {
-        if (clip.clip_type === 'image' && clip.content) {
-          setImgSrc(`data:image/png;base64,${clip.content}`);
-        }
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    setImgSrc('');
+
+    enqueue(() =>
+      invoke<string>('get_clip_image_data_url', {
+        id: clipId,
+        thumbnail: true,
       })
-      .catch(() => {});
-  }, [clipId, failed]);
+    )
+      .then((src) => {
+        if (!cancelled) setImgSrc(src);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clipId]);
+
+  const handleError = useCallback(() => {
+    setFailed(true);
+  }, []);
+
+  if (failed) {
+    return (
+      <div className="flex flex-col items-center gap-1 text-muted-foreground/50">
+        <ImageIcon size={24} />
+        <span className="text-[10px]">Image</span>
+      </div>
+    );
+  }
+
+  if (!imgSrc) {
+    return <div className="h-8 w-8 animate-pulse rounded bg-muted/40" />;
+  }
+
   return <img src={imgSrc} alt={alt} className={className} onError={handleError} />;
 }
 
@@ -69,15 +121,19 @@ function HighlightText({ text, query }: { text: string; query?: string }) {
   if (!query?.trim()) return <>{text}</>;
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   // Build regex from words, escape special chars
-  const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
   const parts = text.split(regex);
   return (
     <>
       {parts.map((part, i) =>
-        words.some(w => part.toLowerCase() === w)
-          ? <mark key={i} className="bg-yellow-400/30 text-foreground rounded-sm">{part}</mark>
-          : part
+        words.some((w) => part.toLowerCase() === w) ? (
+          <mark key={i} className="rounded-sm bg-yellow-400/30 text-foreground">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
       )}
     </>
   );
@@ -87,12 +143,18 @@ function HighlightText({ text, query }: { text: string; query?: string }) {
 function relativeTime(isoDate: string): string {
   try {
     return formatDistanceToNowStrict(new Date(isoDate), { addSuffix: false })
-      .replace(' seconds', 's').replace(' second', 's')
-      .replace(' minutes', 'm').replace(' minute', 'm')
-      .replace(' hours', 'h').replace(' hour', 'h')
-      .replace(' days', 'd').replace(' day', 'd')
-      .replace(' months', 'mo').replace(' month', 'mo')
-      .replace(' years', 'y').replace(' year', 'y');
+      .replace(' seconds', 's')
+      .replace(' second', 's')
+      .replace(' minutes', 'm')
+      .replace(' minute', 'm')
+      .replace(' hours', 'h')
+      .replace(' hour', 'h')
+      .replace(' days', 'd')
+      .replace(' day', 'd')
+      .replace(' months', 'mo')
+      .replace(' month', 'mo')
+      .replace(' years', 'y')
+      .replace(' year', 'y');
   } catch {
     return '';
   }
@@ -138,12 +200,10 @@ export const ClipCard = memo(function ClipCard({
   // Memoize the content rendering — now subtype-aware
   const renderedContent = useMemo(() => {
     if (clip.clip_type === 'image') {
-      const displaySrc = (clip.thumbnail || clip.content) ? convertFileSrc(clip.thumbnail || clip.content) : '';
       return (
         <div className="flex h-full w-full select-none items-center justify-center rounded-md bg-black/20 p-1">
-          {(clip.thumbnail || clip.content) ? (
+          {clip.thumbnail || clip.content ? (
             <ImageWithFallback
-              src={displaySrc}
               clipId={clip.id}
               alt="Clipboard Image"
               className="max-h-full max-w-full rounded object-contain shadow-md"
@@ -184,7 +244,10 @@ export const ClipCard = memo(function ClipCard({
             </div>
           )}
           <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/70">
-            <HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} />
+            <HighlightText
+              text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)}
+              query={searchQuery}
+            />
           </pre>
         </div>
       );
@@ -239,7 +302,12 @@ export const ClipCard = memo(function ClipCard({
     // JSON subtype — pretty-print preview
     if (clip.subtype === 'json') {
       let formatted = clip.content.substring(0, PREVIEW_CHAR_LIMIT);
-      try { formatted = JSON.stringify(JSON.parse(clip.content), null, 2).substring(0, PREVIEW_CHAR_LIMIT); } catch {}
+      try {
+        formatted = JSON.stringify(JSON.parse(clip.content), null, 2).substring(
+          0,
+          PREVIEW_CHAR_LIMIT
+        );
+      } catch {}
       return (
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-orange-500/10 px-1.5 py-1">
@@ -262,7 +330,10 @@ export const ClipCard = memo(function ClipCard({
             <span className="text-[11px] font-semibold text-violet-400">Code</span>
           </div>
           <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
-            <HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} />
+            <HighlightText
+              text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)}
+              query={searchQuery}
+            />
           </pre>
         </div>
       );
@@ -271,7 +342,9 @@ export const ClipCard = memo(function ClipCard({
     // Default text
     return (
       <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-tight text-foreground">
-        <span><HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} /></span>
+        <span>
+          <HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} />
+        </span>
       </pre>
     );
   }, [clip.clip_type, clip.content, clip.thumbnail, clip.subtype, searchQuery]);
@@ -310,7 +383,12 @@ export const ClipCard = memo(function ClipCard({
     const cfg = SUBTYPE_CONFIG[clip.subtype];
     const Icon = cfg.icon;
     return (
-      <span className={clsx('flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-black/15', cfg.color)}>
+      <span
+        className={clsx(
+          'flex items-center gap-0.5 rounded bg-black/15 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider',
+          cfg.color
+        )}
+      >
         <Icon size={9} />
         {cfg.label}
       </span>
@@ -367,8 +445,8 @@ export const ClipCard = memo(function ClipCard({
           isMultiSelected
             ? 'border-blue-500/70 ring-2 ring-blue-500/40'
             : isSelected
-              ? 'z-10 scale-[1.04] -translate-y-1.5 border-blue-500/80 ring-[3px] ring-blue-500/40'
-              : 'border-white/[0.08] dark:border-white/[0.08] hover:scale-[1.02] hover:-translate-y-[3px] hover:border-white/[0.16] dark:hover:border-white/[0.16]',
+              ? 'z-10 -translate-y-1.5 scale-[1.04] border-blue-500/80 ring-[3px] ring-blue-500/40'
+              : 'border-white/[0.08] hover:-translate-y-[3px] hover:scale-[1.02] hover:border-white/[0.16] dark:border-white/[0.08] dark:hover:border-white/[0.16]',
           'group'
         )}
       >
@@ -380,7 +458,12 @@ export const ClipCard = memo(function ClipCard({
         )}
 
         {/* Header */}
-        <div className={clsx(headerColor, 'flex flex-shrink-0 items-center gap-1.5 border-b border-black/10 px-2.5 py-2 dark:border-black/20')}>
+        <div
+          className={clsx(
+            headerColor,
+            'flex flex-shrink-0 items-center gap-1.5 border-b border-black/10 px-2.5 py-2 dark:border-black/20'
+          )}
+        >
           {getIcon(clip.source_app) && (
             <img
               src={`data:image/png;base64,${getIcon(clip.source_app)}`}
@@ -409,9 +492,14 @@ export const ClipCard = memo(function ClipCard({
               )}
               title={clip.is_pinned ? 'Unpin' : 'Pin'}
             >
-              <Pin size={14} className={clsx(
-                clip.is_pinned ? 'text-amber-400 fill-amber-400' : 'text-foreground/70 hover:text-foreground'
-              )} />
+              <Pin
+                size={14}
+                className={clsx(
+                  clip.is_pinned
+                    ? 'fill-amber-400 text-amber-400'
+                    : 'text-foreground/70 hover:text-foreground'
+                )}
+              />
             </button>
           )}
           <button
@@ -434,7 +522,13 @@ export const ClipCard = memo(function ClipCard({
         </div>
 
         {/* Content */}
-        <div className={clsx('relative flex-1 overflow-hidden bg-card p-2', isMultiSelected && 'opacity-75', clip.is_sensitive && 'sensitive-blur')}>
+        <div
+          className={clsx(
+            'relative flex-1 overflow-hidden bg-card p-2',
+            isMultiSelected && 'opacity-75',
+            clip.is_sensitive && 'sensitive-blur'
+          )}
+        >
           {renderedContent}
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card/100 to-card/30" />
         </div>
@@ -460,19 +554,22 @@ export const ClipCard = memo(function ClipCard({
           </span>
           <span className="flex items-center gap-2 text-[10px] text-muted-foreground/35">
             {folderName && (
-              <span className="flex items-center gap-0.5 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-400" title={`In folder: ${folderName}`}>
+              <span
+                className="flex items-center gap-0.5 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-400"
+                title={`In folder: ${folderName}`}
+              >
                 <Folder size={9} className="flex-shrink-0" />
                 {folderName}
               </span>
             )}
             {clip.paste_count > 0 && (
-              <span className="tabular-nums" title="Times pasted">×{clip.paste_count}</span>
+              <span className="tabular-nums" title="Times pasted">
+                ×{clip.paste_count}
+              </span>
             )}
           </span>
         </div>
-
       </div>
-
     </div>
   );
 });

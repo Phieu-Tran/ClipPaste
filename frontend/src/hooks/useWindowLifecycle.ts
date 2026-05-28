@@ -77,19 +77,24 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
         // Reload clips (respecting current search query if any)
         const currentSearch = searchInputRef.current?.value || '';
         if (!selectedFolderRef.current && !currentSearch) {
-          invoke<{ clips: AppClipboardItem[]; folders: any[]; total_count: number }>('get_initial_state', {
-            filterId: null,
-            limit: 20,
-          }).then((state) => {
-            setClips(state.clips);
-            setHasMore(state.clips.length === 20);
-            setIsLoading(false);
-            if (state.folders) {
-              debouncedFolderRefreshRef.current();
+          invoke<{ clips: AppClipboardItem[]; folders: any[]; total_count: number }>(
+            'get_initial_state',
+            {
+              filterId: null,
+              limit: 20,
             }
-          }).catch(() => {
-            loadClipsRef.current(null, false, '');
-          });
+          )
+            .then((state) => {
+              setClips(state.clips);
+              setHasMore(state.clips.length === 20);
+              setIsLoading(false);
+              if (state.folders) {
+                debouncedFolderRefreshRef.current();
+              }
+            })
+            .catch(() => {
+              loadClipsRef.current(null, false, '');
+            });
         } else {
           loadClipsRef.current(selectedFolderRef.current, false, currentSearch);
         }
@@ -98,7 +103,7 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
     return () => {
       unlisten.then((f) => f());
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Focus search input AFTER React has rendered the cleared state

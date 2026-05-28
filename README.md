@@ -1,475 +1,378 @@
-<h1 align="center">
-    <picture>
-            <img src="https://raw.githubusercontent.com/Phieu-Tran/ClipPaste/refs/heads/main/src-tauri/icons/64x64.png" alt="ClipPaste" width="48">
-        </picture>
-        <br>
-        ClipPaste
-</h1>
+# ClipPaste
 
-<p align="center">
-    <strong>A beautiful clipboard history manager for Windows &amp; Linux</strong>
-</p>
+ClipPaste is a private clipboard history manager built with Rust, Tauri 2,
+React 18, TypeScript, and SQLite.
 
-<p align="center">
-    <a href="https://github.com/Phieu-Tran/ClipPaste/releases/latest"><img src="https://img.shields.io/github/v/release/Phieu-Tran/ClipPaste?style=for-the-badge&color=blue&label=Download" alt="Download"></a>
-    <a href="https://github.com/Phieu-Tran/ClipPaste/releases"><img src="https://img.shields.io/github/downloads/Phieu-Tran/ClipPaste/total?style=for-the-badge&color=green&label=Downloads" alt="Total Downloads"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL%203.0-orange.svg?style=for-the-badge" alt="GPL-3.0 License"></a>
-</p>
+Current version: `1.10.11`
 
-<p align="center">
-    Built with <strong>Rust + Tauri v2 + React 18 + TypeScript</strong> — fast, private, and lightweight.
-</p>
+The app is designed for fast local clipboard recall, rich image handling,
+folders, scratchpad notes, and optional Google Drive sync. Clipboard content is
+stored locally by default and is not sent to external analytics services.
 
----
+## Highlights
 
-## Screenshots
-
-<p align="center">
-    <img src="docs/clippaste_dark.png" alt="Dark theme" width="100%">
-</p>
-
-<p align="center">
-    <img src="docs/clippaste_light.png" alt="Light theme" width="100%">
-</p>
-
----
-
-## Features
-
-### Clipboard
-
-| | Feature | Description |
-|:---:|:---|:---|
-| 🔒 | **Private & Local** | All data stored locally — never leaves your machine |
-| ⚡ | **Fast & Lightweight** | Rust backend, ~50MB RAM, instant search |
-| 🔍 | **Smart Search** | Multi-word AND search + fuzzy matching, relevance-ranked (exact phrase first) |
-| 🏷️ | **Content Detection** | Auto-detect URLs, emails, color codes, file paths — styled cards |
-| 🛡️ | **Sensitive Detection** | Auto-detect API keys, tokens, credit cards — blurred + shield icon |
-| 👁️ | **Incognito Mode** | Pause clipboard recording with one click |
-| 📌 | **Per-Folder Pin** | Pin clips to the top within each folder |
-| ✏️ | **Edit Before Paste** | Modify text content before pasting |
-| 📋 | **Paste as Plain Text** | Strip formatting and paste clean text |
-| 📝 | **Notes** | Add annotations to any clip |
-| 🖼️ | **Image on Disk** | Images stored as files, not in DB — keeps database small |
-
-### Organization
-
-| | Feature | Description |
-|:---:|:---|:---|
-| 📁 | **Folders** | Color-coded folders with drag & drop |
-| 👀 | **Hover Preview** | Preview folder contents without switching |
-| 🗂️ | **Folder Protection** | Folder items survive bulk clear operations |
-| 🔢 | **Paste Count** | Track how many times each clip is pasted |
-| 🔥 | **Frequently Pasted** | Smart folder showing clips pasted 5+ times |
-
-### Dashboard & History
-
-| | Feature | Description |
-|:---:|:---|:---|
-| 📊 | **Dashboard** | Stats overview — total clips, today, images, folders |
-| 📅 | **History Timeline** | Browse clips by date with calendar picker |
-| 📈 | **Activity Chart** | Clips per day (last 7 days), clickable bars |
-| 🏆 | **Top Apps** | Most used source apps with visual bar chart |
-| 💾 | **Export / Import** | Backup & restore as zip (DB + images) |
-
-### Sync
-
-| | Feature | Description |
-|:---:|:---|:---|
-| ☁️ | **Google Drive Sync** | Sync clips, folders & scratchpad notes across devices |
-| ⚡ | **Delta Sync** | Append-only op log, auto-compacts when >30 ops or >2 MB |
-| 🔄 | **Auto & Manual Sync** | Configurable interval (1m–1h) + manual sync button |
-| 🖼️ | **Image Sync** | Content-hash dedup, 10MB per-file limit, orphan cleanup on compact |
-| 🗑️ | **Deletion Propagation** | Tombstones propagate deletes cross-device (30-day TTL) |
-| 🔁 | **Resilient** | Exponential backoff retry for network errors + 429/503 rate limits |
-
-### Scratchpad
-
-| | Feature | Description |
-|:---:|:---|:---|
-| 📝 | **Sidebar Notes** | Persistent notes panel docked to screen edge — independent of clipboard |
-| 🎯 | **Edit Before Paste** | Click note → centered modal to edit → Ctrl+Enter to paste |
-| 🎨 | **Color Notes** | 8 color presets with gradient tint; **filter by color** in header |
-| 📌 | **Pin Notes** | Pinned notes always on top, visual border accent |
-| 🔍 | **Search + Sort** | Search by title/content; sort Manual / A-Z / Recent |
-| ✨ | **Markdown Preview** | `**bold**`, `*italic*`, `` `code` ``, `- bullets` render in previews |
-| ↩️ | **Undo Delete** | 5-second toast with Undo button after deleting a note |
-| ⌨️ | **Keyboard Nav** | `↑↓` navigate, `Enter` paste, `E` edit, `Delete` remove, `/` search |
-| 🖱️ | **Hover Expand** | Collapsed tab on screen edge, hover to expand |
-| ☁️ | **Synced** | Notes sync across devices via Google Drive |
-
-### Appearance & System
-
-| | Feature | Description |
-|:---:|:---|:---|
-| 🎨 | **Themes & Effects** | Dark / Light / System + Mica, Mica Alt, Acrylic, Blur effects |
-| 🖥️ | **Multi-Monitor** | Window appears on the active display |
-| 🚫 | **Ignore Apps** | Exclude password managers, banking apps, etc. |
-| ⌨️ | **Custom Hotkey** | Defaults: `Ctrl+Shift+V` (clipboard), `Ctrl+Shift+S` (scratchpad) |
-| 🔄 | **Auto-Update** | In-app update with progress bar |
-| 📂 | **Custom Data Dir** | Choose where to store your data |
-
----
+- Local-first clipboard history with SQLite WAL storage.
+- Text, image, URL, email, color, path, and sensitive-content detection.
+- Fast in-memory search cache with multi-word and fuzzy matching.
+- Image clips stored as files under the active data directory, not as large DB
+  blobs.
+- Configurable data directory for local storage or sync-friendly folders.
+- Storage dashboard with database size, image size, content mix, activity, and
+  source-app stats.
+- Dashboard quick actions for storage settings, old-image preview, duplicate
+  cleanup, backup export, and stats refresh.
+- Retention controls for max clip count, old clip cleanup, and old image cleanup.
+- Preview-before-delete flow for old image cleanup.
+- Folders, pinned clips, notes, drag/drop organization, and a bulk action bar for
+  paste, delete, move, pin, and unpin.
+- Scratchpad side panel for reusable notes, with global hotkey and optional sync.
+- Optional Google Drive sync for clips, folders, images, and scratchpad notes.
+- Sync health panel with pending changes, token expiry, last run report, and
+  last error.
+- Least-privilege Tauri capabilities and no Aptabase analytics integration.
 
 ## Installation
 
-### Download
+Download the latest release:
 
-> **[Download the latest release](https://github.com/Phieu-Tran/ClipPaste/releases/latest)**
+https://github.com/Phieu-Tran/ClipPaste/releases/latest
 
-| Platform | Architecture | Format |
-|:---------|:-------------|:-------|
-| **Windows** | x64, ARM64 | `.exe` (NSIS), `.msi` |
-| **Linux** | x64 | `.deb`, `.AppImage`, `.rpm` |
-
-### Platform Support
-
-| Feature | Windows | Linux |
-|:--------|:-------:|:-----:|
-| Clipboard monitoring | ✅ | ✅ |
-| Auto-paste | ✅ (Shift+Insert) | ❌ |
-| Source app detection | ✅ | ❌ |
-| Source app icon | ✅ | ❌ |
-| Window effects | Mica / Mica Alt / Acrylic / Blur | ❌ |
-| Drag-copy to apps | ✅ | ✅ |
-
----
+Windows builds are distributed as NSIS `.exe` and MSI installers. The app also
+contains Linux-oriented code paths, but current development and verification are
+focused on Windows.
 
 ## Keyboard Shortcuts
 
-### Global
+Global shortcuts:
 
 | Shortcut | Action |
-|:---------|:-------|
-| `Ctrl+Shift+V` | Toggle clipboard window *(customizable)* |
+| --- | --- |
+| `Ctrl+Shift+V` | Toggle clipboard window |
 | `Ctrl+Shift+S` | Toggle scratchpad panel |
 
-### Clipboard list
+Clipboard window:
 
 | Shortcut | Action |
-|:---------|:-------|
-| `Ctrl+F` | Focus search bar |
-| `Escape` | Close window / Clear search |
+| --- | --- |
+| `Ctrl+F` | Focus search |
+| `Escape` | Clear search, close panels, or hide window depending on state |
 | `Enter` | Paste selected clip |
 | `Ctrl+Delete` | Delete selected clip |
-| `P` | Pin / Unpin selected clip |
-| `E` | Edit before paste *(text only)* |
-| `↑` `↓` | Navigate between clips |
+| `P` | Pin or unpin selected clip |
+| `E` | Edit text before paste |
+| `Arrow Up/Down` | Navigate clips |
 
-### Scratchpad
+Scratchpad:
 
 | Shortcut | Action |
-|:---------|:-------|
-| `↑` `↓` | Navigate between notes |
-| `Enter` | Open paste modal for selected note |
-| `E` | Edit selected note |
-| `Delete` | Delete note *(5s Undo)* |
+| --- | --- |
 | `/` | Focus note search |
-| `Ctrl+Enter` | Confirm paste / Save edit *(inside modal)* |
-| `Esc` | Cancel modal / Collapse panel |
+| `Arrow Up/Down` | Navigate notes |
+| `Enter` | Open paste modal |
+| `E` | Edit selected note |
+| `Delete` | Delete selected note with undo toast |
+| `Ctrl+Enter` | Confirm paste or save edit |
+| `Escape` | Cancel modal or collapse panel |
 
----
+## Storage And Retention
 
-## Architecture
+ClipPaste stores data in the configured data directory:
 
-### System Overview
-
-```mermaid
-graph TB
-    subgraph Frontend["Frontend (React 18 + TypeScript)"]
-        App["App.tsx<br/><i>Orchestrator</i>"]
-
-        subgraph Hooks["Custom Hooks"]
-            useClipActions["useClipActions<br/><small>load, paste, copy, delete, pin, note</small>"]
-            useFolderActions["useFolderActions<br/><small>CRUD, reorder, move clip</small>"]
-            useDragDrop["useDragDrop<br/><small>card → folder drag</small>"]
-            useFolderPreview["useFolderPreview<br/><small>hover preview + cache</small>"]
-            useKeyboard["useKeyboard<br/><small>Esc, Ctrl+F, arrows, Enter</small>"]
-            useBatchActions["useBatchActions<br/><small>bulk delete, move, paste</small>"]
-            useContextMenu["useContextMenu<br/><small>right-click menu state</small>"]
-            useFolderModal["useFolderModal<br/><small>create/rename modal</small>"]
-        end
-
-        subgraph Components["UI Components"]
-            ControlBar["ControlBar<br/><small>search, folder tabs, filters</small>"]
-            ClipList["ClipList<br/><small>@tanstack/react-virtual</small>"]
-            ClipCard["ClipCard<br/><small>subtype badges, highlight, timestamp</small>"]
-            Settings["SettingsPanel<br/><small>GeneralTab / FoldersTab / DashboardTab</small>"]
-        end
-
-        App --> Hooks
-        App --> Components
-    end
-
-    subgraph Backend["Backend (Rust + Tauri v2)"]
-        subgraph Commands["commands/"]
-            clips["clips.rs<br/><small>get, paste, copy, delete, search, pin</small>"]
-            folders["folders.rs<br/><small>CRUD, reorder</small>"]
-            settings["settings.rs<br/><small>get/save, ignored apps, hotkey</small>"]
-            data["data.rs<br/><small>export, import, dashboard, timeline</small>"]
-            window["window.rs<br/><small>show, hide, focus, dragging</small>"]
-        end
-
-        clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect,<br/>sensitive detect, incognito mode</small>"]
-        database["database.rs<br/><small>SQLite pool, migrations v1-v7</small>"]
-        caches["In-Memory Caches<br/><small>SEARCH_CACHE (HashMap 50K cap)<br/>SETTINGS_CACHE · ICON_CACHE (LRU 100)</small>"]
-
-        subgraph Sync["sync/"]
-            oauth["oauth.rs<br/><small>Google OAuth2 loopback</small>"]
-            drive["drive.rs<br/><small>Drive API (appDataFolder)</small>"]
-            protocol["protocol.rs<br/><small>push/pull/merge</small>"]
-            encryption["encryption.rs<br/><small>XChaCha20-Poly1305 + Argon2id</small>"]
-        end
-    end
-
-    subgraph Storage["Storage (local disk)"]
-        db[("clipboard.db<br/><small>SQLite WAL</small>")]
-        images["images/<br/><small>{sha256}.png</small>"]
-    end
-
-    subgraph Cloud["Google Drive (appDataFolder)"]
-        driveFiles["clip_*.enc / folder_*.enc<br/><small>encrypted sync data</small>"]
-    end
-
-    Components -- "invoke()" --> Commands
-    Commands --> database
-    clipboard --> database
-    clipboard --> caches
-    database --> db
-    database --> images
-    Sync --> driveFiles
-    Sync --> database
-
-    style Frontend fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
-    style Backend fill:#1e293b,stroke:#f59e0b,color:#e2e8f0
-    style Storage fill:#1e293b,stroke:#10b981,color:#e2e8f0
-    style Hooks fill:#0f172a,stroke:#6366f1,color:#c7d2fe
-    style Components fill:#0f172a,stroke:#6366f1,color:#c7d2fe
-    style Commands fill:#0f172a,stroke:#d97706,color:#fde68a
-    style Sync fill:#0f172a,stroke:#8b5cf6,color:#ddd6fe
-    style Cloud fill:#1e293b,stroke:#6366f1,color:#e2e8f0
+```text
+<data-dir>/
+  clipboard.db
+  clipboard.db-wal
+  clipboard.db-shm
+  images/
+    <sha256>.png
+    <sha256>_thumb.jpg
 ```
 
-### Clipboard Data Flow
+The default data directory is app-local, but users can choose another folder in
+Settings. When switching directories, ClipPaste stages the current database and
+image files into the selected folder if it does not already contain
+`clipboard.db`. If the selected folder already has a database, ClipPaste switches
+to it without overwriting it.
 
-```mermaid
-sequenceDiagram
-    participant OS as OS Clipboard
-    participant Plugin as tauri-plugin-clipboard-x
-    participant Monitor as clipboard.rs
-    participant Cache as SEARCH_CACHE
-    participant DB as SQLite
-    participant Disk as images/*.png
-    participant UI as React Frontend
+Retention controls are available in Settings:
 
-    OS->>Plugin: clipboard_changed event
-    Plugin->>Monitor: event listener fires
+- Max Clips: trim oldest unprotected clips when the limit is exceeded.
+- Auto-delete clips: delete old unprotected clips after a configured number of
+  days.
+- Auto-delete image clips: delete old unprotected image clips after a configured
+  number of days.
+- Clean old images: preview the old image cleanup impact, then delete manually.
 
-    alt Incognito mode ON
-        Monitor-->>Monitor: Skip (return immediately)
-    end
+Protected clips are not removed by retention cleanup:
 
-    Note over Monitor: Capture source app<br/>BEFORE debounce
-    Monitor->>Monitor: Debounce 150ms
-    Monitor->>Monitor: SHA256 hash
+- Pinned clips.
+- Clips stored inside folders.
 
-    alt Duplicate (hash exists)
-        Monitor->>DB: UPDATE created_at (bump to top)
-    else New clip
-        Monitor->>Monitor: Detect subtype (url/email/color/path)
-        Monitor->>Monitor: Detect sensitive (API keys/CC/JWT)
-        alt Image
-            Monitor->>Disk: Save {hash}.png
-            Monitor->>DB: INSERT (filename + is_sensitive)
-        else Text
-            Monitor->>DB: INSERT (text + is_sensitive)
-        end
-        Monitor->>Cache: add_to_search_cache()
-    end
+Orphan managed image files are quarantined under:
 
-    Monitor->>UI: emit("clipboard-change")
-    UI->>UI: Reload clip list + toast
+```text
+images/.cleanup_quarantine/<timestamp>/
 ```
 
-### Paste Flow
+Rows for missing image files are preserved by default. Automatic deletion of
+missing image rows requires `CLIPPASTE_DELETE_MISSING_IMAGE_CLIPS=true`.
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as React Frontend
-    participant Cmd as commands/clips.rs
-    participant OS as OS Clipboard
-    participant Target as Target App
+## Dashboard
 
-    User->>UI: Double-click / Enter / Ctrl+1..9
-    UI->>Cmd: invoke("paste_clip", id)
-    Cmd->>Cmd: Stop clipboard listener
-    Cmd->>OS: Write content to clipboard
-    Cmd->>Cmd: Set IGNORE_HASH (prevent self-capture)
-    Cmd->>Cmd: Restart listener
-    Cmd->>UI: animate_window_hide()
-    UI-->>Target: Shift+Insert (Win) / Cmd+V (Mac)
-    Note over UI,Target: 200ms delay before keystroke
+The Settings dashboard includes:
 
-    Note over User,UI: Copy (no paste)
-    User->>UI: Click copy button
-    UI->>Cmd: invoke("copy_clip", id)
-    Cmd->>OS: Write to clipboard only
-    Note over UI: Window stays open
-```
+- Total clips, clips today, image clips, and folder count.
+- Local storage split between `clipboard.db` and `images/`.
+- 14-day old-image cleanup estimate.
+- Content mix for text, links, pinned clips, and sensitive clips.
+- Quick actions for storage settings, old-image preview, backup export,
+  duplicate cleanup, and stats refresh.
+- Timeline browsing by date.
+- Per-day activity chart.
+- Top source apps.
+- Most pasted clips.
 
-### Storage Layout
+## Privacy And Security
 
-```
-{data_dir}/ClipPaste/
-├── clipboard.db           # SQLite (WAL mode)
-├── clipboard.db-wal       # Write-Ahead Log (concurrent reads + writes)
-├── clipboard.db-shm       # Shared memory index for WAL
-└── images/                # Clipboard images (not in DB)
-    ├── {sha256}.png       # Deduplicated by content hash
-    └── ...
-```
+ClipPaste is local-first:
 
-### Key Design Decisions
+- Clipboard data is stored on disk in the configured data directory.
+- No Aptabase analytics integration is included.
+- The global Tauri JS API is disabled.
+- The asset protocol scope is restricted to app/data/resource paths.
+- Clipboard plugin permissions are explicit and least-privilege.
+- Sensitive content detection can blur likely secrets such as API keys, tokens,
+  private keys, JWTs, and credit card numbers.
 
-| Decision | Reason |
-|:---------|:-------|
-| **SQLite WAL mode + tuned PRAGMAs** | Concurrent reads/writes, 8MB cache, 64MB mmap, 5s busy_timeout |
-| **Images on disk** | DB stays small (~2MB), images in separate files |
-| **In-memory search cache** | HashMap capped at 50K entries, instant multi-word + fuzzy search (<1ms) |
-| **Relevance sorting** | Exact phrase > all words > note match > fuzzy; folder as tiebreaker |
-| **Sensitive content detection** | Regex-based (no AI), auto-blur on card, is_sensitive column in DB |
-| **Asset protocol for images** | `asset://` URL instead of base64 — 75% less IPC payload |
-| **Shift+Insert** for paste | Works in terminals (PowerShell, WSL) where Ctrl+V doesn't |
-| **@tanstack/react-virtual** | Horizontal virtual list — constant DOM count regardless of clip count |
-| **Hard delete** (no soft delete) | No DB bloat, no stale rows, simpler queries |
-| **Pinned + folder items protected** | Bulk clear, dedup, and auto-trim never touch pinned or folder clips |
-| **Atomic DB operations** | Transactions for folder delete, max_items trim — crash-safe |
-| **ICON_CACHE LRU(100)** | Bounded app icon cache prevents memory leak on long sessions |
-| **Modular commands/** | 7 domain files instead of monolithic commands.rs (1500+ lines) |
+Google Drive sync is optional. Sync data is written to the app data folder on
+Drive and uses encrypted sync payloads.
 
----
+## Development
 
-## Tech Stack
+Prerequisites:
 
-| Layer | Technology |
-|:------|:-----------|
-| Framework | [Tauri v2](https://tauri.app/) |
-| Frontend | React 18 + TypeScript + Vite |
-| Styling | TailwindCSS v3 + tailwind-merge |
-| Virtual List | [@tanstack/react-virtual](https://tanstack.com/virtual) |
-| Backend | Rust (Tokio async runtime) |
-| Database | SQLite via [sqlx](https://github.com/launchbadge/sqlx) |
-| Window Effects | [window-vibrancy](https://github.com/Phieu-Tran/window-vibrancy) *(custom fork)* |
+- Node.js
+- pnpm
+- Rust toolchain
+- Tauri prerequisites for Windows
 
----
+Install dependencies:
 
-## Building from Source
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) 1.70+
-- [pnpm](https://pnpm.io/)
-
-**Linux additional dependencies:**
-```bash
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-```
-
-```bash
-# Install dependencies
+```powershell
 pnpm install
+```
 
-# Development
+Run frontend only:
+
+```powershell
+pnpm dev
+```
+
+Run the desktop app in development:
+
+```powershell
 pnpm tauri dev
+```
 
-# Production build
+Build frontend:
+
+```powershell
+pnpm build
+```
+
+Build Tauri app without bundling installers:
+
+```powershell
+pnpm tauri build -- --no-bundle
+```
+
+Build full installer bundles:
+
+```powershell
 pnpm tauri build
-
-# Run Rust tests
-cd src-tauri && cargo test
 ```
 
----
+If updater signing is configured with a public key, full bundling requires:
 
-## Google Drive Sync Setup
-
-ClipPaste can sync your clipboard history across devices using Google Drive.
-
-### How It Works
-
-```
-Device A                     Google Drive (hidden app folder)           Device B
-┌──────────┐    delta       ┌──────────────────────────────┐   delta   ┌──────────┐
-│ SQLite   │───────────────►│  sync_state.json (full)      │──────────►│ SQLite   │
-│ + images │                │  delta_{device}.json (small)  │           │ + images │
-└──────────┘◄───────────────│  img_{hash}.png              │◄──────────└──────────┘
-                            └──────────────────────────────┘
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "<private-key>"
 ```
 
-- Uses Google Drive's **appDataFolder** — a hidden folder that doesn't clutter your Drive
-- **Delta sync** — only uploads changes, not the entire history every time
-- **Last-writer-wins** conflict resolution by `updated_at` timestamp
-- Deletions propagate via **tombstones** (auto-cleaned after 30 days)
-- Auto-compact every 50 deltas into a fresh full state
-- Images over 10MB are skipped; image sync can be disabled entirely
+Without the private key, the release app can still build with `--no-bundle`.
 
-### Step 1: Create Google Cloud Credentials
+## Testing
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or select an existing one)
-3. Enable the **Google Drive API**:
-   - Navigate to **APIs & Services > Library**
-   - Search for "Google Drive API" and click **Enable**
-4. Create OAuth credentials:
-   - Go to **APIs & Services > Credentials**
-   - Click **Create Credentials > OAuth client ID**
-   - Application type: **Desktop app**
-   - Name: `ClipPaste`
-   - Click **Create** — note your **Client ID** and **Client Secret**
-5. Configure the consent screen:
-   - Go to **APIs & Services > OAuth consent screen**
-   - User type: **External** (or Internal if using Google Workspace)
-   - Fill in app name: `ClipPaste`
-   - Add scope: `https://www.googleapis.com/auth/drive.appdata`
-   - Add your email as a test user (required while in "Testing" status)
+Run the full test pipeline:
 
-### Step 2: Configure ClipPaste
-
-If you are building from source, set your credentials in `src-tauri/src/sync/oauth.rs`:
-
-```rust
-const CLIENT_ID: &str = "your-client-id.apps.googleusercontent.com";
-const CLIENT_SECRET: &str = "your-client-secret";
+```powershell
+pnpm test
 ```
 
-Then rebuild the app.
+Run frontend checks only:
 
-### Step 3: Connect & Sync
+```powershell
+pnpm test:fe
+```
 
-1. Open **Settings > Sync**
-2. Click **Connect Google Drive** — your browser opens for Google sign-in
-3. After authorizing, your email appears in the Sync tab
-4. Toggle **Auto-sync** on and choose an interval (default: 5 minutes)
-5. Click **Sync Now** for an immediate sync
+Run backend checks only:
 
-### Setting Up a Second Device
+```powershell
+pnpm test:be
+```
 
-1. Install ClipPaste and open **Settings > Sync**
-2. Click **Connect Google Drive** with the **same Google account**
-3. Click **Sync Now** — all your clips and folders will sync down
+Useful lower-level commands:
 
-### Sync Settings
+```powershell
+pnpm format:check
+pnpm build
+cd src-tauri
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
+```
 
-| Setting | Default | Description |
-|:--------|:--------|:------------|
-| Auto-sync | Off | Automatically sync on a schedule |
-| Interval | 5 minutes | How often to auto-sync (1m / 5m / 15m / 30m / 1h) |
-| Sync images | On | Include image clips in sync (disable to save bandwidth) |
+## Benchmark CLI
 
----
+The app binary includes a read-only benchmark mode:
+
+```powershell
+src-tauri\target\debug\clippaste.exe --bench
+src-tauri\target\debug\clippaste.exe --bench http
+```
+
+The benchmark reports:
+
+- Active data directory.
+- Database path and size.
+- Image file count and size.
+- Total clip, image, folder, pinned, sensitive counts.
+- Latest clips query timing.
+- Search timing.
+- Startup cache query timing.
+
+This mode does not modify or delete data.
+
+## CLI Utilities
+
+Debug builds also support utility commands:
+
+```powershell
+src-tauri\target\debug\clippaste.exe --help
+src-tauri\target\debug\clippaste.exe --stats
+src-tauri\target\debug\clippaste.exe --count
+src-tauri\target\debug\clippaste.exe --verify
+```
+
+## Project Structure
+
+```text
+ClipPaste/
+  frontend/
+    src/
+      components/
+      hooks/
+      types/
+      App.tsx
+  src-tauri/
+    src/
+      clipboard.rs
+      database.rs
+      lib.rs
+      main.rs
+      models.rs
+      commands/
+      sync/
+      tests.rs
+    Cargo.toml
+    tauri.conf.json
+  scripts/
+    test.ps1
+    test.sh
+  package.json
+  README.md
+  CHANGELOG.md
+```
+
+## Backend Overview
+
+Main Rust modules:
+
+- `clipboard.rs`: clipboard monitoring, deduplication, subtype detection,
+  sensitive detection, incognito handling, search/settings/icon caches.
+- `database.rs`: SQLite connection pool, migrations, image storage helpers,
+  cleanup and retention policies.
+- `commands/`: Tauri IPC commands for clips, folders, settings, data, sync,
+  scratchpad, and windows.
+- `sync/`: Google Drive OAuth, Drive API client, sync protocol, encryption.
+- `cli.rs`: debug/maintenance CLI commands and benchmark mode.
+
+## Frontend Overview
+
+Main frontend areas:
+
+- `App.tsx`: application orchestration.
+- `components/ControlBar.tsx`: search, filters, and folder controls.
+- `components/ClipList.tsx`: virtualized clip list.
+- `components/ClipCard.tsx`: clip rendering, image thumbnails, badges, actions.
+- `components/SettingsPanel.tsx`: settings shell and tab routing.
+- `components/settings/DashboardTab.tsx`: storage and usage dashboard.
+- `components/settings/GeneralTab.tsx`: behavior, privacy exceptions, storage,
+  retention, cleanup, and data management.
+- `windows/ScratchpadWindow.tsx`: scratchpad side-panel experience.
+
+## Sync Overview
+
+Google Drive sync is optional and can sync:
+
+- Clips.
+- Folders.
+- Image files.
+- Scratchpad notes.
+- Deletion tombstones.
+
+The sync protocol uses append-only operation files, full-state compaction, LWW
+merge behavior, tombstone cleanup, image content-hash deduplication, and bounded
+image upload concurrency.
+
+The Sync tab shows operational health:
+
+- Connected account.
+- Auto-sync state and interval.
+- Pending local changes.
+- Last sync time.
+- Access token expiry estimate.
+- Last pushed, pulled, and deleted counts.
+- Last sync error with retry through Sync Now.
+
+## Backup And Restore
+
+Backup export writes a zip containing the database and image folder. Backup
+import is guarded by a confirmation dialog and, after success, shows a
+restart-required banner with a Restart Now action. Restarting ensures all
+windows and in-memory caches read the imported database.
+
+## Release Checklist
+
+1. Update versions in:
+   - `package.json`
+   - `src-tauri/Cargo.toml`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.lock`
+2. Update `CHANGELOG.md`.
+3. Run:
+
+```powershell
+pnpm format:check
+pnpm test
+pnpm tauri build -- --no-bundle
+```
+
+4. For signed installer/update builds, set `TAURI_SIGNING_PRIVATE_KEY` and run:
+
+```powershell
+pnpm tauri build
+```
 
 ## License
 
-[GPL-3.0](LICENSE)
+GPL-3.0. See `LICENSE`.

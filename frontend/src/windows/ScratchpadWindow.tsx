@@ -5,7 +5,21 @@ import { currentMonitor } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { ScratchpadItem } from '../types';
 import { useTheme } from '../hooks/useTheme';
-import { X, Plus, Trash2, StickyNote, Copy, Check, Pin, PinOff, ClipboardPaste, Pencil, ChevronLeft, Search, ArrowUpDown } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Trash2,
+  StickyNote,
+  Copy,
+  Check,
+  Pin,
+  PinOff,
+  ClipboardPaste,
+  Pencil,
+  ChevronLeft,
+  Search,
+  ArrowUpDown,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { Toaster, toast } from 'sonner';
 
@@ -25,11 +39,23 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
     if (match.index > last) out.push(text.slice(last, match.index));
     const tok = match[0];
     if (tok.startsWith('**') && tok.endsWith('**')) {
-      out.push(<strong key={`b${key++}`} className="font-semibold text-foreground/90">{tok.slice(2, -2)}</strong>);
+      out.push(
+        <strong key={`b${key++}`} className="font-semibold text-foreground/90">
+          {tok.slice(2, -2)}
+        </strong>
+      );
     } else if (tok.startsWith('`') && tok.endsWith('`')) {
-      out.push(<code key={`c${key++}`} className="rounded bg-white/10 px-1 font-mono text-[10px]">{tok.slice(1, -1)}</code>);
+      out.push(
+        <code key={`c${key++}`} className="rounded bg-white/10 px-1 font-mono text-[10px]">
+          {tok.slice(1, -1)}
+        </code>
+      );
     } else {
-      out.push(<em key={`i${key++}`} className="italic">{tok.slice(1, -1)}</em>);
+      out.push(
+        <em key={`i${key++}`} className="italic">
+          {tok.slice(1, -1)}
+        </em>
+      );
     }
     last = match.index + tok.length;
   }
@@ -51,7 +77,11 @@ function renderMarkdownPreview(content: string): React.ReactNode {
         </span>
       );
     }
-    return <span key={idx} className="block">{renderInlineMarkdown(line)}</span>;
+    return (
+      <span key={idx} className="block">
+        {renderInlineMarkdown(line)}
+      </span>
+    );
   });
 }
 
@@ -165,9 +195,12 @@ export function ScratchpadWindow() {
         e.preventDefault();
         const dir = e.key === 'ArrowDown' ? 1 : -1;
         const idx = curSelected ? list.findIndex((s) => s.id === curSelected) : -1;
-        const next = idx < 0
-          ? (dir === 1 ? 0 : list.length - 1)
-          : Math.max(0, Math.min(list.length - 1, idx + dir));
+        const next =
+          idx < 0
+            ? dir === 1
+              ? 0
+              : list.length - 1
+            : Math.max(0, Math.min(list.length - 1, idx + dir));
         setSelectedId(list[next].id);
       } else if (e.key === 'Enter' && curSelected) {
         const item = list.find((s) => s.id === curSelected);
@@ -187,18 +220,25 @@ export function ScratchpadWindow() {
   // Theme
   const [themeSetting, setThemeSetting] = useState('system');
   useEffect(() => {
-    invoke<Record<string, string>>('get_settings').then((s) => {
-      if (s.theme) setThemeSetting(s.theme);
-    }).catch(() => {});
+    invoke<Record<string, string>>('get_settings')
+      .then((s) => {
+        if (s.theme) setThemeSetting(s.theme);
+      })
+      .catch(() => {});
   }, []);
   useTheme(themeSetting);
 
   // Load
   const loadScratchpads = useCallback(async () => {
-    try { setScratchpads(await invoke<ScratchpadItem[]>('get_scratchpads')); }
-    catch (e) { console.error('Failed to load scratchpads:', e); }
+    try {
+      setScratchpads(await invoke<ScratchpadItem[]>('get_scratchpads'));
+    } catch (e) {
+      console.error('Failed to load scratchpads:', e);
+    }
   }, []);
-  useEffect(() => { loadScratchpads(); }, [loadScratchpads]);
+  useEffect(() => {
+    loadScratchpads();
+  }, [loadScratchpads]);
 
   // Global hotkey listener — toggle between collapsed and list mode.
   useEffect(() => {
@@ -206,7 +246,9 @@ export function ScratchpadWindow() {
       setMode((m) => (m === 'collapsed' ? 'list' : 'collapsed'));
       setPinned((p) => (mode === 'collapsed' ? true : p));
     });
-    return () => { unlistenP.then((fn) => fn()).catch(() => {}); };
+    return () => {
+      unlistenP.then((fn) => fn()).catch(() => {});
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -215,7 +257,8 @@ export function ScratchpadWindow() {
     const q = searchQuery.trim().toLowerCase();
     let list = scratchpads.filter((s) => {
       if (colorFilter && s.color !== colorFilter) return false;
-      if (q && !s.title.toLowerCase().includes(q) && !s.content.toLowerCase().includes(q)) return false;
+      if (q && !s.title.toLowerCase().includes(q) && !s.content.toLowerCase().includes(q))
+        return false;
       return true;
     });
     if (sortMode === 'alpha') {
@@ -253,8 +296,15 @@ export function ScratchpadWindow() {
       const w = Math.round(EXPANDED_WIDTH * scale);
       const h = Math.round(workH * 0.75);
       await appWindow.setSize(new PhysicalSize(w, h));
-      await appWindow.setPosition(new PhysicalPosition(workX + workW - w, workY + Math.round((workH - h) / 2)));
-    } catch {} finally { setTimeout(() => { isResizingRef.current = false; }, 200); }
+      await appWindow.setPosition(
+        new PhysicalPosition(workX + workW - w, workY + Math.round((workH - h) / 2))
+      );
+    } catch {
+    } finally {
+      setTimeout(() => {
+        isResizingRef.current = false;
+      }, 200);
+    }
   }, [appWindow]);
 
   const moveToCenter = useCallback(async () => {
@@ -269,12 +319,20 @@ export function ScratchpadWindow() {
       const w = Math.round(MODAL_WIDTH * scale);
       const h = Math.round(MODAL_HEIGHT * scale);
       await appWindow.setSize(new PhysicalSize(w, h));
-      await appWindow.setPosition(new PhysicalPosition(
-        workX + Math.round((workW - w) / 2), workY + Math.round((workH - h) / 2),
-      ));
+      await appWindow.setPosition(
+        new PhysicalPosition(
+          workX + Math.round((workW - w) / 2),
+          workY + Math.round((workH - h) / 2)
+        )
+      );
       await appWindow.show();
       await appWindow.setFocus();
-    } catch {} finally { setTimeout(() => { isResizingRef.current = false; }, 200); }
+    } catch {
+    } finally {
+      setTimeout(() => {
+        isResizingRef.current = false;
+      }, 200);
+    }
   }, [appWindow]);
 
   const moveToCollapsed = useCallback(async () => {
@@ -288,8 +346,15 @@ export function ScratchpadWindow() {
       const w = Math.round(COLLAPSED_WIDTH * scale);
       const h = Math.round(COLLAPSED_HEIGHT * scale);
       await appWindow.setSize(new PhysicalSize(w, h));
-      await appWindow.setPosition(new PhysicalPosition(workX + workW - w, workY + Math.round((workH - h) / 2)));
-    } catch {} finally { setTimeout(() => { isResizingRef.current = false; }, 200); }
+      await appWindow.setPosition(
+        new PhysicalPosition(workX + workW - w, workY + Math.round((workH - h) / 2))
+      );
+    } catch {
+    } finally {
+      setTimeout(() => {
+        isResizingRef.current = false;
+      }, 200);
+    }
   }, [appWindow]);
 
   // Mode changes trigger window position. paste/edit go to centered modal
@@ -313,7 +378,10 @@ export function ScratchpadWindow() {
 
   // ── Hover logic ──
   const cancelCollapse = useCallback(() => {
-    if (collapseTimerRef.current) { clearTimeout(collapseTimerRef.current); collapseTimerRef.current = null; }
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
   }, []);
 
   const handleMouseEnter = useCallback(() => {
@@ -358,10 +426,18 @@ export function ScratchpadWindow() {
 
   const saveEdit = useCallback(async () => {
     if (!editingId) return;
-    const t = editTitle.trim(), c = editContent.trim();
+    const t = editTitle.trim(),
+      c = editContent.trim();
     if (t || c) {
-      await invoke('update_scratchpad', { id: editingId, title: t, content: c, color: editColor || '' });
-      setScratchpads((prev) => prev.map((s) => s.id === editingId ? { ...s, title: t, content: c, color: editColor } : s));
+      await invoke('update_scratchpad', {
+        id: editingId,
+        title: t,
+        content: c,
+        color: editColor || '',
+      });
+      setScratchpads((prev) =>
+        prev.map((s) => (s.id === editingId ? { ...s, title: t, content: c, color: editColor } : s))
+      );
     } else {
       await invoke('delete_scratchpad', { id: editingId });
       setScratchpads((prev) => prev.filter((s) => s.id !== editingId));
@@ -395,7 +471,9 @@ export function ScratchpadWindow() {
     setPinned(false);
     setMode('collapsed');
     // moveToCollapsed repositions the hidden window; show it after a tick.
-    setTimeout(() => { appWindow.show().catch(() => {}); }, 200);
+    setTimeout(() => {
+      appWindow.show().catch(() => {});
+    }, 200);
   }, [pastingId, pasteContent, appWindow]);
 
   // ── CRUD ──
@@ -404,63 +482,78 @@ export function ScratchpadWindow() {
       const item = await invoke<ScratchpadItem>('create_scratchpad', { title: '', content: '' });
       setScratchpads((prev) => [...prev, item]);
       setEditingId(item.id);
-      setEditTitle(''); setEditContent('');
+      setEditTitle('');
+      setEditContent('');
       setMode('edit');
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
-  const handleDelete = useCallback(async (id: string) => {
-    const victim = scratchpads.find((s) => s.id === id);
-    if (!victim) return;
-    try {
-      await invoke('delete_scratchpad', { id });
-      setScratchpads((prev) => prev.filter((s) => s.id !== id));
-      if (editingId === id) { setEditingId(null); setMode('list'); }
-      if (pastingId === id) { setPastingId(null); setMode('list'); }
-      if (selectedId === id) setSelectedId(null);
-      // Offer undo for 5s — recreates the note (new uuid/id, same content/title/color).
-      toast(`Deleted "${victim.title || victim.content.slice(0, 40) || 'note'}"`, {
-        duration: 5000,
-        action: {
-          label: 'Undo',
-          onClick: async () => {
-            try {
-              const restored = await invoke<ScratchpadItem>('create_scratchpad', {
-                title: victim.title,
-                content: victim.content,
-              });
-              // Restore color in a second call (create_scratchpad doesn't take color).
-              if (victim.color) {
-                await invoke('update_scratchpad', { id: restored.id, color: victim.color });
-                restored.color = victim.color;
+  const handleDelete = useCallback(
+    async (id: string) => {
+      const victim = scratchpads.find((s) => s.id === id);
+      if (!victim) return;
+      try {
+        await invoke('delete_scratchpad', { id });
+        setScratchpads((prev) => prev.filter((s) => s.id !== id));
+        if (editingId === id) {
+          setEditingId(null);
+          setMode('list');
+        }
+        if (pastingId === id) {
+          setPastingId(null);
+          setMode('list');
+        }
+        if (selectedId === id) setSelectedId(null);
+        // Offer undo for 5s — recreates the note (new uuid/id, same content/title/color).
+        toast(`Deleted "${victim.title || victim.content.slice(0, 40) || 'note'}"`, {
+          duration: 5000,
+          action: {
+            label: 'Undo',
+            onClick: async () => {
+              try {
+                const restored = await invoke<ScratchpadItem>('create_scratchpad', {
+                  title: victim.title,
+                  content: victim.content,
+                });
+                // Restore color in a second call (create_scratchpad doesn't take color).
+                if (victim.color) {
+                  await invoke('update_scratchpad', { id: restored.id, color: victim.color });
+                  restored.color = victim.color;
+                }
+                setScratchpads((prev) => [...prev, restored]);
+              } catch (e) {
+                console.error('Undo delete failed:', e);
               }
-              setScratchpads((prev) => [...prev, restored]);
-            } catch (e) {
-              console.error('Undo delete failed:', e);
-            }
+            },
           },
-        },
-      });
-    } catch {}
-  }, [scratchpads, editingId, pastingId, selectedId]);
+        });
+      } catch {}
+    },
+    [scratchpads, editingId, pastingId, selectedId]
+  );
 
   const handleToggleNotePin = useCallback(async (id: string) => {
     try {
       const newVal = await invoke<boolean>('toggle_scratchpad_pin', { id });
-      setScratchpads((prev) => prev.map((s) => s.id === id ? { ...s, is_pinned: newVal } : s));
+      setScratchpads((prev) => prev.map((s) => (s.id === id ? { ...s, is_pinned: newVal } : s)));
     } catch {}
   }, []);
 
   const handleCopyText = useCallback(async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
     } catch {}
   }, []);
 
   // ── Drag ──
   const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
     const text = e.dataTransfer.getData('text/plain');
     if (text) {
       try {
@@ -473,30 +566,52 @@ export function ScratchpadWindow() {
       } catch {}
     }
   }, []);
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setIsDragOver(true);
-    if (mode === 'collapsed') setMode('list');
-  }, [mode]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setIsDragOver(true);
+      if (mode === 'collapsed') setMode('list');
+    },
+    [mode]
+  );
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (panelRef.current && !panelRef.current.contains(e.relatedTarget as Node)) setIsDragOver(false);
+    if (panelRef.current && !panelRef.current.contains(e.relatedTarget as Node))
+      setIsDragOver(false);
   }, []);
-  const handleItemDragStart = useCallback((id: string) => { dragItemRef.current = id; }, []);
+  const handleItemDragStart = useCallback((id: string) => {
+    dragItemRef.current = id;
+  }, []);
   const handleItemDragOver = useCallback((e: React.DragEvent, i: number) => {
-    e.preventDefault(); if (dragItemRef.current) setDragOverIndex(i);
+    e.preventDefault();
+    if (dragItemRef.current) setDragOverIndex(i);
   }, []);
-  const handleItemDrop = useCallback(async (index: number) => {
-    const dragId = dragItemRef.current;
-    if (!dragId) return;
-    const ids = scratchpads.map((s) => s.id);
-    const di = ids.indexOf(dragId);
-    if (di === -1 || di === index) { dragItemRef.current = null; setDragOverIndex(null); return; }
-    const r = [...ids]; const [m] = r.splice(di, 1); r.splice(index, 0, m);
-    const map = new Map(scratchpads.map((s) => [s.id, s]));
-    setScratchpads(r.map((id) => map.get(id)!).filter(Boolean));
-    await invoke('reorder_scratchpads', { ids: r }).catch(() => {});
-    dragItemRef.current = null; setDragOverIndex(null);
-  }, [scratchpads]);
-  const handleItemDragEnd = useCallback(() => { dragItemRef.current = null; setDragOverIndex(null); }, []);
+  const handleItemDrop = useCallback(
+    async (index: number) => {
+      const dragId = dragItemRef.current;
+      if (!dragId) return;
+      const ids = scratchpads.map((s) => s.id);
+      const di = ids.indexOf(dragId);
+      if (di === -1 || di === index) {
+        dragItemRef.current = null;
+        setDragOverIndex(null);
+        return;
+      }
+      const r = [...ids];
+      const [m] = r.splice(di, 1);
+      r.splice(index, 0, m);
+      const map = new Map(scratchpads.map((s) => [s.id, s]));
+      setScratchpads(r.map((id) => map.get(id)!).filter(Boolean));
+      await invoke('reorder_scratchpads', { ids: r }).catch(() => {});
+      dragItemRef.current = null;
+      setDragOverIndex(null);
+    },
+    [scratchpads]
+  );
+  const handleItemDragEnd = useCallback(() => {
+    dragItemRef.current = null;
+    setDragOverIndex(null);
+  }, []);
 
   // ═══════════════════════════════════
   //  RENDER
@@ -505,14 +620,19 @@ export function ScratchpadWindow() {
   // ── Collapsed ──
   if (mode === 'collapsed') {
     return (
-      <div className="flex h-full w-full cursor-pointer items-center justify-center rounded-l-lg"
-        onMouseEnter={handleMouseEnter} onDragOver={handleDragOver} onDrop={handleDrop}
+      <div
+        className="flex h-full w-full cursor-pointer items-center justify-center rounded-l-lg"
+        onMouseEnter={handleMouseEnter}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         style={{
-          background: 'linear-gradient(180deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.35), hsl(var(--primary) / 0.15))',
+          background:
+            'linear-gradient(180deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.35), hsl(var(--primary) / 0.15))',
           borderLeft: '2px solid hsl(var(--primary) / 0.5)',
           boxShadow: 'inset 1px 0 0 hsl(var(--primary) / 0.25)',
         }}
-        title="Scratchpad — hover to open">
+        title="Scratchpad — hover to open"
+      >
         {/* Minimal grip — 3 dots centered vertically, subtle primary tint */}
         <div className="flex flex-col gap-1 opacity-60">
           <span className="block h-0.5 w-0.5 rounded-full bg-primary-foreground/80" />
@@ -527,21 +647,32 @@ export function ScratchpadWindow() {
   if ((mode === 'paste' && pastingId) || (mode === 'edit' && editingId)) {
     const isPaste = mode === 'paste';
     const item = scratchpads.find((s) => s.id === (isPaste ? pastingId : editingId));
-    if (!item) { goBack(); return null; }
+    if (!item) {
+      goBack();
+      return null;
+    }
 
     return (
       <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl">
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border/30 px-3 py-2" data-tauri-drag-region>
-          <button onClick={goBack} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Back">
+        <div
+          className="flex items-center gap-2 border-b border-border/30 px-3 py-2"
+          data-tauri-drag-region
+        >
+          <button
+            onClick={goBack}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Back"
+          >
             <ChevronLeft size={15} />
           </button>
-          {isPaste
-            ? <ClipboardPaste size={14} className="text-primary" />
-            : <Pencil size={14} className="text-amber-400" />
-          }
+          {isPaste ? (
+            <ClipboardPaste size={14} className="text-primary" />
+          ) : (
+            <Pencil size={14} className="text-amber-400" />
+          )}
           <span className="flex-1 truncate text-sm font-semibold text-foreground/90">
-            {isPaste ? (item.title || 'Paste snippet') : 'Edit note'}
+            {isPaste ? item.title || 'Paste snippet' : 'Edit note'}
           </span>
         </div>
 
@@ -560,33 +691,62 @@ export function ScratchpadWindow() {
             />
           ) : (
             <>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Title</label>
-              <input ref={titleRef} value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') goBack(); }}
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                Title
+              </label>
+              <input
+                ref={titleRef}
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') goBack();
+                }}
                 className="mb-2.5 w-full rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] font-semibold text-foreground outline-none focus:border-primary/50"
-                placeholder="Title..." />
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Color</label>
+                placeholder="Title..."
+              />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                Color
+              </label>
               <div className="mb-2.5 flex items-center gap-1.5">
-                <button onClick={() => setEditColor(null)}
-                  className={clsx('rounded-full border-2 p-1', !editColor ? 'border-foreground/60' : 'border-transparent')}
-                  title="No color">
+                <button
+                  onClick={() => setEditColor(null)}
+                  className={clsx(
+                    'rounded-full border-2 p-1',
+                    !editColor ? 'border-foreground/60' : 'border-transparent'
+                  )}
+                  title="No color"
+                >
                   <X size={10} className="text-muted-foreground/60" />
                 </button>
                 {NOTE_COLORS.map((c) => (
-                  <button key={c.key} onClick={() => setEditColor(c.key)}
-                    className={clsx('h-5 w-5 rounded-full border-2 transition-transform', c.dot,
-                      editColor === c.key ? 'border-foreground/70 scale-110' : 'border-transparent hover:scale-110'
-                    )} title={c.key} />
+                  <button
+                    key={c.key}
+                    onClick={() => setEditColor(c.key)}
+                    className={clsx(
+                      'h-5 w-5 rounded-full border-2 transition-transform',
+                      c.dot,
+                      editColor === c.key
+                        ? 'scale-110 border-foreground/70'
+                        : 'border-transparent hover:scale-110'
+                    )}
+                    title={c.key}
+                  />
                 ))}
               </div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Content</label>
-              <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)}
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                Content
+              </label>
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') goBack();
                   if (e.key === 'Enter' && e.ctrlKey) saveEdit();
                 }}
                 className="w-full flex-1 resize-none rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:border-primary/50"
-                rows={10} placeholder="Content..." />
+                rows={10}
+                placeholder="Content..."
+              />
             </>
           )}
         </div>
@@ -597,14 +757,26 @@ export function ScratchpadWindow() {
             {isPaste ? 'Ctrl+Enter to paste · Esc to cancel' : 'Ctrl+Enter to save · Esc to cancel'}
           </span>
           {isPaste ? (
-            <button onClick={doPaste}
-              className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80">
+            <button
+              onClick={doPaste}
+              className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80"
+            >
               <ClipboardPaste size={14} /> Paste
             </button>
           ) : (
             <div className="flex gap-2">
-              <button onClick={goBack} className="rounded-md px-3.5 py-1.5 text-xs text-muted-foreground hover:bg-accent">Cancel</button>
-              <button onClick={saveEdit} className="rounded-md bg-primary/20 px-3.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/30">Save</button>
+              <button
+                onClick={goBack}
+                className="rounded-md px-3.5 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                className="rounded-md bg-primary/20 px-3.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/30"
+              >
+                Save
+              </button>
             </div>
           )}
         </div>
@@ -614,7 +786,8 @@ export function ScratchpadWindow() {
 
   // ── List view (side panel) — glassmorphism design ──
   return (
-    <div ref={panelRef}
+    <div
+      ref={panelRef}
       className="relative flex h-full w-full flex-col overflow-hidden text-foreground"
       style={{
         borderRadius: '14px 0 0 14px',
@@ -624,44 +797,89 @@ export function ScratchpadWindow() {
           linear-gradient(180deg, hsl(var(--background)), hsl(var(--background) / 0.97))
         `,
         borderLeft: '1px solid hsl(var(--border) / 0.08)',
-        boxShadow: 'inset 0 1px 0 hsl(var(--border) / 0.06), inset -1px 0 0 hsl(var(--border) / 0.04)',
+        boxShadow:
+          'inset 0 1px 0 hsl(var(--border) / 0.06), inset -1px 0 0 hsl(var(--border) / 0.04)',
       }}
-      onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handlePanelClick}
-      onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={handlePanelClick}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Header */}
       <div className="border-b border-white/[0.06] px-3 py-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <StickyNote size={14} className="text-amber-400 drop-shadow-sm" />
             <span className="text-xs font-bold tracking-wide text-foreground/90">Scratchpad</span>
-            <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">{scratchpads.length}</span>
+            <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
+              {scratchpads.length}
+            </span>
           </div>
           <div className="relative flex items-center gap-1">
-            <button onClick={(e) => { e.stopPropagation(); setShowSortMenu((v) => !v); }}
-              className={clsx('rounded-md p-1.5 transition-all', sortMode !== 'manual' ? 'bg-primary/20 text-primary' : 'text-muted-foreground/50 hover:bg-white/[0.08] hover:text-foreground/80')}
-              title={`Sort: ${sortMode}`}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSortMenu((v) => !v);
+              }}
+              className={clsx(
+                'rounded-md p-1.5 transition-all',
+                sortMode !== 'manual'
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-muted-foreground/50 hover:bg-white/[0.08] hover:text-foreground/80'
+              )}
+              title={`Sort: ${sortMode}`}
+            >
               <ArrowUpDown size={13} />
             </button>
             {showSortMenu && (
-              <div onClick={(e) => e.stopPropagation()}
-                className="absolute right-24 top-7 z-30 w-28 overflow-hidden rounded-md border border-border/30 bg-background/95 py-1 text-xs shadow-xl backdrop-blur-md">
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-24 top-7 z-30 w-28 overflow-hidden rounded-md border border-border/30 bg-background/95 py-1 text-xs shadow-xl backdrop-blur-md"
+              >
                 {(['manual', 'alpha', 'recent'] as SortMode[]).map((m) => (
-                  <button key={m}
-                    onClick={() => { setSortMode(m); setShowSortMenu(false); }}
-                    className={clsx('block w-full px-3 py-1.5 text-left capitalize transition-colors', sortMode === m ? 'bg-primary/15 text-primary' : 'text-foreground/80 hover:bg-white/[0.08]')}>
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setSortMode(m);
+                      setShowSortMenu(false);
+                    }}
+                    className={clsx(
+                      'block w-full px-3 py-1.5 text-left capitalize transition-colors',
+                      sortMode === m
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-foreground/80 hover:bg-white/[0.08]'
+                    )}
+                  >
                     {m === 'alpha' ? 'A–Z' : m === 'recent' ? 'Recent' : 'Manual'}
                   </button>
                 ))}
               </div>
             )}
-            <button onClick={(e) => { e.stopPropagation(); setPinned(!pinned); }}
-              className={clsx('rounded-md p-1.5 transition-all', pinned ? 'bg-amber-400/15 text-amber-400' : 'text-muted-foreground/50 hover:bg-white/[0.08] hover:text-foreground/80')}
-              title={pinned ? 'Unpin' : 'Pin open'}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setPinned(!pinned);
+              }}
+              className={clsx(
+                'rounded-md p-1.5 transition-all',
+                pinned
+                  ? 'bg-amber-400/15 text-amber-400'
+                  : 'text-muted-foreground/50 hover:bg-white/[0.08] hover:text-foreground/80'
+              )}
+              title={pinned ? 'Unpin' : 'Pin open'}
+            >
               {pinned ? <Pin size={13} /> : <PinOff size={13} />}
             </button>
-            <button onClick={(e) => { e.stopPropagation(); handleAdd(); }}
-              className="rounded-md p-1.5 text-emerald-400/80 transition-all hover:bg-emerald-400/15 hover:text-emerald-400" title="New note">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAdd();
+              }}
+              className="rounded-md p-1.5 text-emerald-400/80 transition-all hover:bg-emerald-400/15 hover:text-emerald-400"
+              title="New note"
+            >
               <Plus size={14} />
             </button>
           </div>
@@ -672,17 +890,36 @@ export function ScratchpadWindow() {
       {scratchpads.some((s) => s.color) && (
         <div className="flex items-center gap-1 px-3 py-1">
           <button
-            onClick={(e) => { e.stopPropagation(); setColorFilter(null); }}
-            className={clsx('flex h-4 w-4 items-center justify-center rounded-full border', !colorFilter ? 'border-foreground/50 bg-white/10' : 'border-transparent text-muted-foreground/50 hover:bg-white/[0.08]')}
-            title="All colors">
+            onClick={(e) => {
+              e.stopPropagation();
+              setColorFilter(null);
+            }}
+            className={clsx(
+              'flex h-4 w-4 items-center justify-center rounded-full border',
+              !colorFilter
+                ? 'border-foreground/50 bg-white/10'
+                : 'border-transparent text-muted-foreground/50 hover:bg-white/[0.08]'
+            )}
+            title="All colors"
+          >
             <span className="text-[8px]">All</span>
           </button>
           {NOTE_COLORS.filter((c) => scratchpads.some((s) => s.color === c.key)).map((c) => (
-            <button key={c.key}
-              onClick={(e) => { e.stopPropagation(); setColorFilter(colorFilter === c.key ? null : c.key); }}
-              className={clsx('h-4 w-4 rounded-full border-2 transition-all', c.dot,
-                colorFilter === c.key ? 'border-foreground/70 scale-110' : 'border-transparent hover:scale-110')}
-              title={c.key} />
+            <button
+              key={c.key}
+              onClick={(e) => {
+                e.stopPropagation();
+                setColorFilter(colorFilter === c.key ? null : c.key);
+              }}
+              className={clsx(
+                'h-4 w-4 rounded-full border-2 transition-all',
+                c.dot,
+                colorFilter === c.key
+                  ? 'scale-110 border-foreground/70'
+                  : 'border-transparent hover:scale-110'
+              )}
+              title={c.key}
+            />
           ))}
         </div>
       )}
@@ -691,11 +928,20 @@ export function ScratchpadWindow() {
       <div className="px-3 py-1.5">
         <div className="flex items-center gap-1.5 rounded-lg bg-white/[0.05] px-2.5 py-1.5 ring-1 ring-white/[0.06] transition-all focus-within:ring-primary/30">
           <Search size={12} className="text-muted-foreground/50" />
-          <input ref={searchRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+          <input
+            ref={searchRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search..."
-            className="flex-1 border-none bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/40" />
+            className="flex-1 border-none bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/40"
+          />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-muted-foreground/50 hover:text-foreground"><X size={11} /></button>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-muted-foreground/50 hover:text-foreground"
+            >
+              <X size={11} />
+            </button>
           )}
         </div>
       </div>
@@ -704,8 +950,12 @@ export function ScratchpadWindow() {
       <div className="no-scrollbar flex-1 overflow-y-auto px-2.5 pb-2">
         {filtered.length === 0 && !isDragOver && (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <div className="rounded-2xl bg-white/[0.05] p-4"><StickyNote size={24} className="text-muted-foreground/40" /></div>
-            <p className="text-xs text-muted-foreground/60">{searchQuery ? 'No matching notes' : 'Drag clips here or click +'}</p>
+            <div className="rounded-2xl bg-white/[0.05] p-4">
+              <StickyNote size={24} className="text-muted-foreground/40" />
+            </div>
+            <p className="text-xs text-muted-foreground/60">
+              {searchQuery ? 'No matching notes' : 'Drag clips here or click +'}
+            </p>
           </div>
         )}
         {isDragOver && filtered.length === 0 && (
@@ -733,7 +983,10 @@ export function ScratchpadWindow() {
               )}
               <div
                 draggable
-                onClick={(e) => { e.stopPropagation(); setSelectedId(item.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedId(item.id);
+                }}
                 onDragStart={(e) => {
                   const text = item.title ? `${item.title}\n${item.content}` : item.content;
                   e.dataTransfer.setData('text/plain', text);
@@ -743,12 +996,17 @@ export function ScratchpadWindow() {
                 onDragOver={(e) => handleItemDragOver(e, index)}
                 onDrop={() => handleItemDrop(index)}
                 onDragEnd={handleItemDragEnd}
-                onDoubleClick={(e) => { e.stopPropagation(); startPaste(item); }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startPaste(item);
+                }}
                 className={clsx(
                   'group relative mb-2 flex overflow-hidden rounded-xl border transition-all duration-200 ease-out',
                   item.is_pinned ? 'border-amber-400/30' : 'border-white/[0.08]',
-                  isSelected ? 'ring-2 ring-primary/50' : 'hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10',
-                  dragOverIndex === index && dragItemRef.current && 'ring-1 ring-primary/30',
+                  isSelected
+                    ? 'ring-2 ring-primary/50'
+                    : 'hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10',
+                  dragOverIndex === index && dragItemRef.current && 'ring-1 ring-primary/30'
                 )}
                 style={{
                   ...colorStyle,
@@ -757,7 +1015,10 @@ export function ScratchpadWindow() {
               >
                 {/* Left paste strip */}
                 <button
-                  onClick={(e) => { e.stopPropagation(); startPaste(item); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startPaste(item);
+                  }}
                   className="flex w-7 flex-shrink-0 items-center justify-center border-r border-white/[0.06] text-muted-foreground/60 transition-colors hover:bg-primary/15 hover:text-primary"
                   title="Paste"
                 >
@@ -770,24 +1031,69 @@ export function ScratchpadWindow() {
                     <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                       {item.is_pinned && <Pin size={10} className="flex-shrink-0 text-amber-400" />}
                       {item.title ? (
-                        <span className="truncate text-xs font-semibold text-foreground/95">{item.title}</span>
+                        <span className="truncate text-xs font-semibold text-foreground/95">
+                          {item.title}
+                        </span>
                       ) : (
-                        <span className="text-[11px] italic text-muted-foreground/50">Untitled</span>
+                        <span className="text-[11px] italic text-muted-foreground/50">
+                          Untitled
+                        </span>
                       )}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm ring-1 ring-border/30 backdrop-blur-sm transition-all group-hover:opacity-100">
-                      <button onClick={(e) => { e.stopPropagation(); handleToggleNotePin(item.id); }}
-                        className={clsx('rounded p-1.5 transition-colors', item.is_pinned ? 'text-amber-400' : 'text-muted-foreground/70 hover:bg-amber-400/15 hover:text-amber-400')}
-                        title={item.is_pinned ? 'Unpin' : 'Pin'}><Pin size={12} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); startEdit(item); }}
-                        className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-amber-400/15 hover:text-amber-400" title="Edit"><Pencil size={12} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); handleCopyText(item.title ? `${item.title}\n${item.content}` : item.content, item.id); }}
-                        className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-white/[0.08] hover:text-foreground/90" title="Copy">
-                        {copiedId === item.id ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleNotePin(item.id);
+                        }}
+                        className={clsx(
+                          'rounded p-1.5 transition-colors',
+                          item.is_pinned
+                            ? 'text-amber-400'
+                            : 'text-muted-foreground/70 hover:bg-amber-400/15 hover:text-amber-400'
+                        )}
+                        title={item.is_pinned ? 'Unpin' : 'Pin'}
+                      >
+                        <Pin size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEdit(item);
+                        }}
+                        className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-amber-400/15 hover:text-amber-400"
+                        title="Edit"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopyText(
+                            item.title ? `${item.title}\n${item.content}` : item.content,
+                            item.id
+                          );
+                        }}
+                        className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-white/[0.08] hover:text-foreground/90"
+                        title="Copy"
+                      >
+                        {copiedId === item.id ? (
+                          <Check size={12} className="text-emerald-400" />
+                        ) : (
+                          <Copy size={12} />
+                        )}
                       </button>
                       <div className="mx-0.5 h-4 w-px bg-border/40" />
-                      <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                        className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-red-400/15 hover:text-red-400" title="Delete"><Trash2 size={12} /></button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(item.id);
+                        }}
+                        className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-red-400/15 hover:text-red-400"
+                        title="Delete"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </div>
                   {item.content ? (
@@ -813,7 +1119,12 @@ export function ScratchpadWindow() {
           </div>
         )}
       </div>
-      <Toaster richColors position="bottom-center" theme="dark" toastOptions={{ style: { fontSize: '12px' } }} />
+      <Toaster
+        richColors
+        position="bottom-center"
+        theme="dark"
+        toastOptions={{ style: { fontSize: '12px' } }}
+      />
     </div>
   );
 }

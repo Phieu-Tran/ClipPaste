@@ -23,6 +23,7 @@ import { useSearch } from './hooks/useSearch';
 import { useMultiSelect } from './hooks/useMultiSelect';
 import { useScratchpad } from './hooks/useScratchpad';
 import { Toaster, toast } from 'sonner';
+import { Clipboard, FolderInput, Pin, PinOff, Trash2, X } from 'lucide-react';
 import { LAYOUT } from './constants';
 
 function App() {
@@ -257,8 +258,11 @@ function App() {
     },
     onDelete: () => {
       if (editingClip) return;
-      if (isMultiSelect) { handleBulkDelete(); }
-      else { handleDelete(selectedClipId); }
+      if (isMultiSelect) {
+        handleBulkDelete();
+      } else {
+        handleDelete(selectedClipId);
+      }
     },
     onNavigateUp: () => {
       if (editingClip || isLoading) return;
@@ -278,8 +282,11 @@ function App() {
     },
     onPaste: () => {
       if (editingClip) return;
-      if (isMultiSelect) { handleBulkPaste(); }
-      else if (selectedClipId) { handlePaste(selectedClipId); }
+      if (isMultiSelect) {
+        handleBulkPaste();
+      } else if (selectedClipId) {
+        handlePaste(selectedClipId);
+      }
     },
     onEdit: () => {
       if (selectedClipId && !editingClip) {
@@ -305,18 +312,30 @@ function App() {
 
   // --- Folder Modal (extracted hook) ---
   const {
-    showAddFolderModal, newFolderName, folderModalMode,
-    editingFolderId, editingFolderColor, editingFolderIcon,
-    openCreateModal, openRenameModal, closeModal: closeFolderModal,
+    showAddFolderModal,
+    newFolderName,
+    folderModalMode,
+    editingFolderId,
+    editingFolderColor,
+    editingFolderIcon,
+    openCreateModal,
+    openRenameModal,
+    closeModal: closeFolderModal,
   } = useFolderModal();
 
   const folderMap = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const f of folders) { map[f.id] = f.name; }
+    for (const f of folders) {
+      map[f.id] = f.name;
+    }
     return map;
   }, [folders]);
 
-  const handleCreateOrRenameFolder = async (name: string, color: string | null, icon: string | null) => {
+  const handleCreateOrRenameFolder = async (
+    name: string,
+    color: string | null,
+    icon: string | null
+  ) => {
     if (folderModalMode === 'create') {
       await handleCreateFolder(name, color, icon);
       toast.success(`Folder "${name}" created`);
@@ -338,15 +357,28 @@ function App() {
   const { toggle: toggleScratchpad } = useScratchpad();
 
   // --- Batch Actions (extracted hook) ---
-  const { handleBulkDelete, handleBulkMove, handleBulkPaste } = useBatchActions({
-    selectedClipIds, setSelectedClipIds, setSelectedClipId, setClips,
-    selectedFolder, loadFolders, refreshTotalCount,
-    isPreviewing, filteredPreviewClips: filteredPreviewClips, filteredClips,
+  const { handleBulkDelete, handleBulkMove, handleBulkPaste, handleBulkSetPin } = useBatchActions({
+    selectedClipIds,
+    setSelectedClipIds,
+    setSelectedClipId,
+    setClips,
+    selectedFolder,
+    loadFolders,
+    refreshTotalCount,
+    isPreviewing,
+    filteredPreviewClips: filteredPreviewClips,
+    filteredClips,
   });
 
   // --- Render ---
   return (
-    <div className="relative h-screen w-full overflow-hidden" onDragOver={(e) => { if (draggingClipId) e.preventDefault(); }} onDragEnd={handleNativeDragEnd}>
+    <div
+      className="relative h-screen w-full overflow-hidden"
+      onDragOver={(e) => {
+        if (draggingClipId) e.preventDefault();
+      }}
+      onDragEnd={handleNativeDragEnd}
+    >
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -357,66 +389,85 @@ function App() {
 
       <div className="relative h-full w-full" style={{ padding: `${LAYOUT.WINDOW_PADDING}px` }}>
         <div className="flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]">
-          {contextMenu && (() => {
-            const ctxClip = contextMenu.type === 'card' ? clips.find((c) => c.id === contextMenu.itemId) : null;
-            const ctxFolder = contextMenu.type === 'folder' ? folders.find((f) => f.id === contextMenu.itemId) : null;
-            // Guard: if clip/folder was deleted between context menu open and render, close menu
-            if (contextMenu.type === 'card' && !ctxClip) return null;
-            if (contextMenu.type === 'folder' && !ctxFolder) return null;
-            return (
-              <ContextMenu
-                x={contextMenu.x}
-                y={contextMenu.y}
-                onClose={handleCloseContextMenu}
-                options={
-                  contextMenu.type === 'card' && ctxClip
-                    ? [
-                        ...(selectedFolder ? [{
-                          label: ctxClip.is_pinned ? 'Unpin' : 'Pin',
-                          onClick: () => handleTogglePin(contextMenu.itemId),
-                        }] : []),
-                        ...(ctxClip.clip_type !== 'image'
-                          ? [
-                              { label: 'Paste as plain text', onClick: () => handlePastePlainText(contextMenu.itemId) },
-                              { label: 'Edit before paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) },
-                            ]
-                          : []),
-                        {
-                          label: ctxClip.note ? 'Edit note' : 'Add note',
-                          onClick: () => handleEditNote(contextMenu.itemId),
-                        },
-                        {
-                          label: 'Delete',
-                          danger: true,
-                          onClick: () => handleDelete(contextMenu.itemId),
-                        },
-                      ]
-                    : [
-                        {
-                          label: 'Edit folder',
-                          onClick: () => {
-                            openRenameModal(
-                              contextMenu.itemId,
-                              ctxFolder ? ctxFolder.name : '',
-                              ctxFolder?.color ?? null,
-                              ctxFolder?.icon ?? null,
-                            );
+          {contextMenu &&
+            (() => {
+              const ctxClip =
+                contextMenu.type === 'card' ? clips.find((c) => c.id === contextMenu.itemId) : null;
+              const ctxFolder =
+                contextMenu.type === 'folder'
+                  ? folders.find((f) => f.id === contextMenu.itemId)
+                  : null;
+              // Guard: if clip/folder was deleted between context menu open and render, close menu
+              if (contextMenu.type === 'card' && !ctxClip) return null;
+              if (contextMenu.type === 'folder' && !ctxFolder) return null;
+              return (
+                <ContextMenu
+                  x={contextMenu.x}
+                  y={contextMenu.y}
+                  onClose={handleCloseContextMenu}
+                  options={
+                    contextMenu.type === 'card' && ctxClip
+                      ? [
+                          ...(selectedFolder
+                            ? [
+                                {
+                                  label: ctxClip.is_pinned ? 'Unpin' : 'Pin',
+                                  onClick: () => handleTogglePin(contextMenu.itemId),
+                                },
+                              ]
+                            : []),
+                          ...(ctxClip.clip_type !== 'image'
+                            ? [
+                                {
+                                  label: 'Paste as plain text',
+                                  onClick: () => handlePastePlainText(contextMenu.itemId),
+                                },
+                                {
+                                  label: 'Edit before paste',
+                                  onClick: () => handleEditBeforePaste(contextMenu.itemId),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: ctxClip.note ? 'Edit note' : 'Add note',
+                            onClick: () => handleEditNote(contextMenu.itemId),
                           },
-                        },
-                        {
-                          label: 'Delete',
-                          danger: true,
-                          onClick: () => {
-                            if (window.confirm(`Delete folder "${ctxFolder?.name}"? Clips inside will be moved to All.`)) {
-                              handleDeleteFolder(contextMenu.itemId);
-                            }
+                          {
+                            label: 'Delete',
+                            danger: true,
+                            onClick: () => handleDelete(contextMenu.itemId),
                           },
-                        },
-                      ]
-                }
-              />
-            );
-          })()}
+                        ]
+                      : [
+                          {
+                            label: 'Edit folder',
+                            onClick: () => {
+                              openRenameModal(
+                                contextMenu.itemId,
+                                ctxFolder ? ctxFolder.name : '',
+                                ctxFolder?.color ?? null,
+                                ctxFolder?.icon ?? null
+                              );
+                            },
+                          },
+                          {
+                            label: 'Delete',
+                            danger: true,
+                            onClick: () => {
+                              if (
+                                window.confirm(
+                                  `Delete folder "${ctxFolder?.name}"? Clips inside will be moved to All.`
+                                )
+                              ) {
+                                handleDeleteFolder(contextMenu.itemId);
+                              }
+                            },
+                          },
+                        ]
+                  }
+                />
+              );
+            })()}
 
           <EditClipModal
             clip={editingClip}
@@ -497,45 +548,75 @@ function App() {
 
           {/* Batch action bar — floating overlay */}
           {isMultiSelect && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 pointer-events-none absolute bottom-6 left-0 right-0 z-40 flex justify-center duration-200">
-              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/50 bg-background/95 px-4 py-2 shadow-xl backdrop-blur-md">
-                <span className="text-xs font-semibold text-primary">{selectedClipIds.size} selected</span>
+            <div className="animate-in fade-in slide-in-from-bottom-4 pointer-events-none absolute bottom-5 left-0 right-0 z-40 flex justify-center duration-200">
+              <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border/60 bg-background/95 px-3 py-2 shadow-xl backdrop-blur-md">
+                <span className="min-w-[82px] text-xs font-semibold text-primary">
+                  {selectedClipIds.size} selected
+                </span>
                 <div className="h-3.5 w-px bg-border/50" />
                 <button
                   onClick={handleBulkPaste}
-                  className="rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+                  className="flex items-center gap-1.5 rounded-md bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
                 >
+                  <Clipboard size={13} />
                   Paste
                 </button>
                 <button
-                  onClick={handleBulkDelete}
-                  className="rounded-full bg-destructive/15 px-3 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
+                  onClick={() => handleBulkSetPin(true)}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
+                  <Pin size={13} />
+                  Pin
+                </button>
+                <button
+                  onClick={() => handleBulkSetPin(false)}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <PinOff size={13} />
+                  Unpin
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="flex items-center gap-1.5 rounded-md bg-destructive/15 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
+                >
+                  <Trash2 size={13} />
                   Delete
                 </button>
                 {folders.length > 0 && (
-                  <select
-                    defaultValue=""
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '__none__') handleBulkMove(null);
-                      else if (val) handleBulkMove(val);
-                      e.target.value = '';
-                    }}
-                    className="rounded-full border border-border/50 bg-card px-2.5 py-1 text-xs text-foreground"
-                  >
-                    <option value="" disabled>Move to...</option>
-                    <option value="__none__">All (remove from folder)</option>
-                    {folders.map(f => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
+                  <label className="flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-2.5 py-1.5 text-xs text-foreground">
+                    <FolderInput size={13} className="text-muted-foreground" />
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__none__') handleBulkMove(null);
+                        else if (val) handleBulkMove(val);
+                        e.target.value = '';
+                      }}
+                      className="bg-transparent text-xs text-foreground outline-none"
+                      style={{ colorScheme: effectiveTheme === 'dark' ? 'dark' : 'light' }}
+                    >
+                      <option value="" disabled>
+                        Move
+                      </option>
+                      <option value="__none__">All</option>
+                      {folders.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 )}
                 <div className="h-3.5 w-px bg-border/50" />
                 <button
-                  onClick={() => { setSelectedClipIds(new Set()); setSelectedClipId(null); }}
-                  className="rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  onClick={() => {
+                    setSelectedClipIds(new Set());
+                    setSelectedClipId(null);
+                  }}
+                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
+                  <X size={13} />
                   Cancel
                 </button>
               </div>

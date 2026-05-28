@@ -32,11 +32,7 @@ export function SettingsWindow() {
   return (
     <div className="h-screen bg-background text-foreground">
       <SettingsPanel settings={settings} onClose={handleClose} />
-      <Toaster
-        richColors
-        position="bottom-center"
-        theme={effectiveTheme}
-      />
+      <Toaster richColors position="bottom-center" theme={effectiveTheme} />
     </div>
   );
 }

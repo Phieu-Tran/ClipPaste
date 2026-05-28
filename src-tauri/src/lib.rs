@@ -1,4 +1,7 @@
 #![allow(non_snake_case)]
+use std::fs;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::Arc;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -7,16 +10,14 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-use tauri_plugin_aptabase::EventTracker;
-use std::fs;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 #[cfg(target_os = "macos")]
 use window_vibrancy_macos::{apply_vibrancy, NSVisualEffectMaterial};
 
 #[cfg(target_os = "windows")]
-use window_vibrancy::{switch_effect, apply_rounded_corners, clear_all_effects, Effect, CornerPreference};
+use window_vibrancy::{
+    apply_rounded_corners, clear_all_effects, switch_effect, CornerPreference, Effect,
+};
 
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_TIME: AtomicI64 = AtomicI64::new(0);
@@ -31,20 +32,36 @@ impl Drop for AnimatingGuard {
     }
 }
 
-mod clipboard;
 pub mod cli;
-mod database;
-mod models;
+mod clipboard;
 mod commands;
 mod constants;
-pub mod utils;
+mod database;
+mod models;
 pub mod sync;
+pub mod utils;
 
 #[cfg(test)]
 mod tests;
 
-use models::get_runtime;
 use database::Database;
+use models::get_runtime;
+
+fn configured_log_level() -> log::LevelFilter {
+    let value = std::env::var("CLIPPASTE_LOG")
+        .or_else(|_| std::env::var("RUST_LOG"))
+        .unwrap_or_else(|_| "info".to_string())
+        .to_ascii_lowercase();
+
+    match value.as_str() {
+        "trace" => log::LevelFilter::Trace,
+        "debug" => log::LevelFilter::Debug,
+        "warn" | "warning" => log::LevelFilter::Warn,
+        "error" => log::LevelFilter::Error,
+        "off" => log::LevelFilter::Off,
+        _ => log::LevelFilter::Info,
+    }
+}
 
 pub fn run_app() {
     #[allow(unused_mut)]
@@ -61,7 +78,9 @@ pub fn run_app() {
     // Migrate existing DB from old ClipPaste location if present.
     let old_data_dir = match dirs::data_dir() {
         Some(path) => path.join("ClipPaste"),
-        None => std::env::current_dir().unwrap_or(std::path::PathBuf::from(".")).join("ClipPaste"),
+        None => std::env::current_dir()
+            .unwrap_or(std::path::PathBuf::from("."))
+            .join("ClipPaste"),
     };
     let old_db_path = old_data_dir.join("paste_paw.db");
 
@@ -80,7 +99,11 @@ pub fn run_app() {
                         log::info!("Copied old DB {:?} to {:?}", old_db_path, db_path);
                     }
                     Err(copy_err) => {
-                        log::error!("Failed to migrate DB: rename error: {:?}, copy error: {:?}", e, copy_err);
+                        log::error!(
+                            "Failed to migrate DB: rename error: {:?}, copy error: {:?}",
+                            e,
+                            copy_err
+                        );
                     }
                 }
             }
@@ -99,9 +122,7 @@ pub fn run_app() {
         });
     }
 
-    let db = rt.block_on(async {
-        Database::new(&db_path_str, &data_dir).await
-    });
+    let db = rt.block_on(async { Database::new(&db_path_str, &data_dir).await });
 
     rt.block_on(async {
         if let Err(e) = db.migrate().await {
@@ -112,6 +133,7 @@ pub fn run_app() {
 
     let db_arc = Arc::new(db);
 
+    let log_level = configured_log_level();
     let mut log_builder = tauri_plugin_log::Builder::default()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -122,7 +144,7 @@ pub fn run_app() {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug);
+        .level(log_level);
 
     #[cfg(debug_assertions)]
     {
@@ -148,7 +170,6 @@ pub fn run_app() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_aptabase::Builder::new("A-US-2920723583").build())
         .manage(db_arc.clone())
         .on_window_event(|window, event| {
             match event {
@@ -283,7 +304,6 @@ pub fn run_app() {
         })
         .setup(move |app| {
             log::info!("ClipPaste starting...");
-            let _ = app.track_event("startup", None);
             log::info!("Database path: {}", db_path_str);
             if let Ok(log_dir) = app.path().app_log_dir() {
                 log::info!("Log directory: {:?}", log_dir);
@@ -452,6 +472,7 @@ pub fn run_app() {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     db_for_cleanup.enforce_max_items().await;
                     db_for_cleanup.enforce_auto_delete().await;
+                    db_for_cleanup.enforce_image_auto_delete().await;
                     db_for_cleanup.cleanup_orphan_images().await;
                 });
                 // Rescan only when detection rules bumped — saves a full-table scan every launch.
@@ -497,6 +518,7 @@ pub fn run_app() {
             commands::ping,
             commands::get_clips,
             commands::get_clip,
+            commands::get_clip_image_data_url,
             commands::paste_clip,
             commands::copy_clip,
             commands::delete_clip,
@@ -508,6 +530,8 @@ pub fn run_app() {
             commands::get_folders,
             commands::get_settings,
             commands::save_settings,
+            commands::preview_old_image_cleanup,
+            commands::cleanup_old_image_clips,
             commands::hide_window,
             commands::get_clipboard_history_size,
             commands::clear_clipboard_history,
@@ -533,6 +557,7 @@ pub fn run_app() {
             commands::update_note,
             commands::bulk_delete_clips,
             commands::bulk_move_clips,
+            commands::bulk_set_pin,
             commands::export_data,
             commands::import_data,
             commands::get_dashboard_stats,
@@ -578,7 +603,10 @@ pub fn position_window_at_bottom(window: &tauri::WebviewWindow) {
 
 pub fn animate_window_show(window: &tauri::WebviewWindow) {
     // Atomically check if false and set to true. If already true, return.
-    if IS_ANIMATING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if IS_ANIMATING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return;
     }
 
@@ -595,16 +623,23 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
             let window_height_px = (constants::WINDOW_HEIGHT * scale_factor) as u32;
             let window_margin_px = (constants::WINDOW_MARGIN * scale_factor) as i32;
 
-            log::debug!("Show: work_area pos=({},{}) size={}x{}, scale={}",
-                work_area.position.x, work_area.position.y,
-                work_area.size.width, work_area.size.height, scale_factor);
+            log::debug!(
+                "Show: work_area pos=({},{}) size={}x{}, scale={}",
+                work_area.position.x,
+                work_area.position.y,
+                work_area.size.width,
+                work_area.size.height,
+                scale_factor
+            );
 
             let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                 width: work_area.size.width - (window_margin_px as u32 * 2),
                 height: window_height_px,
             }));
 
-            let target_y = work_area.position.y + (work_area.size.height as i32) - (window_height_px as i32) - window_margin_px;
+            let target_y = work_area.position.y + (work_area.size.height as i32)
+                - (window_height_px as i32)
+                - window_margin_px;
 
             // Check if there's a monitor below. If so, skip slide-up animation
             // to prevent the window from briefly appearing on the lower monitor.
@@ -620,7 +655,9 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
             // Move to current virtual desktop before showing, so we don't jump desktops.
             #[cfg(target_os = "windows")]
             if let Ok(handle) = window.hwnd() {
-                move_window_to_current_virtual_desktop(windows::Win32::Foundation::HWND(handle.0 as _));
+                move_window_to_current_virtual_desktop(windows::Win32::Foundation::HWND(
+                    handle.0 as _,
+                ));
             }
 
             if skip_animation {
@@ -649,10 +686,11 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
 
                 for i in 1..=steps {
                     let current_y = start_y as f64 + dy * i as f64;
-                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                        x: work_area.position.x + window_margin_px,
-                        y: current_y as i32,
-                    }));
+                    let _ =
+                        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                            x: work_area.position.x + window_margin_px,
+                            y: current_y as i32,
+                        }));
                     std::thread::sleep(duration);
                 }
 
@@ -667,9 +705,15 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
     });
 }
 
-pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dyn FnOnce() + Send>>) {
+pub fn animate_window_hide(
+    window: &tauri::WebviewWindow,
+    on_done: Option<Box<dyn FnOnce() + Send>>,
+) {
     // Atomically check if false and set to true. If already true, return.
-    if IS_ANIMATING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if IS_ANIMATING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return;
     }
 
@@ -683,7 +727,9 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
             let window_height_px = (constants::WINDOW_HEIGHT * scale_factor) as u32;
             let window_margin_px = (constants::WINDOW_MARGIN * scale_factor) as i32;
 
-            let start_y = work_area.position.y + (work_area.size.height as i32) - (window_height_px as i32) - window_margin_px;
+            let start_y = work_area.position.y + (work_area.size.height as i32)
+                - (window_height_px as i32)
+                - window_margin_px;
             let target_y = work_area.position.y + (work_area.size.height as i32); // Off screen
 
             // Check if there's a monitor below — if so, skip slide animation
@@ -700,13 +746,21 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
                 // Fix Z-Order: Dynamic Switch & Fade Out
                 #[cfg(target_os = "windows")]
                 {
-                    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, FindWindowW, GetWindowRect, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE};
-                    use windows::Win32::Foundation::{HWND, RECT};
                     use windows::core::PCWSTR;
+                    use windows::Win32::Foundation::{HWND, RECT};
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        FindWindowW, GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE,
+                        SWP_NOSIZE,
+                    };
 
                     // 1. Find the Taskbar
-                    let class_name: Vec<u16> = "Shell_TrayWnd".encode_utf16().chain(std::iter::once(0)).collect();
-                    let taskbar_hwnd = unsafe { FindWindowW(PCWSTR(class_name.as_ptr()), PCWSTR::null()) }.unwrap_or(HWND(std::ptr::null_mut()));
+                    let class_name: Vec<u16> = "Shell_TrayWnd"
+                        .encode_utf16()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let taskbar_hwnd =
+                        unsafe { FindWindowW(PCWSTR(class_name.as_ptr()), PCWSTR::null()) }
+                            .unwrap_or(HWND(std::ptr::null_mut()));
 
                     // 2. Get Taskbar Position (Top Y)
                     let mut taskbar_top_y = 0;
@@ -719,11 +773,19 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 
                     // 3. Initially Ensure Topmost
                     if let Ok(handle) = window.hwnd() {
-                         let hwnd = HWND(handle.0 as _);
-                         let hwnd_topmost = HWND(-1 as _); // HWND_TOPMOST
-                         unsafe {
-                            let _ = SetWindowPos(hwnd, Some(hwnd_topmost), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                         }
+                        let hwnd = HWND(handle.0 as _);
+                        let hwnd_topmost = HWND(-1 as _); // HWND_TOPMOST
+                        unsafe {
+                            let _ = SetWindowPos(
+                                hwnd,
+                                Some(hwnd_topmost),
+                                0,
+                                0,
+                                0,
+                                0,
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                            );
+                        }
                     }
 
                     let steps = 15;
@@ -734,21 +796,34 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 
                     for i in 1..=steps {
                         let current_y = start_y as f64 + dy * i as f64;
-                        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                            x: work_area.position.x + window_margin_px,
-                            y: current_y as i32,
-                        }));
+                        let _ = window.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition {
+                                x: work_area.position.x + window_margin_px,
+                                y: current_y as i32,
+                            },
+                        ));
 
                         // Dynamic Z-Order Switch: When we hit the taskbar, drop BEHIND it
-                        if !z_order_switched && taskbar_top_y > 0 && current_y as i32 >= taskbar_top_y {
-                             if let Ok(handle) = window.hwnd() {
-                                 let hwnd = HWND(handle.0 as _);
-                                 if !taskbar_hwnd.0.is_null() {
-                                     unsafe {
-                                        let _ = SetWindowPos(hwnd, Some(taskbar_hwnd), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                                     }
-                                     z_order_switched = true;
-                                 }
+                        if !z_order_switched
+                            && taskbar_top_y > 0
+                            && current_y as i32 >= taskbar_top_y
+                        {
+                            if let Ok(handle) = window.hwnd() {
+                                let hwnd = HWND(handle.0 as _);
+                                if !taskbar_hwnd.0.is_null() {
+                                    unsafe {
+                                        let _ = SetWindowPos(
+                                            hwnd,
+                                            Some(taskbar_hwnd),
+                                            0,
+                                            0,
+                                            0,
+                                            0,
+                                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                                        );
+                                    }
+                                    z_order_switched = true;
+                                }
                             }
                         }
                         std::thread::sleep(duration);
@@ -763,10 +838,12 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 
                     for i in 1..=steps {
                         let current_y = start_y as f64 + dy * i as f64;
-                        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                            x: work_area.position.x + window_margin_px,
-                            y: current_y as i32,
-                        }));
+                        let _ = window.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition {
+                                x: work_area.position.x + window_margin_px,
+                                y: current_y as i32,
+                            },
+                        ));
                         std::thread::sleep(duration);
                     }
                 }
@@ -778,12 +855,22 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
             // across virtual desktop switches (TOPMOST was set during slide animation).
             #[cfg(target_os = "windows")]
             if let Ok(handle) = window.hwnd() {
-                use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE};
                 use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                };
                 let hwnd = HWND(handle.0 as _);
                 let hwnd_notopmost = HWND(-2 as _); // HWND_NOTOPMOST
                 unsafe {
-                    let _ = SetWindowPos(hwnd, Some(hwnd_notopmost), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(hwnd_notopmost),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
                 }
             }
 
@@ -795,7 +882,6 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
     });
 }
 
-
 fn get_data_dir() -> std::path::PathBuf {
     // Check if custom data directory is set in config.json
     let config_path = utils::get_config_path();
@@ -803,7 +889,8 @@ fn get_data_dir() -> std::path::PathBuf {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
             if let Some(custom_path) = config.get("data_directory").and_then(|v| v.as_str()) {
                 let custom_path = std::path::PathBuf::from(custom_path);
-                if custom_path.exists() || custom_path.parent().map(|p| p.exists()).unwrap_or(false) {
+                if custom_path.exists() || custom_path.parent().map(|p| p.exists()).unwrap_or(false)
+                {
                     return custom_path;
                 }
             }
@@ -817,19 +904,26 @@ fn get_data_dir() -> std::path::PathBuf {
 /// Check if there is a monitor adjacent below the given bottom edge.
 /// Used to decide whether slide-up animation is safe (won't leak onto another monitor).
 #[cfg(target_os = "windows")]
-fn has_adjacent_monitor_below(work_area_x: i32, work_area_bottom: i32, work_area_width: u32) -> bool {
+fn has_adjacent_monitor_below(
+    work_area_x: i32,
+    work_area_bottom: i32,
+    work_area_width: u32,
+) -> bool {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONULL};
 
     // Sample a few points along the bottom edge to check for a monitor below
     let check_points = [
         work_area_x + work_area_width as i32 / 2,  // center
-        work_area_x + 10,                            // left side
-        work_area_x + work_area_width as i32 - 10,  // right side
+        work_area_x + 10,                          // left side
+        work_area_x + work_area_width as i32 - 10, // right side
     ];
 
     for x in check_points {
-        let point = POINT { x, y: work_area_bottom + 1 };
+        let point = POINT {
+            x,
+            y: work_area_bottom + 1,
+        };
         let hmon = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONULL) };
         if !hmon.is_invalid() {
             return true;
@@ -846,10 +940,12 @@ fn has_adjacent_monitor_below(work_area_x: i32, work_area_bottom: i32, work_area
 /// on the current desktop), then call IVirtualDesktopManager::MoveWindowToDesktop.
 #[cfg(target_os = "windows")]
 fn move_window_to_current_virtual_desktop(hwnd: windows::Win32::Foundation::HWND) {
-    use windows::Win32::UI::Shell::IVirtualDesktopManager;
-    use windows::Win32::System::Com::{CoInitializeEx, CoCreateInstance, CLSCTX_ALL, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
     use windows::core::GUID;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::IVirtualDesktopManager;
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
     const CLSID_VIRTUAL_DESKTOP_MANAGER: GUID = GUID {
         data1: 0xAA509086,
@@ -862,22 +958,29 @@ fn move_window_to_current_virtual_desktop(hwnd: windows::Win32::Foundation::HWND
         // Initialize COM for this worker thread (idempotent if already initialized).
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-        let mgr: IVirtualDesktopManager = match CoCreateInstance(&CLSID_VIRTUAL_DESKTOP_MANAGER, None, CLSCTX_ALL) {
-            Ok(m) => m,
-            Err(e) => {
-                log::debug!("VD: IVirtualDesktopManager unavailable: {:?}", e);
-                return;
-            }
-        };
+        let mgr: IVirtualDesktopManager =
+            match CoCreateInstance(&CLSID_VIRTUAL_DESKTOP_MANAGER, None, CLSCTX_ALL) {
+                Ok(m) => m,
+                Err(e) => {
+                    log::debug!("VD: IVirtualDesktopManager unavailable: {:?}", e);
+                    return;
+                }
+            };
 
         // Skip if already on the current virtual desktop.
-        if mgr.IsWindowOnCurrentVirtualDesktop(hwnd).map(|b| b.as_bool()).unwrap_or(true) {
+        if mgr
+            .IsWindowOnCurrentVirtualDesktop(hwnd)
+            .map(|b| b.as_bool())
+            .unwrap_or(true)
+        {
             return;
         }
 
         // Get the current desktop GUID from the foreground window (always on current desktop).
         let fg = GetForegroundWindow();
-        if fg.0.is_null() { return; }
+        if fg.0.is_null() {
+            return;
+        }
 
         let desktop_id = match mgr.GetWindowDesktopId(fg) {
             Ok(id) => id,
@@ -906,10 +1009,12 @@ pub struct CursorMonitorInfo {
 
 #[cfg(target_os = "windows")]
 pub fn get_cursor_monitor_info() -> Option<CursorMonitorInfo> {
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     use windows::Win32::Foundation::POINT;
-    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
     use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
     let mut point = POINT { x: 0, y: 0 };
     unsafe { GetCursorPos(&mut point).ok()? };
@@ -985,19 +1090,19 @@ pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &
             "clear" => {
                 let _ = clear_all_effects(window);
                 log::info!("THEME:All effects cleared");
-            },
+            }
             "mica" => {
                 let _ = switch_effect(window, Effect::Mica, dark, None);
                 log::info!("THEME:Applied Mica effect (Theme: {})", theme);
-            },
+            }
             "acrylic" => {
                 let _ = switch_effect(window, Effect::Acrylic, dark, None);
                 log::info!("THEME:Applied Acrylic effect (Theme: {})", theme);
-            },
+            }
             "blur" => {
                 let _ = switch_effect(window, Effect::Blur, dark, None);
                 log::info!("THEME:Applied Blur effect (Theme: {})", theme);
-            },
+            }
             _ => {
                 let _ = switch_effect(window, Effect::Tabbed, dark, None);
                 log::info!("THEME:Applied Tabbed/Mica Alt effect (Theme: {})", theme);

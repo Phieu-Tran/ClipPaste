@@ -1,40 +1,48 @@
-
-use tauri::{AppHandle, Listener, Emitter};
+use tauri::{AppHandle, Emitter, Listener};
 // Import functions directly from the crate root
-use tauri_plugin_clipboard_x::{read_image, read_text, start_listening};
-use std::sync::Arc;
 use crate::database::Database;
-use uuid::Uuid;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use sha2::{Digest, Sha256};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use std::sync::Arc;
+use tauri_plugin_clipboard_x::{read_image, read_text, start_listening};
+use uuid::Uuid;
 
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::MAX_PATH;
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::ProcessStatus::{GetModuleBaseNameW, GetModuleFileNameExW};
-#[cfg(target_os = "windows")]
-use windows::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::DataExchange::GetClipboardOwner;
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, DestroyIcon, DrawIconEx, DI_NORMAL, GetIconInfo, ICONINFO};
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_SHIFT, VK_INSERT};
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGFI_ICON, SHGFI_LARGEICON, SHFILEINFOW, SHGFI_USEFILEATTRIBUTES};
-#[cfg(target_os = "windows")]
-use windows::Win32::Graphics::Gdi::{
-    GetObjectW, GetDC, ReleaseDC, CreateCompatibleDC, SelectObject, DeleteDC,
-    GetDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-    BITMAP, HBITMAP, CreateCompatibleBitmap, DeleteObject
-};
+use once_cell::sync::Lazy;
 #[cfg(target_os = "windows")]
 use std::ffi::OsStr;
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
-use once_cell::sync::Lazy;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::MAX_PATH;
+#[cfg(target_os = "windows")]
+use windows::Win32::Graphics::Gdi::{
+    CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
+    GetObjectW, ReleaseDC, SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
+    DIB_RGB_COLORS, HBITMAP,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::System::DataExchange::GetClipboardOwner;
+#[cfg(target_os = "windows")]
+use windows::Win32::System::ProcessStatus::{GetModuleBaseNameW, GetModuleFileNameExW};
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_INSERT, VK_SHIFT,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::Shell::{
+    SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_USEFILEATTRIBUTES,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{
+    DestroyIcon, DrawIconEx, GetForegroundWindow, GetIconInfo, GetWindowThreadProcessId, DI_NORMAL,
+    ICONINFO,
+};
 
 // GLOBAL STATE: Combined clipboard hash tracking under a single lock to prevent race conditions.
 // - ignore_hash: hash of the clip we just pasted ourselves (skip re-capture)
@@ -49,7 +57,8 @@ static HASH_STATE: Lazy<parking_lot::Mutex<ClipboardHashState>> = Lazy::new(|| {
         last_stable_hash: None,
     })
 });
-pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
+pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> =
+    Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
 /// In-memory search index: uuid → (preview_lowercase, folder_id, note_lowercase)
 /// Loaded once at startup, updated on each clipboard change. HashMap for O(1) remove/update.
@@ -63,7 +72,11 @@ pub static SETTINGS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<St
 
 #[cfg(target_os = "windows")]
 pub static ICON_CACHE: Lazy<parking_lot::Mutex<lru::LruCache<String, Option<String>>>> =
-    Lazy::new(|| parking_lot::Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(100).unwrap())));
+    Lazy::new(|| {
+        parking_lot::Mutex::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ))
+    });
 
 /// App icon lookup: app_name → base64 icon. New clips use this instead of per-clip source_icon.
 pub static APP_ICONS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, String>>> =
@@ -76,7 +89,8 @@ pub static IS_INCOGNITO: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 /// Used by `scratchpad_paste` to route Shift+Insert back to the user's target app.
 /// Stored as isize because raw pointers aren't Send, but HWND is just an opaque handle.
 #[cfg(target_os = "windows")]
-pub static PREV_FOREGROUND_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+pub static PREV_FOREGROUND_HWND: std::sync::atomic::AtomicIsize =
+    std::sync::atomic::AtomicIsize::new(0);
 
 use std::sync::atomic::{AtomicU64, Ordering};
 static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -105,18 +119,32 @@ pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
 
     let mut map = std::collections::HashMap::with_capacity(rows.len());
     for (uuid, preview, fid, note) in rows {
-        map.insert(uuid, (preview.to_lowercase(), fid, note.unwrap_or_default().to_lowercase()));
+        map.insert(
+            uuid,
+            (
+                preview.to_lowercase(),
+                fid,
+                note.unwrap_or_default().to_lowercase(),
+            ),
+        );
     }
 
     let count = map.len();
     *SEARCH_CACHE.write() = map;
-    log::info!("SEARCH_CACHE: Loaded {} clip previews into memory (max {})", count, SEARCH_CACHE_MAX);
+    log::info!(
+        "SEARCH_CACHE: Loaded {} clip previews into memory (max {})",
+        count,
+        SEARCH_CACHE_MAX
+    );
 }
 
 /// Add a single clip to the search cache
 pub fn add_to_search_cache(uuid: &str, preview: &str, folder_id: Option<i64>) {
     let mut cache = SEARCH_CACHE.write();
-    cache.insert(uuid.to_string(), (preview.to_lowercase(), folder_id, String::new()));
+    cache.insert(
+        uuid.to_string(),
+        (preview.to_lowercase(), folder_id, String::new()),
+    );
 }
 
 /// Remove a clip from the search cache — O(1) with HashMap
@@ -129,14 +157,21 @@ pub fn remove_from_search_cache(uuid: &str) {
 /// Used by the re-copy self-heal path: if a clip's cache entry was missing or stale,
 /// re-copying the same content forces it back into the cache with current folder_id + note.
 pub async fn refresh_search_cache_for_clip(pool: &sqlx::SqlitePool, uuid: &str, preview: &str) {
-    let row: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT folder_id, note FROM clips WHERE uuid = ?"
-    ).bind(uuid).fetch_optional(pool).await.unwrap_or(None);
+    let row: Option<(Option<i64>, Option<String>)> =
+        sqlx::query_as("SELECT folder_id, note FROM clips WHERE uuid = ?")
+            .bind(uuid)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
     let (fid, note) = row.unwrap_or((None, None));
     let mut cache = SEARCH_CACHE.write();
     cache.insert(
         uuid.to_string(),
-        (preview.to_lowercase(), fid, note.unwrap_or_default().to_lowercase()),
+        (
+            preview.to_lowercase(),
+            fid,
+            note.unwrap_or_default().to_lowercase(),
+        ),
     );
 }
 
@@ -151,13 +186,18 @@ pub fn update_note_in_search_cache(uuid: &str, note: Option<&str>) {
 /// Load all settings into memory for instant access
 pub async fn load_settings_cache(pool: &sqlx::SqlitePool) {
     let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM settings")
-        .fetch_all(pool).await.unwrap_or_default();
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
     let mut cache = SETTINGS_CACHE.write();
     cache.clear();
     for (key, value) in rows {
         cache.insert(key, value);
     }
-    log::info!("SETTINGS_CACHE: Loaded {} settings into memory", cache.len());
+    log::info!(
+        "SETTINGS_CACHE: Loaded {} settings into memory",
+        cache.len()
+    );
 }
 
 /// Get a setting from the in-memory cache (no DB round-trip)
@@ -168,7 +208,9 @@ pub fn get_cached_setting(key: &str) -> Option<String> {
 /// Load all app icons into memory for instant lookup
 pub async fn load_app_icons_cache(pool: &sqlx::SqlitePool) {
     let rows: Vec<(String, String)> = sqlx::query_as("SELECT app_name, icon FROM app_icons")
-        .fetch_all(pool).await.unwrap_or_default();
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
     let count = rows.len();
     let mut cache = APP_ICONS_CACHE.write();
     cache.clear();
@@ -185,9 +227,15 @@ pub fn get_app_icon(app_name: &str) -> Option<String> {
 
 /// Save app icon to DB + cache (deduplicated per app_name)
 async fn save_app_icon(pool: &sqlx::SqlitePool, app_name: &str, icon: &str) {
-    APP_ICONS_CACHE.write().insert(app_name.to_string(), icon.to_string());
+    APP_ICONS_CACHE
+        .write()
+        .insert(app_name.to_string(), icon.to_string());
     sqlx::query("INSERT OR REPLACE INTO app_icons (app_name, icon) VALUES (?, ?)")
-        .bind(app_name).bind(icon).execute(pool).await.ok();
+        .bind(app_name)
+        .bind(icon)
+        .execute(pool)
+        .await
+        .ok();
 }
 
 pub fn truncate_utf8(s: &str, max_chars: usize) -> &str {
@@ -200,7 +248,9 @@ pub fn truncate_utf8(s: &str, max_chars: usize) -> &str {
 /// Detect content subtype from text (url, email, color, path)
 pub fn detect_subtype(text: &str) -> Option<String> {
     let trimmed = text.trim();
-    if trimmed.is_empty() { return None; }
+    if trimmed.is_empty() {
+        return None;
+    }
 
     // URL
     if (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
@@ -227,8 +277,10 @@ pub fn detect_subtype(text: &str) -> Option<String> {
     }
 
     // Color: rgb()/rgba()/hsl()/hsla()
-    if trimmed.starts_with("rgb(") || trimmed.starts_with("rgba(")
-        || trimmed.starts_with("hsl(") || trimmed.starts_with("hsla(")
+    if trimmed.starts_with("rgb(")
+        || trimmed.starts_with("rgba(")
+        || trimmed.starts_with("hsl(")
+        || trimmed.starts_with("hsla(")
     {
         return Some("color".to_string());
     }
@@ -249,31 +301,62 @@ pub fn detect_subtype(text: &str) -> Option<String> {
     // Phone number: +1-234-567-8900, (234) 567-8900, etc. (single-line, short)
     if trimmed.len() <= 25 && !trimmed.contains(char::is_alphabetic) {
         let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
-        if digits.len() >= 7 && digits.len() <= 15
-            && trimmed.chars().all(|c| c.is_ascii_digit() || "+-() .,#".contains(c))
+        if digits.len() >= 7
+            && digits.len() <= 15
+            && trimmed
+                .chars()
+                .all(|c| c.is_ascii_digit() || "+-() .,#".contains(c))
         {
             return Some("phone".to_string());
         }
     }
 
     // JSON: starts with { or [ and parses as valid JSON (min length 5 to skip trivial cases)
-    if trimmed.len() >= 5 && (trimmed.starts_with('{') || trimmed.starts_with('[')) {
-        if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
-            return Some("json".to_string());
-        }
+    if trimmed.len() >= 5
+        && (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+    {
+        return Some("json".to_string());
     }
 
     // Code: multi-line text with programming patterns (need ≥2 indicators)
     if trimmed.lines().count() >= 3 {
         let has_braces = trimmed.contains('{') && trimmed.contains('}');
         let has_semicolons = trimmed.matches(';').count() >= 2;
-        let has_fn_keyword = ["function ", "fn ", "def ", "class ", "const ", "let ",
-            "import ", "pub ", "#include", "package ", "var ", "return ", "async "]
-            .iter().any(|kw| trimmed.contains(kw));
-        let has_indentation = trimmed.lines().filter(|l| l.starts_with("    ") || l.starts_with('\t')).count() >= 2;
-        let has_arrows_or_ops = trimmed.contains("=>") || trimmed.contains("->") || trimmed.contains("::");
-        let indicators = [has_braces, has_semicolons, has_fn_keyword, has_indentation, has_arrows_or_ops]
-            .iter().filter(|&&x| x).count();
+        let has_fn_keyword = [
+            "function ",
+            "fn ",
+            "def ",
+            "class ",
+            "const ",
+            "let ",
+            "import ",
+            "pub ",
+            "#include",
+            "package ",
+            "var ",
+            "return ",
+            "async ",
+        ]
+        .iter()
+        .any(|kw| trimmed.contains(kw));
+        let has_indentation = trimmed
+            .lines()
+            .filter(|l| l.starts_with("    ") || l.starts_with('\t'))
+            .count()
+            >= 2;
+        let has_arrows_or_ops =
+            trimmed.contains("=>") || trimmed.contains("->") || trimmed.contains("::");
+        let indicators = [
+            has_braces,
+            has_semicolons,
+            has_fn_keyword,
+            has_indentation,
+            has_arrows_or_ops,
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count();
         if indicators >= 2 {
             return Some("code".to_string());
         }
@@ -296,7 +379,9 @@ pub fn generate_thumbnail(png_bytes: &[u8]) -> Option<Vec<u8>> {
         img
     };
     let mut buf = std::io::Cursor::new(Vec::new());
-    thumb.write_to(&mut buf, image::ImageOutputFormat::Jpeg(80)).ok()?;
+    thumb
+        .write_to(&mut buf, image::ImageOutputFormat::Jpeg(80))
+        .ok()?;
     Some(buf.into_inner())
 }
 
@@ -348,7 +433,10 @@ pub fn init(app: &AppHandle, db: Arc<Database>) {
             tokio::time::sleep(std::time::Duration::from_millis(debounce_ms)).await;
 
             if DEBOUNCE_COUNTER.load(Ordering::SeqCst) != current_count {
-                log::debug!("CLIPBOARD: Debounce: Aborting older event, current_count:{}", current_count);
+                log::debug!(
+                    "CLIPBOARD: Debounce: Aborting older event, current_count:{}",
+                    current_count
+                );
                 return;
             }
 
@@ -357,12 +445,20 @@ pub fn init(app: &AppHandle, db: Arc<Database>) {
     });
 }
 
-type SourceAppInfo = (Option<String>, Option<String>, Option<String>, Option<String>, bool);
+type SourceAppInfo = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    bool,
+);
 
 /// Detect if text content contains sensitive information (API keys, passwords, credit cards, etc.)
 pub fn detect_sensitive(text: &str) -> Option<String> {
     let trimmed = text.trim();
-    if trimmed.is_empty() { return None; }
+    if trimmed.is_empty() {
+        return None;
+    }
 
     // AWS access key
     if trimmed.contains("AKIA") && trimmed.len() >= 20 {
@@ -377,7 +473,8 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
         return Some("stripe_key".to_string());
     }
     // Slack tokens
-    if trimmed.starts_with("xoxb-") || trimmed.starts_with("xoxp-") || trimmed.starts_with("xoxa-") {
+    if trimmed.starts_with("xoxb-") || trimmed.starts_with("xoxp-") || trimmed.starts_with("xoxa-")
+    {
         return Some("slack_token".to_string());
     }
     // Private keys
@@ -385,15 +482,19 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
         return Some("private_key".to_string());
     }
     // JWT tokens (3 base64 segments separated by dots)
-    if trimmed.starts_with("eyJ") && trimmed.matches('.').count() == 2
+    if trimmed.starts_with("eyJ")
+        && trimmed.matches('.').count() == 2
         && !trimmed.contains(char::is_whitespace)
     {
         return Some("jwt".to_string());
     }
     // Credit card numbers (13-19 digits, possibly with spaces/dashes)
     let digits_only: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
-    if digits_only.len() >= 13 && digits_only.len() <= 19
-        && trimmed.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '-')
+    if digits_only.len() >= 13
+        && digits_only.len() <= 19
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == ' ' || c == '-')
         && luhn_check(&digits_only)
     {
         return Some("credit_card".to_string());
@@ -414,14 +515,19 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
             || trimmed.starts_with('.')     // dotfiles
             || trimmed.ends_with(".com") || trimmed.ends_with(".net") || trimmed.ends_with(".org")
             || trimmed.ends_with(".io") || trimmed.ends_with(".log") || trimmed.ends_with(".conf")
-            || trimmed.contains(".log");     // log filenames
+            || trimmed.contains(".log"); // log filenames
 
         if !dominated_by_separators {
             let has_upper = trimmed.chars().any(|c| c.is_ascii_uppercase());
             let has_lower = trimmed.chars().any(|c| c.is_ascii_lowercase());
             let has_digit = trimmed.chars().any(|c| c.is_ascii_digit());
-            let has_special = trimmed.chars().any(|c| !c.is_alphanumeric() && c.is_ascii());
-            let classes = [has_upper, has_lower, has_digit, has_special].iter().filter(|&&x| x).count();
+            let has_special = trimmed
+                .chars()
+                .any(|c| !c.is_alphanumeric() && c.is_ascii());
+            let classes = [has_upper, has_lower, has_digit, has_special]
+                .iter()
+                .filter(|&&x| x)
+                .count();
 
             // Require ALL 4 character classes, or 3 classes with min length 12 for high-entropy strings
             // This filters out things like "worker-1" (too short) and "camel-service-worker-2" (too long/readable)
@@ -433,7 +539,10 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
                     // Too few non-lowercase chars — looks like a readable name, not a password
                 } else {
                     // 2) Must not be a simple word-separator-word pattern (e.g. "Service-Name1")
-                    let separator_count = trimmed.chars().filter(|c| *c == '-' || *c == '_' || *c == '.').count();
+                    let separator_count = trimmed
+                        .chars()
+                        .filter(|c| *c == '-' || *c == '_' || *c == '.')
+                        .count();
                     if separator_count <= 1 || trimmed.len() > 20 {
                         return Some("password".to_string());
                     }
@@ -452,7 +561,9 @@ fn luhn_check(digits: &str) -> bool {
     for c in digits.chars().rev() {
         if let Some(d) = c.to_digit(10) {
             let mut val = if double { d * 2 } else { d };
-            if val > 9 { val -= 9; }
+            if val > 9 {
+                val -= 9;
+            }
             sum += val;
             double = !double;
         } else {
@@ -462,7 +573,11 @@ fn luhn_check(digits: &str) -> bool {
     sum.is_multiple_of(10)
 }
 
-async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_info: SourceAppInfo) {
+async fn process_clipboard_change(
+    app: AppHandle,
+    db: Arc<Database>,
+    source_app_info: SourceAppInfo,
+) {
     let _guard = CLIPBOARD_SYNC.lock().await;
 
     // Check incognito mode AFTER acquiring lock to prevent race with toggle during debounce
@@ -481,67 +596,74 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
     // Try Image
     if let Ok(read_image_result) = read_image(app.clone(), None).await {
-         if let Ok(bytes) = std::fs::read(&read_image_result.path) {
-             if let Ok(reader) = image::io::Reader::new(std::io::Cursor::new(&bytes)).with_guessed_format() {
-               if let Ok((width, height)) = reader.into_dimensions() {
-                 let size_bytes = bytes.len();
+        if let Ok(bytes) = std::fs::read(&read_image_result.path) {
+            if let Ok(reader) =
+                image::io::Reader::new(std::io::Cursor::new(&bytes)).with_guessed_format()
+            {
+                if let Ok((width, height)) = reader.into_dimensions() {
+                    let size_bytes = bytes.len();
 
-                 clip_hash = calculate_hash(&bytes);
+                    clip_hash = calculate_hash(&bytes);
 
-                 // Save image to disk: {images_dir}/{hash}.png
-                 let filename = format!("{}.png", &clip_hash);
-                 let image_file_path = db.image_path(&filename);
-                 if !image_file_path.exists() {
-                     if let Err(e) = std::fs::write(&image_file_path, &bytes) {
-                         log::error!("CLIPBOARD: Failed to save image to disk: {}", e);
-                         let _ = std::fs::remove_file(read_image_result.path);
-                         return;
-                     }
-                 }
+                    // Save image to disk: {images_dir}/{hash}.png
+                    let filename = format!("{}.png", &clip_hash);
+                    let image_file_path = db.image_path(&filename);
+                    if !image_file_path.exists() {
+                        if let Err(e) = std::fs::write(&image_file_path, &bytes) {
+                            log::error!("CLIPBOARD: Failed to save image to disk: {}", e);
+                            let _ = std::fs::remove_file(read_image_result.path);
+                            return;
+                        }
+                    }
 
-                 // Generate and save thumbnail as {hash}_thumb.jpg
-                 let thumb_filename = format!("{}_thumb.jpg", &clip_hash);
-                 let thumb_path = db.image_path(&thumb_filename);
-                 if !thumb_path.exists() {
-                     if let Some(thumb_bytes) = generate_thumbnail(&bytes) {
-                         if let Err(e) = std::fs::write(&thumb_path, &thumb_bytes) {
-                             log::warn!("CLIPBOARD: Failed to save thumbnail: {}", e);
-                         }
-                     }
-                 }
+                    // Generate and save thumbnail as {hash}_thumb.jpg
+                    let thumb_filename = format!("{}_thumb.jpg", &clip_hash);
+                    let thumb_path = db.image_path(&thumb_filename);
+                    if !thumb_path.exists() {
+                        if let Some(thumb_bytes) = generate_thumbnail(&bytes) {
+                            if let Err(e) = std::fs::write(&thumb_path, &thumb_bytes) {
+                                log::warn!("CLIPBOARD: Failed to save thumbnail: {}", e);
+                            }
+                        }
+                    }
 
-                 // Store just the filename in content (not the raw blob)
-                 clip_content = filename.as_bytes().to_vec();
-                 clip_type = "image";
-                 clip_preview = "[Image]".to_string();
-                 metadata = serde_json::json!({
-                     "width": width,
-                     "height": height,
-                     "format": "png",
-                     "size_bytes": size_bytes
-                 }).to_string();
-                 found_content = true;
+                    // Store just the filename in content (not the raw blob)
+                    clip_content = filename.as_bytes().to_vec();
+                    clip_type = "image";
+                    clip_preview = "[Image]".to_string();
+                    metadata = serde_json::json!({
+                        "width": width,
+                        "height": height,
+                        "format": "png",
+                        "size_bytes": size_bytes
+                    })
+                    .to_string();
+                    found_content = true;
 
-                 // Clean up the temp file from clipboard plugin
-                 let _ = std::fs::remove_file(read_image_result.path);
-               }
-             }
-         }
+                    // Clean up the temp file from clipboard plugin
+                    let _ = std::fs::remove_file(read_image_result.path);
+                }
+            }
+        }
     }
 
     if !found_content {
         // Try Text
         if let Ok(text) = read_text().await {
-             let text = text.trim();
-             if !text.is_empty() {
-                 clip_content = text.as_bytes().to_vec();
-                 clip_hash = calculate_hash(&clip_content);
-                 clip_type = "text";
-                 clip_preview = truncate_utf8(text, 2000).to_string();
-                 clip_subtype = detect_subtype(text);
-                 found_content = true;
-                 log::trace!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
-             }
+            let text = text.trim();
+            if !text.is_empty() {
+                clip_content = text.as_bytes().to_vec();
+                clip_hash = calculate_hash(&clip_content);
+                clip_type = "text";
+                clip_preview = truncate_utf8(text, 2000).to_string();
+                clip_subtype = detect_subtype(text);
+                found_content = true;
+                log::trace!(
+                    "CLIPBOARD: Found text ({} chars, subtype: {:?})",
+                    clip_preview.len(),
+                    clip_subtype
+                );
+            }
         }
     }
 
@@ -567,7 +689,11 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
     // Source app info was captured before debounce to ensure accuracy on macOS
     let (source_app, source_icon, exe_name, full_path, is_explicit_owner) = source_app_info;
-    log::debug!("CLIPBOARD: Source app: {:?}, explicit: {}", source_app, is_explicit_owner);
+    log::debug!(
+        "CLIPBOARD: Source app: {:?}, explicit: {}",
+        source_app,
+        is_explicit_owner
+    );
 
     // Check ignore_ghost_clips setting (from in-memory cache, no DB round-trip)
     let ignore_ghost_clips = get_cached_setting("ignore_ghost_clips")
@@ -582,26 +708,33 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
     // Check if the app is in the ignore list
     if let Some(ref path) = full_path {
         if let Ok(true) = db.is_app_ignored(path).await {
-             log::info!("CLIPBOARD: Ignoring content from ignored app (path match): {}", path);
-             return;
+            log::info!(
+                "CLIPBOARD: Ignoring content from ignored app (path match): {}",
+                path
+            );
+            return;
         }
     }
 
     if let Some(ref exe) = exe_name {
         if let Ok(true) = db.is_app_ignored(exe).await {
-             log::info!("CLIPBOARD: Ignoring content from ignored app (exe match): {}", exe);
-             return;
+            log::info!(
+                "CLIPBOARD: Ignoring content from ignored app (exe match): {}",
+                exe
+            );
+            return;
         }
     }
 
     // DB Logic
     let pool = &db.pool;
 
-    let existing_uuid: Option<String> = sqlx::query_scalar::<_, String>(r#"SELECT uuid FROM clips WHERE content_hash = ?"#)
-        .bind(&clip_hash)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
+    let existing_uuid: Option<String> =
+        sqlx::query_scalar::<_, String>(r#"SELECT uuid FROM clips WHERE content_hash = ?"#)
+            .bind(&clip_hash)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     if let Some(existing_id) = existing_uuid {
         // Bump created_at + re-evaluate is_sensitive (detection rules may have changed)
@@ -624,14 +757,17 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         // it was missing from the in-memory cache for any reason.
         refresh_search_cache_for_clip(pool, &existing_id, &clip_preview).await;
 
-        let _ = app.emit("clipboard-change", &serde_json::json!({
-            "id": existing_id,
-            "content": clip_preview,
-            "clip_type": clip_type,
-            "source_app": source_app,
-            "source_icon": source_icon,
-            "created_at": chrono::Utc::now().to_rfc3339()
-        }));
+        let _ = app.emit(
+            "clipboard-change",
+            &serde_json::json!({
+                "id": existing_id,
+                "content": clip_preview,
+                "clip_type": clip_type,
+                "source_app": source_app,
+                "source_icon": source_icon,
+                "created_at": chrono::Utc::now().to_rfc3339()
+            }),
+        );
     } else {
         let clip_uuid = Uuid::new_v4().to_string();
 
@@ -674,21 +810,41 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
         // FTS5 index no longer used — search uses in-memory SEARCH_CACHE
 
-        let _ = app.emit("clipboard-change", &serde_json::json!({
-            "id": clip_uuid,
-            "content": clip_preview,
-            "clip_type": clip_type,
-            "source_app": source_app,
-            "source_icon": source_icon,
-            "created_at": chrono::Utc::now().to_rfc3339()
-        }));
+        let _ = app.emit(
+            "clipboard-change",
+            &serde_json::json!({
+                "id": clip_uuid,
+                "content": clip_preview,
+                "clip_type": clip_type,
+                "source_app": source_app,
+                "source_icon": source_icon,
+                "created_at": chrono::Utc::now().to_rfc3339()
+            }),
+        );
 
         // Enforce limits after each insert (cache check is O(1), returns early if not configured)
-        if get_cached_setting("max_items").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) > 0 {
+        if get_cached_setting("max_items")
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0)
+            > 0
+        {
             db.enforce_max_items().await;
         }
-        if get_cached_setting("auto_delete_days").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) > 0 {
+        if get_cached_setting("auto_delete_days")
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0)
+            > 0
+        {
             db.enforce_auto_delete().await;
+        }
+        let image_auto_delete_enabled = get_cached_setting("image_auto_delete")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let image_delete_days = get_cached_setting("image_delete_days")
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        if image_auto_delete_enabled && image_delete_days > 0 {
+            db.delete_old_image_clips(image_delete_days).await;
         }
     }
 }
@@ -709,27 +865,43 @@ pub fn get_foreground_app_info() -> Option<crate::commands::settings::PickedApp>
     use crate::commands::settings::PickedApp;
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.0.is_null() { return None; }
+        if hwnd.0.is_null() {
+            return None;
+        }
 
         let mut process_id = 0;
         GetWindowThreadProcessId(hwnd, Some(&mut process_id));
-        if process_id == 0 { return None; }
+        if process_id == 0 {
+            return None;
+        }
 
-        let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id).ok()?;
+        let process_handle = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            false,
+            process_id,
+        )
+        .ok()?;
 
         let mut name_buf = [0u16; MAX_PATH as usize];
         let name_size = GetModuleBaseNameW(process_handle, None, &mut name_buf);
-        let exe_name = (name_size > 0).then(|| String::from_utf16_lossy(&name_buf[..name_size as usize]));
+        let exe_name =
+            (name_size > 0).then(|| String::from_utf16_lossy(&name_buf[..name_size as usize]));
 
         let mut path_buf = [0u16; MAX_PATH as usize];
         let path_size = GetModuleFileNameExW(Some(process_handle), None, &mut path_buf);
-        let full_path = (path_size > 0).then(|| String::from_utf16_lossy(&path_buf[..path_size as usize]));
+        let full_path =
+            (path_size > 0).then(|| String::from_utf16_lossy(&path_buf[..path_size as usize]));
 
-        let app_name = full_path.as_deref()
+        let app_name = full_path
+            .as_deref()
             .and_then(|p| get_app_description(p))
             .or_else(|| exe_name.clone());
 
-        Some(PickedApp { app_name, exe_name, full_path })
+        Some(PickedApp {
+            app_name,
+            exe_name,
+            full_path,
+        })
     }
 }
 
@@ -757,7 +929,10 @@ pub fn is_foreground_app_ignored(db: &std::sync::Arc<crate::database::Database>)
             }
             // Some apps (PUBG anti-cheat etc.) block GetModuleBaseNameW so exe_name is
             // None — fall back to extracting the filename from the full path.
-            if let Some(name) = std::path::Path::new(path).file_name().and_then(|s| s.to_str()) {
+            if let Some(name) = std::path::Path::new(path)
+                .file_name()
+                .and_then(|s| s.to_str())
+            {
                 if db.is_app_ignored(name).await.unwrap_or(false) {
                     return true;
                 }
@@ -780,7 +955,9 @@ pub fn capture_prev_foreground() {
         let hwnd = GetForegroundWindow();
         // Skip our own windows — finding the scratchpad or settings window here means the
         // user was already inside ClipPaste, and restoring it isn't what they want.
-        if hwnd.0.is_null() { return; }
+        if hwnd.0.is_null() {
+            return;
+        }
         let mut process_id = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut process_id));
         let own_pid = std::process::id();
@@ -799,17 +976,21 @@ pub fn capture_prev_foreground() {}
 #[cfg(target_os = "windows")]
 pub fn restore_prev_foreground() -> bool {
     use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SetForegroundWindow, IsWindow, BringWindowToTop,
-    };
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, IsWindow, SetForegroundWindow,
+    };
 
     let stored = PREV_FOREGROUND_HWND.load(std::sync::atomic::Ordering::SeqCst);
-    if stored == 0 { return false; }
+    if stored == 0 {
+        return false;
+    }
     let hwnd = HWND(stored as *mut _);
 
     unsafe {
-        if !IsWindow(Some(hwnd)).as_bool() { return false; }
+        if !IsWindow(Some(hwnd)).as_bool() {
+            return false;
+        }
 
         // AttachThreadInput trick: Windows blocks SetForegroundWindow from one thread to
         // another unless their input queues are attached. We attach briefly, foreground
@@ -828,19 +1009,32 @@ pub fn restore_prev_foreground() -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn restore_prev_foreground() -> bool { false }
+pub fn restore_prev_foreground() -> bool {
+    false
+}
 
 #[cfg(target_os = "windows")]
-fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
+fn get_clipboard_owner_app_info() -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    bool,
+) {
     unsafe {
         let (hwnd, is_explicit) = match GetClipboardOwner() {
             Ok(h) if !h.0.is_null() => (h, true),
             Err(e) => {
-                log::info!("CLIPBOARD: GetClipboardOwner failed: {:?}, falling back to foreground window", e);
+                log::info!(
+                    "CLIPBOARD: GetClipboardOwner failed: {:?}, falling back to foreground window",
+                    e
+                );
                 (GetForegroundWindow(), false)
-            },
+            }
             Ok(_) => {
-                log::info!("CLIPBOARD: GetClipboardOwner returned null, falling back to foreground window");
+                log::info!(
+                    "CLIPBOARD: GetClipboardOwner returned null, falling back to foreground window"
+                );
                 (GetForegroundWindow(), false)
             }
         };
@@ -856,7 +1050,11 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
             return (None, None, None, None, false);
         }
 
-        let process_handle = match OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id) {
+        let process_handle = match OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            false,
+            process_id,
+        ) {
             Ok(h) => h,
             Err(_) => return (None, None, None, None, false),
         };
@@ -895,16 +1093,34 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
             };
             (final_name, icon, Some(full_path_str))
         } else {
-            (if !exe_name.is_empty() { Some(exe_name.clone()) } else { None }, None, None)
+            (
+                if !exe_name.is_empty() {
+                    Some(exe_name.clone())
+                } else {
+                    None
+                },
+                None,
+                None,
+            )
         };
 
-        let exe_val = if !exe_name.is_empty() { Some(exe_name) } else { None };
+        let exe_val = if !exe_name.is_empty() {
+            Some(exe_name)
+        } else {
+            None
+        };
         (app_name, app_icon, exe_val, full_path, is_explicit)
     }
 }
 
 #[cfg(target_os = "macos")]
-fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
+fn get_clipboard_owner_app_info() -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    bool,
+) {
     use objc2_app_kit::NSWorkspace;
 
     unsafe {
@@ -914,22 +1130,30 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
             None => return (None, None, None, None, false),
         };
 
-        let app_name = app.localizedName()
-            .map(|s| s.to_string());
+        let app_name = app.localizedName().map(|s| s.to_string());
 
-        let bundle_id = app.bundleIdentifier()
-            .map(|s| s.to_string());
+        let bundle_id = app.bundleIdentifier().map(|s| s.to_string());
 
         // Note: Icon extraction skipped due to objc2 version conflicts with window-vibrancy.
         // App icon support for macOS can be added when dependencies are aligned.
 
-        log::info!("CLIPBOARD: macOS source app: {:?}, bundle: {:?}", app_name, bundle_id);
+        log::info!(
+            "CLIPBOARD: macOS source app: {:?}, bundle: {:?}",
+            app_name,
+            bundle_id
+        );
         (app_name, None, bundle_id.clone(), bundle_id, true)
     }
 }
 
 #[cfg(target_os = "linux")]
-fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
+fn get_clipboard_owner_app_info() -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    bool,
+) {
     (None, None, None, None, false)
 }
 
@@ -939,26 +1163,50 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
 unsafe fn get_app_description(path: &str) -> Option<String> {
     use std::ffi::c_void;
 
-    let wide_path: Vec<u16> = OsStr::new(path).encode_wide().chain(std::iter::once(0)).collect();
+    let wide_path: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
 
     let size = GetFileVersionInfoSizeW(windows::core::PCWSTR(wide_path.as_ptr()), None);
-    if size == 0 { return None; }
+    if size == 0 {
+        return None;
+    }
 
     let mut data = vec![0u8; size as usize];
-    if GetFileVersionInfoW(windows::core::PCWSTR(wide_path.as_ptr()), Some(0), size, data.as_mut_ptr() as *mut _).is_err() {
+    if GetFileVersionInfoW(
+        windows::core::PCWSTR(wide_path.as_ptr()),
+        Some(0),
+        size,
+        data.as_mut_ptr() as *mut _,
+    )
+    .is_err()
+    {
         return None;
     }
 
     let mut lang_ptr: *mut c_void = std::ptr::null_mut();
     let mut lang_len: u32 = 0;
 
-    let translation_query = OsStr::new("\\VarFileInfo\\Translation").encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let translation_query = OsStr::new("\\VarFileInfo\\Translation")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
 
-    if !VerQueryValueW(data.as_ptr() as *const _, windows::core::PCWSTR(translation_query.as_ptr()), &mut lang_ptr, &mut lang_len).as_bool() {
+    if !VerQueryValueW(
+        data.as_ptr() as *const _,
+        windows::core::PCWSTR(translation_query.as_ptr()),
+        &mut lang_ptr,
+        &mut lang_len,
+    )
+    .as_bool()
+    {
         return None;
     }
 
-    if lang_len < 4 { return None; }
+    if lang_len < 4 {
+        return None;
+    }
 
     let pairs = std::slice::from_raw_parts(lang_ptr as *const u16, (lang_len / 2) as usize);
     let num_pairs = (lang_len / 4) as usize;
@@ -979,18 +1227,35 @@ unsafe fn get_app_description(path: &str) -> Option<String> {
     let keys = ["FileDescription", "ProductName"];
 
     for key in keys {
-        let query_str = format!("\\StringFileInfo\\{:04x}{:04x}\\{}", lang_code, charset_code, key);
-        let query = OsStr::new(&query_str).encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let query_str = format!(
+            "\\StringFileInfo\\{:04x}{:04x}\\{}",
+            lang_code, charset_code, key
+        );
+        let query = OsStr::new(&query_str)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>();
 
         let mut desc_ptr: *mut c_void = std::ptr::null_mut();
         let mut desc_len: u32 = 0;
 
-        if VerQueryValueW(data.as_ptr() as *const _, windows::core::PCWSTR(query.as_ptr()), &mut desc_ptr, &mut desc_len).as_bool() {
-             let desc = std::slice::from_raw_parts(desc_ptr as *const u16, desc_len as usize);
-             let len = if desc.last() == Some(&0) { desc.len() - 1 } else { desc.len() };
-             if len > 0 {
-                 return Some(String::from_utf16_lossy(&desc[..len]));
-             }
+        if VerQueryValueW(
+            data.as_ptr() as *const _,
+            windows::core::PCWSTR(query.as_ptr()),
+            &mut desc_ptr,
+            &mut desc_len,
+        )
+        .as_bool()
+        {
+            let desc = std::slice::from_raw_parts(desc_ptr as *const u16, desc_len as usize);
+            let len = if desc.last() == Some(&0) {
+                desc.len() - 1
+            } else {
+                desc.len()
+            };
+            if len > 0 {
+                return Some(String::from_utf16_lossy(&desc[..len]));
+            }
         }
     }
 
@@ -1003,7 +1268,10 @@ unsafe fn get_app_description(path: &str) -> Option<String> {
 unsafe fn extract_icon(path: &str) -> Option<String> {
     use image::ImageEncoder;
 
-    let wide_path: Vec<u16> = OsStr::new(path).encode_wide().chain(std::iter::once(0)).collect();
+    let wide_path: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
     let mut shfi = SHFILEINFOW::default();
 
     SHGetFileInfoW(
@@ -1011,7 +1279,7 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
         windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
         Some(&mut shfi as *mut _),
         std::mem::size_of::<SHFILEINFOW>() as u32,
-        SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES
+        SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES,
     );
 
     if shfi.hIcon.is_invalid() {
@@ -1020,26 +1288,57 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
 
     let icon = shfi.hIcon;
     struct IconGuard(windows::Win32::UI::WindowsAndMessaging::HICON);
-    impl Drop for IconGuard { fn drop(&mut self) { unsafe { let _ = DestroyIcon(self.0); } } }
+    impl Drop for IconGuard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = DestroyIcon(self.0);
+            }
+        }
+    }
     let _guard = IconGuard(icon);
 
     let mut icon_info = ICONINFO::default();
-    if GetIconInfo(icon, &mut icon_info).is_err() { return None; }
+    if GetIconInfo(icon, &mut icon_info).is_err() {
+        return None;
+    }
 
     struct BitmapGuard(HBITMAP);
-    impl Drop for BitmapGuard { fn drop(&mut self) { unsafe { if !self.0.is_invalid() { let _ = DeleteObject(self.0.into()); } } } }
+    impl Drop for BitmapGuard {
+        fn drop(&mut self) {
+            unsafe {
+                if !self.0.is_invalid() {
+                    let _ = DeleteObject(self.0.into());
+                }
+            }
+        }
+    }
     let _bm_mask = BitmapGuard(icon_info.hbmMask);
     let _bm_color = BitmapGuard(icon_info.hbmColor);
 
     let mut bm = BITMAP::default();
-    if GetObjectW(icon_info.hbmMask.into(), std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut _)) == 0 { return None; }
+    if GetObjectW(
+        icon_info.hbmMask.into(),
+        std::mem::size_of::<BITMAP>() as i32,
+        Some(&mut bm as *mut _ as *mut _),
+    ) == 0
+    {
+        return None;
+    }
 
     let width = bm.bmWidth;
-    let height = if !icon_info.hbmColor.is_invalid() { bm.bmHeight } else { bm.bmHeight / 2 };
+    let height = if !icon_info.hbmColor.is_invalid() {
+        bm.bmHeight
+    } else {
+        bm.bmHeight / 2
+    };
 
     // Bounds check: reject zero/negative dimensions or unreasonably large icons (>1024px)
     if width <= 0 || height <= 0 || width > 1024 || height > 1024 {
-        log::warn!("ICON: Invalid icon dimensions {}x{}, skipping", width, height);
+        log::warn!(
+            "ICON: Invalid icon dimensions {}x{}, skipping",
+            width,
+            height
+        );
         return None;
     }
 
@@ -1063,7 +1362,18 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
 
     let mut pixels = vec![0u8; (width * height * 4) as usize];
 
-    GetDIBits(mem_dc, mem_bm, 0, height as u32, Some(pixels.as_mut_ptr() as *mut _), &mut BITMAPINFO { bmiHeader: bi, ..Default::default() }, DIB_RGB_COLORS);
+    GetDIBits(
+        mem_dc,
+        mem_bm,
+        0,
+        height as u32,
+        Some(pixels.as_mut_ptr() as *mut _),
+        &mut BITMAPINFO {
+            bmiHeader: bi,
+            ..Default::default()
+        },
+        DIB_RGB_COLORS,
+    );
 
     SelectObject(mem_dc, old_obj);
     let _ = DeleteDC(mem_dc);
@@ -1079,7 +1389,14 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
 
     let mut png_data = Vec::new();
     let encoder = image::codecs::png::PngEncoder::new(&mut png_data);
-    encoder.write_image(&pixels, width as u32, height as u32, image::ColorType::Rgba8).ok()?;
+    encoder
+        .write_image(
+            &pixels,
+            width as u32,
+            height as u32,
+            image::ColorType::Rgba8,
+        )
+        .ok()?;
 
     Some(BASE64.encode(&png_data))
 }
@@ -1089,8 +1406,8 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
 #[cfg(target_os = "windows")]
 pub fn send_paste_input() {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_LCONTROL, VK_RCONTROL, VK_MENU, VK_LMENU, VK_RMENU,
-        VK_LWIN, VK_RWIN,
+        GetAsyncKeyState, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LWIN, VK_MENU, VK_RCONTROL,
+        VK_RMENU, VK_RWIN,
     };
 
     // If the paste was triggered by a shortcut like Ctrl+Enter, the user's physical

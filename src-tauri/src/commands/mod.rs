@@ -1,16 +1,16 @@
 pub mod clips;
-mod folders;
-pub mod settings;
 mod data;
-mod window;
+mod folders;
 pub mod helpers;
-pub mod sync;
 mod scratchpads;
+pub mod settings;
+pub mod sync;
+mod window;
 
 pub use clips::*;
-pub use folders::*;
-pub use settings::*;
 pub use data::*;
-pub use window::*;
-pub use sync::*;
+pub use folders::*;
 pub use scratchpads::*;
+pub use settings::*;
+pub use sync::*;
+pub use window::*;

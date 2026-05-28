@@ -11,6 +11,11 @@ import {
   AlertCircle,
   Image,
   Clock,
+  Activity,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Trash2,
+  KeyRound,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -20,6 +25,17 @@ interface SyncStatus {
   pending_changes: number;
   error_message: string | null;
   connected_email: string | null;
+  token_expires_at: number | null;
+  last_report: {
+    pushed_clips: number;
+    pushed_folders: number;
+    pulled_clips: number;
+    pulled_folders: number;
+    deleted: number;
+    skipped: boolean;
+    completed_at: string;
+    message: string;
+  } | null;
 }
 
 interface SyncSettings {
@@ -38,7 +54,11 @@ const INTERVAL_OPTIONS = [
 
 export function SyncTab() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [settings, setSettings] = useState<SyncSettings>({ enabled: false, interval_seconds: 300, sync_images: true });
+  const [settings, setSettings] = useState<SyncSettings>({
+    enabled: false,
+    interval_seconds: 300,
+    sync_images: true,
+  });
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
@@ -162,6 +182,28 @@ export function SyncTab() {
     }
   };
 
+  const formatTokenExpiry = (expiresAt: number | null | undefined) => {
+    if (!expiresAt) return 'Unknown';
+    const ms = expiresAt * 1000 - Date.now();
+    if (ms <= 0) return 'Expired';
+    if (ms < 3600000) return `${Math.max(1, Math.floor(ms / 60000))}m`;
+    if (ms < 86400000) return `${Math.floor(ms / 3600000)}h`;
+    return `${Math.floor(ms / 86400000)}d`;
+  };
+
+  const stateLabel =
+    status?.state === 'syncing'
+      ? 'Syncing'
+      : status?.state === 'error'
+        ? 'Needs attention'
+        : status?.state === 'offline'
+          ? 'Offline'
+          : isConnected
+            ? settings.enabled
+              ? 'Healthy'
+              : 'Connected'
+            : 'Disconnected';
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Sync</h3>
@@ -184,7 +226,52 @@ export function SyncTab() {
                 Disconnect
               </button>
             </div>
-            {/* Sync status */}
+            <div className="grid grid-cols-4 gap-2">
+              <div className="rounded-md border border-border/60 bg-background/40 p-3">
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Activity size={12} />
+                  Status
+                </div>
+                <div
+                  className={clsx(
+                    'text-sm font-semibold',
+                    status?.state === 'error'
+                      ? 'text-red-400'
+                      : status?.state === 'syncing'
+                        ? 'text-blue-400'
+                        : 'text-green-400'
+                  )}
+                >
+                  {stateLabel}
+                </div>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/40 p-3">
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Clock size={12} />
+                  Last sync
+                </div>
+                <div className="text-sm font-semibold">{formatLastSync(status?.last_sync_at)}</div>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/40 p-3">
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <RefreshCw size={12} />
+                  Pending
+                </div>
+                <div className="text-sm font-semibold text-amber-400">
+                  {(status?.pending_changes ?? 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/40 p-3">
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <KeyRound size={12} />
+                  Token
+                </div>
+                <div className="text-sm font-semibold">
+                  {formatTokenExpiry(status?.token_expires_at)}
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {status?.state === 'syncing' ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -202,6 +289,44 @@ export function SyncTab() {
                 <span className="ml-auto text-amber-400">{status.pending_changes} pending</span>
               ) : null}
             </div>
+
+            {status?.error_message && (
+              <div className="rounded-md border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
+                {status.error_message}
+              </div>
+            )}
+
+            {status?.last_report && (
+              <div className="rounded-md border border-border/60 bg-background/40 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground">Last sync report</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {formatLastSync(status.last_report.completed_at)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="flex items-center gap-1.5 rounded bg-card/60 px-2 py-1.5">
+                    <ArrowUpFromLine size={12} className="text-blue-400" />
+                    <span>
+                      {status.last_report.pushed_clips + status.last_report.pushed_folders} pushed
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 rounded bg-card/60 px-2 py-1.5">
+                    <ArrowDownToLine size={12} className="text-emerald-400" />
+                    <span>
+                      {status.last_report.pulled_clips + status.last_report.pulled_folders} pulled
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 rounded bg-card/60 px-2 py-1.5">
+                    <Trash2 size={12} className="text-rose-400" />
+                    <span>{status.last_report.deleted} deleted</span>
+                  </div>
+                </div>
+                <div className="mt-2 truncate text-[11px] text-muted-foreground">
+                  {status.last_report.message}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <button
@@ -212,11 +337,7 @@ export function SyncTab() {
               connecting ? 'cursor-not-allowed opacity-50' : 'hover:bg-accent'
             )}
           >
-            {connecting ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <Cloud size={16} />
-            )}
+            {connecting ? <Loader2 size={16} className="animate-spin" /> : <Cloud size={16} />}
             {connecting ? 'Connecting...' : 'Connect Google Drive'}
           </button>
         )}

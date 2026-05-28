@@ -35,47 +35,50 @@ export function useFolderPreview(opts: UseFolderPreviewOpts) {
     setIsPreviewLoading(false);
   }, [cancelPreviewEnd]);
 
-  const handleFolderHover = useCallback(async (folderId: string | null) => {
-    cancelPreviewEnd();
-    const requestId = ++previewRequestIdRef.current;
+  const handleFolderHover = useCallback(
+    async (folderId: string | null) => {
+      cancelPreviewEnd();
+      const requestId = ++previewRequestIdRef.current;
 
-    setPreviewFolder(folderId);
+      setPreviewFolder(folderId);
 
-    // Check cache first
-    const cacheKey = folderId ?? '__all__';
-    const cached = previewCacheRef.current.get(cacheKey);
-    if (cached) {
-      setPreviewClips(cached);
-      setIsPreviewLoading(false);
-      return;
-    }
-
-    setIsPreviewLoading(true);
-    try {
-      const data = await invoke<AppClipboardItem[]>('get_clips', {
-        filterId: folderId,
-        limit: PAGE_SIZE,
-        offset: 0,
-        previewOnly: false,
-      });
-      // Only apply if this is still the latest request
-      if (requestId !== previewRequestIdRef.current) return;
-      // Evict oldest entry if cache exceeds limit
-      if (previewCacheRef.current.size >= MAX_PREVIEW_CACHE_SIZE) {
-        const firstKey = previewCacheRef.current.keys().next().value;
-        if (firstKey !== undefined) previewCacheRef.current.delete(firstKey);
-      }
-      previewCacheRef.current.set(cacheKey, data);
-      setPreviewClips(data);
-    } catch (error) {
-      if (requestId !== previewRequestIdRef.current) return;
-      console.error('Failed to load preview clips:', error);
-    } finally {
-      if (requestId === previewRequestIdRef.current) {
+      // Check cache first
+      const cacheKey = folderId ?? '__all__';
+      const cached = previewCacheRef.current.get(cacheKey);
+      if (cached) {
+        setPreviewClips(cached);
         setIsPreviewLoading(false);
+        return;
       }
-    }
-  }, [cancelPreviewEnd]);
+
+      setIsPreviewLoading(true);
+      try {
+        const data = await invoke<AppClipboardItem[]>('get_clips', {
+          filterId: folderId,
+          limit: PAGE_SIZE,
+          offset: 0,
+          previewOnly: false,
+        });
+        // Only apply if this is still the latest request
+        if (requestId !== previewRequestIdRef.current) return;
+        // Evict oldest entry if cache exceeds limit
+        if (previewCacheRef.current.size >= MAX_PREVIEW_CACHE_SIZE) {
+          const firstKey = previewCacheRef.current.keys().next().value;
+          if (firstKey !== undefined) previewCacheRef.current.delete(firstKey);
+        }
+        previewCacheRef.current.set(cacheKey, data);
+        setPreviewClips(data);
+      } catch (error) {
+        if (requestId !== previewRequestIdRef.current) return;
+        console.error('Failed to load preview clips:', error);
+      } finally {
+        if (requestId === previewRequestIdRef.current) {
+          setIsPreviewLoading(false);
+        }
+      }
+    },
+    [cancelPreviewEnd]
+  );
 
   const handleFolderHoverEnd = useCallback(() => {
     // Delay ending preview so user can move mouse down to clip list
@@ -100,11 +103,11 @@ export function useFolderPreview(opts: UseFolderPreviewOpts) {
   const prevFolderIdsRef = useRef<string>('');
 
   useEffect(() => {
-    const currentIds = new Set(clips.map(c => c.id));
+    const currentIds = new Set(clips.map((c) => c.id));
     const prev = prevClipIdsRef.current;
 
     // If clip IDs changed, invalidate the currently-viewed folder (or __all__)
-    if (currentIds.size !== prev.size || clips.some(c => !prev.has(c.id))) {
+    if (currentIds.size !== prev.size || clips.some((c) => !prev.has(c.id))) {
       // Find which folder the current clips belong to (all share the same view)
       const folderOfView = clips.length > 0 ? clips[0].folder_id : null;
       const cacheKey = folderOfView ?? '__all__';
@@ -114,7 +117,7 @@ export function useFolderPreview(opts: UseFolderPreviewOpts) {
   }, [clips]);
 
   // Clear entire cache when folder structure changes (add/remove/rename)
-  const folderIdsKey = useMemo(() => folders.map(f => f.id).join(','), [folders]);
+  const folderIdsKey = useMemo(() => folders.map((f) => f.id).join(','), [folders]);
   useEffect(() => {
     if (prevFolderIdsRef.current && prevFolderIdsRef.current !== folderIdsKey) {
       previewCacheRef.current.clear();

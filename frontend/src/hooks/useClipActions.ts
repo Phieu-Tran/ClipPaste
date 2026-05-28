@@ -76,7 +76,9 @@ export function useClipActions(opts: UseClipActionsOpts) {
         if (append) {
           setClips((prev) => {
             const combined = [...prev, ...stripped];
-            return combined.length > MAX_CLIPS_IN_STATE ? combined.slice(0, MAX_CLIPS_IN_STATE) : combined;
+            return combined.length > MAX_CLIPS_IN_STATE
+              ? combined.slice(0, MAX_CLIPS_IN_STATE)
+              : combined;
           });
         } else {
           setClips(stripped);
@@ -151,9 +153,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
   const handleTogglePin = async (clipId: string) => {
     try {
       const isPinned = await invoke<boolean>('toggle_pin', { id: clipId });
-      setClips((prev) =>
-        prev.map((c) => (c.id === clipId ? { ...c, is_pinned: isPinned } : c))
-      );
+      setClips((prev) => prev.map((c) => (c.id === clipId ? { ...c, is_pinned: isPinned } : c)));
       toast.success(isPinned ? 'Pinned' : 'Unpinned');
       // Reload to re-sort pinned items to top
       refreshCurrentFolder();
@@ -163,22 +163,28 @@ export function useClipActions(opts: UseClipActionsOpts) {
     }
   };
 
-  const handleEditBeforePaste = useCallback((clipId: string) => {
-    const clip = clipsRef.current.find((c) => c.id === clipId);
-    if (clip && clip.clip_type !== 'image') {
-      setEditingClip(clip);
-    }
-  }, [setEditingClip]);
+  const handleEditBeforePaste = useCallback(
+    (clipId: string) => {
+      const clip = clipsRef.current.find((c) => c.id === clipId);
+      if (clip && clip.clip_type !== 'image') {
+        setEditingClip(clip);
+      }
+    },
+    [setEditingClip]
+  );
 
-  const handlePasteEdited = useCallback(async (editedText: string) => {
-    setEditingClip(null);
-    try {
-      await invoke('paste_text', { content: editedText });
-    } catch (error) {
-      console.error('Failed to paste edited text:', error);
-      toast.error('Failed to paste');
-    }
-  }, [setEditingClip]);
+  const handlePasteEdited = useCallback(
+    async (editedText: string) => {
+      setEditingClip(null);
+      try {
+        await invoke('paste_text', { content: editedText });
+      } catch (error) {
+        console.error('Failed to paste edited text:', error);
+        toast.error('Failed to paste');
+      }
+    },
+    [setEditingClip]
+  );
 
   const handlePastePlainText = useCallback(async (clipId: string) => {
     const clip = clipsRef.current.find((c) => c.id === clipId);
@@ -191,25 +197,29 @@ export function useClipActions(opts: UseClipActionsOpts) {
     }
   }, []);
 
-  const handleEditNote = useCallback((clipId: string) => {
-    const clip = clipsRef.current.find((c) => c.id === clipId);
-    setNoteModalClipId(clipId);
-    setNoteModalInitial(clip?.note || '');
-  }, [setNoteModalClipId, setNoteModalInitial]);
+  const handleEditNote = useCallback(
+    (clipId: string) => {
+      const clip = clipsRef.current.find((c) => c.id === clipId);
+      setNoteModalClipId(clipId);
+      setNoteModalInitial(clip?.note || '');
+    },
+    [setNoteModalClipId, setNoteModalInitial]
+  );
 
-  const handleSaveNote = useCallback(async (clipId: string, note: string | null) => {
-    setNoteModalClipId(null);
-    try {
-      await invoke('update_note', { id: clipId, note });
-      setClips((prev) =>
-        prev.map((c) => (c.id === clipId ? { ...c, note } : c))
-      );
-      toast.success(note ? 'Note saved' : 'Note removed');
-    } catch (error) {
-      console.error('Failed to update note:', error);
-      toast.error('Failed to save note');
-    }
-  }, [setClips, setNoteModalClipId]);
+  const handleSaveNote = useCallback(
+    async (clipId: string, note: string | null) => {
+      setNoteModalClipId(null);
+      try {
+        await invoke('update_note', { id: clipId, note });
+        setClips((prev) => prev.map((c) => (c.id === clipId ? { ...c, note } : c)));
+        toast.success(note ? 'Note saved' : 'Note removed');
+      } catch (error) {
+        console.error('Failed to update note:', error);
+        toast.error('Failed to save note');
+      }
+    },
+    [setClips, setNoteModalClipId]
+  );
 
   return {
     loadClips,

@@ -28,6 +28,8 @@ export interface FolderItem {
 export interface Settings {
   max_items: number;
   auto_delete_days: number;
+  image_auto_delete: boolean;
+  image_delete_days: number;
   startup_with_windows: boolean;
   show_in_taskbar: boolean;
   hotkey: string;

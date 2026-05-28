@@ -68,15 +68,27 @@ export function ClipList({
   onNativeDragStartRef.current = onNativeDragStart;
 
   // Stable callbacks that read from refs — never change identity
-  const stableOnSelect = useCallback((clipId: string, e?: React.MouseEvent) => onSelectClipRef.current(clipId, e), []);
+  const stableOnSelect = useCallback(
+    (clipId: string, e?: React.MouseEvent) => onSelectClipRef.current(clipId, e),
+    []
+  );
   const stableOnPaste = useCallback((clipId: string) => onPasteRef.current(clipId), []);
   const stableOnCopy = useCallback((clipId: string) => onCopyRef.current(clipId), []);
   const stableOnPin = useCallback((clipId: string) => onPinRef.current(clipId), []);
-  const stableOnContextMenu = useCallback((e: React.MouseEvent, clipId: string) => onCardContextMenuRef.current?.(e, clipId), []);
-  const stableOnDragStart = useCallback((e: React.DragEvent, clip: ClipboardItem) => onNativeDragStartRef.current?.(e, clip), []);
+  const stableOnContextMenu = useCallback(
+    (e: React.MouseEvent, clipId: string) => onCardContextMenuRef.current?.(e, clipId),
+    []
+  );
+  const stableOnDragStart = useCallback(
+    (e: React.DragEvent, clip: ClipboardItem) => onNativeDragStartRef.current?.(e, clip),
+    []
+  );
 
   // Detect when the clip list changes entirely and trigger stagger animation
-  const clipsKey = clips.slice(0, 5).map(c => c.id).join(',');
+  const clipsKey = clips
+    .slice(0, 5)
+    .map((c) => c.id)
+    .join(',');
   useEffect(() => {
     if (prevClipsKeyRef.current && clipsKey !== prevClipsKeyRef.current) {
       setStaggerKey((k) => k + 1);
@@ -109,11 +121,11 @@ export function ClipList({
   // Scroll selected card into view when navigating with arrow keys
   useEffect(() => {
     if (!selectedClipId) return;
-    const index = clips.findIndex(c => c.id === selectedClipId);
+    const index = clips.findIndex((c) => c.id === selectedClipId);
     if (index >= 0) {
       virtualizer.scrollToIndex(index, { align: 'auto', behavior: 'smooth' });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClipId]);
 
   // Scroll to start when window reopened or clip list changes (search, folder switch)
@@ -178,8 +190,22 @@ export function ClipList({
               Copy something to your clipboard and it will appear here.
             </p>
             <div className="mt-4 flex flex-col gap-1.5 text-xs text-gray-500/70">
-              <span><kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd> to paste · <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">↑↓</kbd> navigate</span>
-              <span><kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">E</kbd> edit · <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">P</kbd> pin · <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Ctrl+Del</kbd> delete</span>
+              <span>
+                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd>{' '}
+                to paste ·{' '}
+                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">↑↓</kbd>{' '}
+                navigate
+              </span>
+              <span>
+                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">E</kbd>{' '}
+                edit ·{' '}
+                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">P</kbd> pin
+                ·{' '}
+                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">
+                  Ctrl+Del
+                </kbd>{' '}
+                delete
+              </span>
             </div>
           </>
         )}
@@ -193,10 +219,14 @@ export function ClipList({
       role="listbox"
       aria-label="Clipboard history"
       aria-orientation="horizontal"
-      className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? ' opacity-80' : ''}`}
+      className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? 'opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
-      style={{ scrollSnapType: 'x proximity', scrollPaddingLeft: LAYOUT.SIDE_PADDING, scrollBehavior: 'smooth' }}
+      style={{
+        scrollSnapType: 'x proximity',
+        scrollPaddingLeft: LAYOUT.SIDE_PADDING,
+        scrollBehavior: 'smooth',
+      }}
     >
       {/* Virtual spacer — the full scrollable width */}
       <div
@@ -211,7 +241,10 @@ export function ClipList({
           return (
             <div
               key={clip.id}
-              className={clsx('absolute flex items-center', isSearching ? undefined : 'animate-stagger-in')}
+              className={clsx(
+                'absolute flex items-center',
+                isSearching ? undefined : 'animate-stagger-in'
+              )}
               style={{
                 top: 0,
                 left: virtualItem.start + LAYOUT.SIDE_PADDING,
@@ -226,7 +259,9 @@ export function ClipList({
                 clip={clip}
                 isSelected={selectedClipId === clip.id}
                 isMultiSelected={selectedClipIds?.has(clip.id) ?? false}
-                multiSelectIndex={selectedClipIds?.has(clip.id) ? multiSelectOrder.get(clip.id) : undefined}
+                multiSelectIndex={
+                  selectedClipIds?.has(clip.id) ? multiSelectOrder.get(clip.id) : undefined
+                }
                 onSelect={(e) => stableOnSelect(clip.id, e)}
                 onPaste={() => stableOnPaste(clip.id)}
                 onCopy={() => stableOnCopy(clip.id)}
@@ -234,12 +269,14 @@ export function ClipList({
                 showPin={showPin}
                 folderName={
                   isSearching && folderMap && selectedFolder
-                    ? (clip.folder_id !== selectedFolder
-                        ? (clip.folder_id ? folderMap[clip.folder_id] : 'All')
-                        : null)
-                    : (isSearching && folderMap && !selectedFolder && clip.folder_id
+                    ? clip.folder_id !== selectedFolder
+                      ? clip.folder_id
                         ? folderMap[clip.folder_id]
-                        : null)
+                        : 'All'
+                      : null
+                    : isSearching && folderMap && !selectedFolder && clip.folder_id
+                      ? folderMap[clip.folder_id]
+                      : null
                 }
                 onNativeDragStart={stableOnDragStart}
                 onContextMenu={(e: React.MouseEvent) => stableOnContextMenu(e, clip.id)}

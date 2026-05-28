@@ -2,19 +2,64 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import {
-  Briefcase, Code, Bookmark, Palette, Lock,
-  Star, Heart, Zap, Coffee, Music,
-  Globe, Camera, Gamepad2, Rocket, ShoppingBag,
-  GraduationCap, Wrench, Lightbulb, MessageSquare, Flame,
+  Briefcase,
+  Code,
+  Bookmark,
+  Palette,
+  Lock,
+  Star,
+  Heart,
+  Zap,
+  Coffee,
+  Music,
+  Globe,
+  Camera,
+  Gamepad2,
+  Rocket,
+  ShoppingBag,
+  GraduationCap,
+  Wrench,
+  Lightbulb,
+  MessageSquare,
+  Flame,
   // Tech / DevOps
-  Database, Server, Container, Network, HardDrive,
-  Terminal, Shield, Cpu, Cloud, Leaf,
-  Ship, Anchor, Rabbit, Bug, Key, Fish,
+  Database,
+  Server,
+  Container,
+  Network,
+  HardDrive,
+  Terminal,
+  Shield,
+  Cpu,
+  Cloud,
+  Leaf,
+  Ship,
+  Anchor,
+  Rabbit,
+  Bug,
+  Key,
+  Fish,
   // Extra DevOps / Hardware
-  Laptop2, Monitor, PcCase, Wifi, Router,
-  GitBranch, Github, Package, Workflow, Gauge,
-  Cog, Cable, Plug, Activity, Hash,
-  ShieldCheck, LockKeyhole, AppWindow, RefreshCw, Blocks,
+  Laptop2,
+  Monitor,
+  PcCase,
+  Wifi,
+  Router,
+  GitBranch,
+  Github,
+  Package,
+  Workflow,
+  Gauge,
+  Cog,
+  Cable,
+  Plug,
+  Activity,
+  Hash,
+  ShieldCheck,
+  LockKeyhole,
+  AppWindow,
+  RefreshCw,
+  Blocks,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -82,9 +127,10 @@ export const FOLDER_ICON_OPTIONS: { key: string; Icon: LucideIcon; color?: strin
   { key: 'blocks', Icon: Blocks, color: 'text-indigo-400' },
 ];
 
-export const FOLDER_ICON_MAP: Record<string, { Icon: LucideIcon; color: string }> = Object.fromEntries(
-  FOLDER_ICON_OPTIONS.map(({ key, Icon, color }) => [key, { Icon, color: color || '' }])
-);
+export const FOLDER_ICON_MAP: Record<string, { Icon: LucideIcon; color: string }> =
+  Object.fromEntries(
+    FOLDER_ICON_OPTIONS.map(({ key, Icon, color }) => [key, { Icon, color: color || '' }])
+  );
 
 const COLOR_OPTIONS = [
   { key: 'red', bg: 'bg-red-500' },
@@ -107,7 +153,15 @@ interface FolderModalProps {
   onSubmit: (name: string, color: string | null, icon: string | null) => void;
 }
 
-export function FolderModal({ isOpen, mode, initialName, initialColor, initialIcon, onClose, onSubmit }: FolderModalProps) {
+export function FolderModal({
+  isOpen,
+  mode,
+  initialName,
+  initialColor,
+  initialIcon,
+  onClose,
+  onSubmit,
+}: FolderModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string | null>(initialColor ?? null);
