@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Incognito mode is now always visible**: while clipboard recording is paused, the whole window shows an ambient pulsing red glow around its edge — no more forgetting it's on after the toast disappears.
+- **Type filter pills use a sliding highlight**: the active type filter is marked by a single highlight that smoothly slides between pills (segmented-control style) instead of swapping background colors instantly.
+- **Folder tabs react to drag**: dragging a clip over a folder tab now makes it scale up and pulse with a glowing ring, clearly signalling the drop target.
+
+---
+
 ## [1.10.13] - 2026-05-29
 
 ### Added

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { FolderItem } from '../types';
 import {
   Search,
@@ -252,6 +252,24 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Sliding highlight for the type-filter pills (segmented-control style)
+  const filterListRef = useRef<HTMLDivElement>(null);
+  const [pillHighlight, setPillHighlight] = useState({ left: 0, width: 0, visible: false });
+
+  useLayoutEffect(() => {
+    const list = filterListRef.current;
+    if (!list) return;
+    const active = clipFilter
+      ? (list.querySelector(`[data-pill-key="${clipFilter}"]`) as HTMLElement | null)
+      : null;
+    if (active) {
+      setPillHighlight({ left: active.offsetLeft, width: active.offsetWidth, visible: true });
+      active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } else {
+      setPillHighlight((prev) => ({ ...prev, visible: false }));
+    }
+  }, [clipFilter, showSearch]);
+
   // Simulated folder drag state
   const [folderDragId, setFolderDragId] = useState<string | null>(null);
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null>(null);
@@ -467,37 +485,50 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       {/* Clip Filters */}
       {(showSearch || activeFilter) && (
         <div
-          className="no-drag no-scrollbar flex h-8 max-w-[174px] shrink-0 items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-card/90 px-1.5"
+          className="no-drag no-scrollbar flex h-8 max-w-[174px] shrink-0 items-center overflow-x-auto rounded-full border border-border/60 bg-card/90 px-1.5"
           role="toolbar"
           aria-label="Filter clips"
           style={{ WebkitAppRegion: 'no-drag' } as any}
         >
-          {CLIP_FILTERS.map(({ key, label, Icon }) => (
-            <button
-              key={key}
-              onClick={() => onClipFilterChange?.(clipFilter === key ? null : key)}
-              title={label}
-              aria-label={`Filter by ${label}`}
-              aria-pressed={clipFilter === key}
-              className={clsx(
-                'flex h-6 min-w-6 items-center justify-center rounded-full transition-colors',
-                clipFilter === key
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              )}
-            >
-              <Icon size={13} />
-            </button>
-          ))}
-          {activeFilter && (
-            <button
-              onClick={() => onClipFilterChange?.(null)}
-              title="Clear type filter"
-              className="ml-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X size={13} />
-            </button>
-          )}
+          <div ref={filterListRef} className="relative flex items-center gap-1">
+            {/* Sliding highlight behind the active pill */}
+            <span
+              aria-hidden
+              className="transition-spring pointer-events-none absolute top-1/2 h-6 -translate-y-1/2 rounded-full bg-primary shadow-sm transition-[transform,width,opacity] duration-300"
+              style={{
+                width: pillHighlight.width,
+                transform: `translate(${pillHighlight.left}px, -50%)`,
+                opacity: pillHighlight.visible ? 1 : 0,
+              }}
+            />
+            {CLIP_FILTERS.map(({ key, label, Icon }) => (
+              <button
+                key={key}
+                data-pill-key={key}
+                onClick={() => onClipFilterChange?.(clipFilter === key ? null : key)}
+                title={label}
+                aria-label={`Filter by ${label}`}
+                aria-pressed={clipFilter === key}
+                className={clsx(
+                  'relative z-10 flex h-6 min-w-6 items-center justify-center rounded-full transition-colors',
+                  clipFilter === key
+                    ? 'text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                )}
+              >
+                <Icon size={13} />
+              </button>
+            ))}
+            {activeFilter && (
+              <button
+                onClick={() => onClipFilterChange?.(null)}
+                title="Clear type filter"
+                className="relative z-10 ml-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -636,7 +667,9 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               className={clsx(
                 'whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all duration-200',
                 colorClass,
-                isDragging && cat.id === dragTargetFolderId && 'bg-accent ring-2 ring-primary',
+                isDragging &&
+                  cat.id === dragTargetFolderId &&
+                  'animate-folder-accept z-10 bg-accent shadow-lg shadow-primary/30 ring-2 ring-primary',
                 folderDragId === cat.id && 'scale-90 opacity-30',
                 // Drop target: highlight with indicator line on the side where item will be inserted
                 folderDropTargetId === cat.id &&

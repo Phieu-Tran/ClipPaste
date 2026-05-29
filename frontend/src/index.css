@@ -337,4 +337,38 @@
   .sensitive-blur:hover {
     filter: blur(0);
   }
+
+  /* Incognito mode: persistent pulsing red glow around the window edge */
+  @keyframes incognito-glow {
+    0%,
+    100% {
+      box-shadow:
+        inset 0 0 0 1.5px rgba(239, 68, 68, 0.5),
+        inset 0 0 16px rgba(239, 68, 68, 0.16);
+    }
+    50% {
+      box-shadow:
+        inset 0 0 0 1.5px rgba(239, 68, 68, 0.82),
+        inset 0 0 26px rgba(239, 68, 68, 0.32);
+    }
+  }
+
+  .animate-incognito-glow {
+    animation: incognito-glow 2.4s ease-in-out infinite;
+  }
+
+  /* Folder tab "ready to accept" pulse while a clip is dragged over it */
+  @keyframes folder-accept {
+    0%,
+    100% {
+      transform: scale(1.06);
+    }
+    50% {
+      transform: scale(1.13);
+    }
+  }
+
+  .animate-folder-accept {
+    animation: folder-accept 0.7s ease-in-out infinite;
+  }
 }

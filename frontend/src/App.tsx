@@ -422,7 +422,14 @@ function App() {
       />
 
       <div className="relative h-full w-full" style={{ padding: `${LAYOUT.WINDOW_PADDING}px` }}>
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]">
+        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]">
+          {/* Incognito mode: ambient red glow so the paused state is always visible */}
+          {isIncognito && (
+            <div
+              aria-hidden
+              className="animate-incognito-glow pointer-events-none absolute inset-0 z-[80] rounded-[12px]"
+            />
+          )}
           {contextMenu &&
             (() => {
               const ctxClip =
