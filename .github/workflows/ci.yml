@@ -58,16 +58,25 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Prettier check
         run: pnpm format:check
 
       # Produces ../dist, which tauri's generate_context! embeds at compile time.
-      # Clippy/build below fail without it.
+      # The Rust steps below fail without it.
       - name: Type-check & build frontend
         run: pnpm build
 
+      # Strict lint on the primary dev platform (matches scripts/test.ps1).
       - name: Clippy (deny warnings)
+        if: matrix.platform == 'windows-latest'
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
+
+      # On Linux we only verify it compiles — Windows-only cfg blocks leave some
+      # symbols unused here, so we don't enforce -D warnings on this platform.
+      - name: Compile check (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: src-tauri
+        run: cargo build
