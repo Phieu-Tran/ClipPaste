@@ -41,7 +41,12 @@ export function useClipActions(opts: UseClipActionsOpts) {
   // Monotonic counter to discard stale responses from older queries
   const loadGenRef = useRef(0);
   const loadClips = useCallback(
-    async (folderId: string | null, append: boolean = false, searchOverride: string = '') => {
+    async (
+      folderId: string | null,
+      append: boolean = false,
+      searchOverride: string = '',
+      typeFilter: string | null = null
+    ) => {
       const thisGen = ++loadGenRef.current;
 
       try {
@@ -51,10 +56,21 @@ export function useClipActions(opts: UseClipActionsOpts) {
 
         let data: AppClipboardItem[];
 
+        const canUseBackendTypeFilter =
+          !!typeFilter && folderId !== '__frequent__' && folderId !== '__smart__';
+
         if (searchOverride.trim()) {
           data = await cmd.searchClips({
             query: searchOverride,
             filterId: folderId,
+            typeFilter,
+            limit: PAGE_SIZE,
+            offset: currentOffset,
+          });
+        } else if (canUseBackendTypeFilter) {
+          data = await cmd.getClipsByTypeFilter({
+            typeFilter,
+            folderId,
             limit: PAGE_SIZE,
             offset: currentOffset,
           });

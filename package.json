@@ -2,6 +2,7 @@
   "name": "clippaste",
   "version": "1.10.12",
   "description": "A beautiful clipboard history manager for Windows",
+  "type": "module",
   "license": "GPL-3.0",
   "scripts": {
     "dev": "vite",

@@ -523,7 +523,6 @@ export const ClipCard = memo(function ClipCard({
       className="flex-shrink-0"
     >
       <div
-        key={isSelected ? `selected-${clip.id}` : `idle-${clip.id}`}
         ref={cardRef}
         draggable
         onDragStart={handleNativeDragStart}
@@ -532,13 +531,12 @@ export const ClipCard = memo(function ClipCard({
         onContextMenu={handleContextMenu}
         className={clsx(
           'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border bg-card',
-          'transform-gpu transition-all duration-200 active:scale-[0.995]',
-          isSelected && !isMultiSelected && 'animate-selection-pop',
+          'duration-140 transform-gpu transition-[transform,border-color,box-shadow] ease-out active:scale-[0.995]',
           showCopied && 'animate-copy-card-flash',
           isMultiSelected
-            ? 'z-10 -translate-y-1 scale-[1.018] border-blue-500/70 shadow-xl shadow-blue-500/15 ring-2 ring-blue-500/40'
+            ? 'z-10 scale-[1.018] border-blue-500/70 shadow-xl shadow-blue-500/15 ring-2 ring-blue-500/40'
             : isSelected
-              ? 'z-10 -translate-y-1 scale-[1.025] border-blue-500/80 shadow-xl shadow-blue-500/20 ring-[3px] ring-blue-500/35'
+              ? 'z-10 scale-[1.024] border-blue-500/80 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/35'
               : 'border-white/[0.08] shadow-sm hover:z-10 hover:-translate-y-1 hover:scale-[1.018] hover:border-white/[0.18] hover:shadow-xl hover:shadow-black/20 dark:border-white/[0.08] dark:hover:border-white/[0.18]',
           'group'
         )}

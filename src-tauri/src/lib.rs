@@ -6,10 +6,9 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager,
+    Manager,
 };
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 #[cfg(target_os = "macos")]
 use window_vibrancy_macos::{apply_vibrancy, NSVisualEffectMaterial};
@@ -381,76 +380,34 @@ pub fn run_app() {
             #[cfg(target_os = "macos")]
             let _ = apply_vibrancy(&win, NSVisualEffectMaterial::WindowBackground, None, None);
 
-            app_handle.plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
-
-            // Load saved hotkey from database or use default
-            let db_for_hotkey = db_for_clipboard.clone();
-            let saved_hotkey = get_runtime().expect("Tokio runtime not initialized for hotkey setup").block_on(async {
-                db_for_hotkey.get_setting("hotkey").await.ok().flatten()
-            }).unwrap_or_else(|| "Ctrl+Shift+V".to_string());
-
-            log::info!("Registering hotkey: {}", saved_hotkey);
-
-            // Parse the hotkey string into a Shortcut
-            use std::str::FromStr;
-            use tauri_plugin_global_shortcut::Shortcut;
-
-            if let Ok(shortcut) = Shortcut::from_str(&saved_hotkey) {
-                let win_clone = win.clone();
-                let db_for_main_hotkey = db_for_clipboard.clone();
-                let _ = app_handle.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        let already_open = win_clone.is_visible().unwrap_or(false) && win_clone.is_focused().unwrap_or(false);
-                        if already_open {
-                            crate::animate_window_hide(&win_clone, None);
-                        } else {
-                            // Suppress hotkey when foreground app is in the Ignored list.
-                            if crate::clipboard::is_foreground_app_ignored(&db_for_main_hotkey) {
-                                log::info!("HOTKEY: Suppressed (foreground app is ignored)");
-                                return;
-                            }
-                            // Capture target window BEFORE ClipPaste steals focus,
-                            // so check_auto_paste_and_hide can restore focus explicitly.
-                            crate::clipboard::capture_prev_foreground();
-                            position_window_at_bottom(&win_clone);
-                            let _ = win_clone.show();
-                            let _ = win_clone.set_focus();
-                        }
-                    }
+            // Load saved hotkeys from database or use defaults, then register the complete
+            // shortcut set through the same path used by Settings.
+            let db_for_shortcuts = db_for_clipboard.clone();
+            let (saved_hotkey, scratchpad_hotkey) = get_runtime()
+                .expect("Tokio runtime not initialized for hotkey setup")
+                .block_on(async {
+                    let main = db_for_shortcuts
+                        .get_setting("hotkey")
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
+                    let scratchpad = db_for_shortcuts
+                        .get_setting("scratchpad_hotkey")
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+                    (main, scratchpad)
                 });
-            } else {
-                log::error!("Failed to parse hotkey: {}", saved_hotkey);
-            }
 
-            // Scratchpad hotkey — defaults to Ctrl+Shift+S. Opens the scratchpad window
-            // and tells the frontend to expand it to list mode via the `scratchpad-toggle` event.
-            let db_for_sp_hotkey = db_for_clipboard.clone();
-            let scratchpad_hotkey = get_runtime().expect("Tokio runtime not initialized").block_on(async {
-                db_for_sp_hotkey.get_setting("scratchpad_hotkey").await.ok().flatten()
-            }).unwrap_or_else(|| "Ctrl+Shift+S".to_string());
-            log::info!("Registering scratchpad hotkey: {}", scratchpad_hotkey);
-
-            if let Ok(sp_shortcut) = Shortcut::from_str(&scratchpad_hotkey) {
-                let app_handle_for_sp = app_handle.clone();
-                let db_for_sp_hotkey_cb = db_for_clipboard.clone();
-                let _ = app_handle.global_shortcut().on_shortcut(sp_shortcut, move |_app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        // Suppress hotkey when foreground app is in the Ignored list.
-                        if crate::clipboard::is_foreground_app_ignored(&db_for_sp_hotkey_cb) {
-                            log::info!("HOTKEY: Scratchpad suppressed (foreground app is ignored)");
-                            return;
-                        }
-                        // Snapshot the user's target app BEFORE scratchpad gets focus — we'll
-                        // restore foreground to this HWND before simulating Shift+Insert.
-                        crate::clipboard::capture_prev_foreground();
-                        if let Some(sp_win) = app_handle_for_sp.get_webview_window("scratchpad") {
-                            let _ = sp_win.show();
-                            let _ = sp_win.emit("scratchpad-toggle", ());
-                        }
-                    }
-                });
-            } else {
-                log::error!("Failed to parse scratchpad hotkey: {}", scratchpad_hotkey);
+            if let Err(e) = commands::register_app_shortcuts(
+                &app_handle,
+                db_for_clipboard.clone(),
+                &saved_hotkey,
+                &scratchpad_hotkey,
+            ) {
+                log::error!("Failed to register global shortcuts: {}", e);
             }
 
             let handle_for_clip = app_handle.clone();
@@ -517,6 +474,7 @@ pub fn run_app() {
         .invoke_handler(tauri::generate_handler![
             commands::ping,
             commands::get_clips,
+            commands::get_clips_by_type_filter,
             commands::get_clip,
             commands::get_clip_image_data_url,
             commands::paste_clip,

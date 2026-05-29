@@ -161,8 +161,8 @@ function App() {
   } = useMultiSelect({ displayedClips });
 
   const refreshCurrentFolder = useCallback(() => {
-    loadClips(selectedFolderRef.current, false, searchQuery);
-  }, [loadClips, searchQuery]);
+    loadClips(selectedFolderRef.current, false, searchQuery, clipFilter);
+  }, [clipFilter, loadClips, searchQuery]);
 
   // Stable refs so event listeners never re-subscribe
   const loadClipsRef = useRef(loadClips);
@@ -202,12 +202,18 @@ function App() {
   useEffect(() => {
     loadFolders();
     if (searchQuery.trim()) {
-      loadClips(selectedFolder, false, searchQuery);
+      loadClips(selectedFolder, false, searchQuery, clipFilter);
     } else {
-      loadClips(selectedFolder);
+      loadClips(selectedFolder, false, '', clipFilter);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFolder, searchQuery]);
+  }, [selectedFolder, searchQuery, clipFilter]);
+
+  useEffect(() => {
+    if (!showSearch && clipFilter) {
+      setClipFilter(null);
+    }
+  }, [clipFilter, setClipFilter, showSearch]);
 
   useEffect(() => {
     refreshTotalCount();
@@ -257,6 +263,7 @@ function App() {
         searchInputRef.current?.focus();
       } else if (showSearch) {
         setShowSearch(false);
+        setClipFilter(null);
       } else if (selectedClipId) {
         setSelectedClipId(null);
       } else if (selectedFolder) {
@@ -319,9 +326,9 @@ function App() {
   // --- Load more (infinite scroll) ---
   const loadMore = useCallback(() => {
     if (hasMore && !isLoading) {
-      loadClips(selectedFolder, true, searchQuery);
+      loadClips(selectedFolder, true, searchQuery, clipFilter);
     }
-  }, [hasMore, isLoading, selectedFolder, loadClips, searchQuery]);
+  }, [clipFilter, hasMore, isLoading, selectedFolder, loadClips, searchQuery]);
 
   // --- Context Menu (extracted hook) ---
   const { contextMenu, handleContextMenu, handleCloseContextMenu } = useContextMenu();
@@ -382,7 +389,7 @@ function App() {
     loadFolders,
     refreshTotalCount,
     isPreviewing,
-    filteredPreviewClips: filteredPreviewClips,
+    filteredPreviewClips,
     filteredClips,
   });
 
@@ -521,6 +528,7 @@ function App() {
             onSearchClick={() => {
               if (showSearch) {
                 handleSearch('');
+                setClipFilter(null);
               }
               setShowSearch(!showSearch);
             }}
@@ -540,6 +548,8 @@ function App() {
             theme={effectiveTheme}
             clipFilter={clipFilter}
             onClipFilterChange={setClipFilter}
+            resultCount={searchQuery.trim() || clipFilter ? displayedClips.length : undefined}
+            resultHasMore={!isPreviewing && hasMore}
             isIncognito={isIncognito}
             onToggleIncognito={toggleIncognito}
             onToggleScratchpad={toggleScratchpad}
@@ -551,7 +561,7 @@ function App() {
             onMouseLeave={isPreviewing ? handlePreviewListLeave : undefined}
           >
             <ClipList
-              clips={isPreviewing ? filteredPreviewClips : filteredClips}
+              clips={displayedClips}
               isLoading={isPreviewing ? isPreviewLoading : isLoading}
               hasMore={isPreviewing ? false : hasMore}
               selectedClipId={selectedClipId}

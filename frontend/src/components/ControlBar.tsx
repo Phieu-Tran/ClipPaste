@@ -20,7 +20,6 @@ import {
   Code2,
   StickyNote,
   Network,
-  ListFilter,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
@@ -215,6 +214,8 @@ interface ControlBarProps {
   isIncognito?: boolean;
   onToggleIncognito?: () => void;
   onToggleScratchpad?: () => void;
+  resultCount?: number;
+  resultHasMore?: boolean;
 }
 
 export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(function ControlBar(
@@ -243,13 +244,13 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     isIncognito,
     onToggleIncognito,
     onToggleScratchpad,
+    resultCount,
+    resultHasMore,
   },
   ref
 ) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const filterMenuRef = useRef<HTMLDivElement>(null);
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
   // Simulated folder drag state
   const [folderDragId, setFolderDragId] = useState<string | null>(null);
@@ -340,17 +341,6 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     };
   }, []); // Subscribe once — dynamic values accessed via refs
 
-  useEffect(() => {
-    if (!filterMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
-        setFilterMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [filterMenuOpen]);
-
   // Scroll selected folder tab into view when selection changes
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -434,9 +424,10 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     [clipFilter]
   );
   const hasSearchQuery = searchQuery.trim().length > 0;
+  const showResultCount = resultCount !== undefined && (hasSearchQuery || activeFilter);
 
   return (
-    <div className="drag-area flex min-h-[52px] items-center gap-3 border-b border-border/50 bg-gradient-to-r from-background/95 via-background/90 to-background/95 px-6 py-2 backdrop-blur-sm">
+    <div className="drag-area relative z-[70] flex min-h-[52px] items-center gap-3 overflow-visible border-b border-border/50 bg-gradient-to-r from-background/95 via-background/90 to-background/95 px-6 py-2 backdrop-blur-sm">
       {/* Search Toggle / Input */}
       <div
         className={clsx(
@@ -474,66 +465,50 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       </div>
 
       {/* Clip Filters */}
-      {showSearch && (
+      {(showSearch || activeFilter) && (
         <div
-          ref={filterMenuRef}
-          className="no-drag relative"
+          className="no-drag no-scrollbar flex h-8 max-w-[174px] shrink-0 items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-card/90 px-1.5"
           role="toolbar"
           aria-label="Filter clips"
           style={{ WebkitAppRegion: 'no-drag' } as any}
         >
-          <button
-            onClick={() => setFilterMenuOpen((open) => !open)}
-            className={clsx(
-              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors',
-              activeFilter
-                ? 'border-primary/30 bg-primary/15 text-primary hover:bg-primary/25'
-                : 'border-border/60 bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
-            )}
-            aria-expanded={filterMenuOpen}
-          >
-            <ListFilter size={14} />
-            <span className="max-w-[72px] truncate">{activeFilter?.label ?? 'Type'}</span>
-          </button>
-          {filterMenuOpen && (
-            <div className="absolute left-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
-              <div className="grid grid-cols-2 gap-1 p-1.5">
-                {CLIP_FILTERS.map(({ key, label, Icon }) => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      onClipFilterChange?.(clipFilter === key ? null : key);
-                      setFilterMenuOpen(false);
-                    }}
-                    title={label}
-                    aria-label={`Filter by ${label}`}
-                    aria-pressed={clipFilter === key}
-                    className={clsx(
-                      'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                      clipFilter === key
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                    )}
-                  >
-                    <Icon size={13} />
-                    <span className="truncate">{label}</span>
-                  </button>
-                ))}
-              </div>
-              {activeFilter && (
-                <button
-                  onClick={() => {
-                    onClipFilterChange?.(null);
-                    setFilterMenuOpen(false);
-                  }}
-                  className="flex w-full items-center justify-center border-t border-border px-2 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                >
-                  Clear filter
-                </button>
+          {CLIP_FILTERS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => onClipFilterChange?.(clipFilter === key ? null : key)}
+              title={label}
+              aria-label={`Filter by ${label}`}
+              aria-pressed={clipFilter === key}
+              className={clsx(
+                'flex h-6 min-w-6 items-center justify-center rounded-full transition-colors',
+                clipFilter === key
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )}
-            </div>
+            >
+              <Icon size={13} />
+            </button>
+          ))}
+          {activeFilter && (
+            <button
+              onClick={() => onClipFilterChange?.(null)}
+              title="Clear type filter"
+              className="ml-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <X size={13} />
+            </button>
           )}
         </div>
+      )}
+
+      {showResultCount && (
+        <span
+          className="no-drag shrink-0 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
+          {activeFilter?.label ?? 'Results'} · {resultCount}
+          {resultHasMore ? '+' : ''}
+        </span>
       )}
 
       {showSearch && hasSearchQuery && (

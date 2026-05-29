@@ -7,6 +7,15 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
+/// Shared ORDER BY for browsing a folder: pinned first, then noted items
+/// (alphabetically by note), then newest copy first. Used by both `get_clips`
+/// (folder path) and `get_clips_by_type_filter` so list order stays identical
+/// whether or not a type filter is applied.
+const FOLDER_BROWSE_ORDER_BY: &str = "ORDER BY is_pinned DESC,
+         CASE WHEN note IS NOT NULL AND note != '' THEN 0 ELSE 1 END,
+         CASE WHEN note IS NOT NULL AND note != '' THEN note ELSE NULL END,
+         created_at DESC";
+
 /// Fuzzy subsequence match: checks if all characters of `needle` appear in `haystack` in order,
 /// but only matches if the characters are reasonably close together (not scattered across a long string).
 /// Compactness ratio = needle_len / span. Must be >= 0.3 to avoid random garbage matches.
@@ -175,7 +184,7 @@ pub async fn get_clips(
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {
                 log::debug!("Querying for folder_id: {}", numeric_id);
-                sqlx::query_as(
+                let sql = format!(
                     r#"
                     SELECT id, uuid, clip_type,
                            CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
@@ -184,19 +193,17 @@ pub async fn get_clips(
                            created_at, last_accessed, last_pasted_at, is_pinned,
                            subtype, note, paste_count, is_sensitive, updated_at
                     FROM clips WHERE folder_id = ?
-                    ORDER BY is_pinned DESC,
-                             CASE WHEN note IS NOT NULL AND note != '' THEN 0 ELSE 1 END,
-                             CASE WHEN note IS NOT NULL AND note != '' THEN note ELSE NULL END,
-                             created_at DESC
+                    {FOLDER_BROWSE_ORDER_BY}
                     LIMIT ? OFFSET ?
-                "#,
-                )
-                .bind(numeric_id)
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(pool)
-                .await
-                .map_err(|e| e.to_string())?
+                "#
+                );
+                sqlx::query_as(&sql)
+                    .bind(numeric_id)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(pool)
+                    .await
+                    .map_err(|e| e.to_string())?
             } else {
                 log::debug!("Unknown folder_id, returning empty");
                 Vec::new()
@@ -247,6 +254,75 @@ pub async fn get_clips(
             );
         }
         items.push(clip_to_item_async(clip, &db.images_dir, preview_only).await);
+    }
+
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn get_clips_by_type_filter(
+    type_filter: String,
+    folder_id: Option<String>,
+    limit: i64,
+    offset: i64,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<ClipboardItem>, String> {
+    let folder_filter = folder_id.as_deref().and_then(|id| id.parse::<i64>().ok());
+
+    let mut sql = String::from(
+        r#"
+        SELECT id, uuid, clip_type,
+               CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
+               text_preview, content_hash,
+               folder_id, is_deleted, source_app, source_icon, metadata,
+               created_at, last_accessed, last_pasted_at, is_pinned,
+               subtype, note, paste_count, is_sensitive, updated_at
+        FROM clips
+        WHERE "#,
+    );
+
+    let mut subtype_param: Option<&str> = None;
+    match type_filter.as_str() {
+        "text" => sql.push_str("clip_type = 'text' AND subtype IS NULL"),
+        "image" => sql.push_str("clip_type = 'image'"),
+        "html" => sql.push_str("clip_type = 'html'"),
+        "rtf" => sql.push_str("clip_type = 'rtf'"),
+        "url" | "email" | "color" | "path" | "phone" | "ip" | "json" | "code" => {
+            sql.push_str("subtype = ?");
+            subtype_param = Some(type_filter.as_str());
+        }
+        _ => return Err("Invalid type filter".to_string()),
+    }
+
+    if folder_filter.is_some() {
+        sql.push_str(" AND folder_id = ?");
+        // Browsing inside a folder: mirror get_clips folder ordering exactly.
+        sql.push('\n');
+        sql.push_str(FOLDER_BROWSE_ORDER_BY);
+    } else {
+        // "All" view: mirror get_clips (None) ordering — newest copy first.
+        sql.push_str("\nORDER BY created_at DESC");
+    }
+    sql.push_str(" LIMIT ? OFFSET ?");
+
+    let mut query = sqlx::query_as::<_, Clip>(&sql);
+    if let Some(subtype) = subtype_param {
+        query = query.bind(subtype);
+    }
+    if let Some(fid) = folder_filter {
+        query = query.bind(fid);
+    }
+
+    let clips = query
+        .bind(limit.max(0))
+        .bind(offset.max(0))
+        .fetch_all(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::with_capacity(clips.len());
+    for clip in &clips {
+        items.push(clip_to_item_async(clip, &db.images_dir, false).await);
     }
 
     Ok(items)
@@ -515,6 +591,7 @@ pub async fn delete_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Res
 pub async fn search_clips(
     query: String,
     filter_id: Option<String>,
+    type_filter: Option<String>,
     limit: i64,
     offset: i64,
     db: tauri::State<'_, Arc<Database>>,
@@ -523,10 +600,43 @@ pub async fn search_clips(
 
     let query_lower = query.to_lowercase();
     let folder_filter: Option<i64> = filter_id.as_deref().and_then(|id| id.parse::<i64>().ok());
+    let type_filter = type_filter.filter(|value| !value.trim().is_empty());
     let limit = limit.max(0);
     let offset = offset.max(0);
 
-    if let Some(clips) = search_clips_fts(pool, &query_lower, folder_filter, limit, offset).await? {
+    if type_filter.is_some() {
+        if let Some(clips) = search_clips_fts(
+            pool,
+            &query_lower,
+            folder_filter,
+            type_filter.as_deref(),
+            limit,
+            offset,
+        )
+        .await?
+        {
+            let mut items = Vec::with_capacity(clips.len());
+            for clip in &clips {
+                items.push(clip_to_item_async(clip, &db.images_dir, false).await);
+            }
+            return Ok(items);
+        }
+
+        return search_clips_filtered_sql(
+            pool,
+            &db.images_dir,
+            &query_lower,
+            folder_filter,
+            type_filter.as_deref(),
+            limit,
+            offset,
+        )
+        .await;
+    }
+
+    if let Some(clips) =
+        search_clips_fts(pool, &query_lower, folder_filter, None, limit, offset).await?
+    {
         if offset > 0 || clips.len() >= limit as usize {
             let mut items = Vec::with_capacity(clips.len());
             for clip in &clips {
@@ -698,10 +808,70 @@ async fn search_clips_cache(
     Ok(items)
 }
 
+async fn search_clips_filtered_sql(
+    pool: &sqlx::SqlitePool,
+    images_dir: &std::path::Path,
+    query_lower: &str,
+    folder_filter: Option<i64>,
+    type_filter: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<ClipboardItem>, String> {
+    let words: Vec<&str> = query_lower.split_whitespace().collect();
+    let mut sql = String::from(
+        "SELECT id, uuid, clip_type, X'' as content, text_preview, content_hash,
+                folder_id, is_deleted, source_app, source_icon, metadata,
+                created_at, last_accessed, last_pasted_at, is_pinned,
+                subtype, note, paste_count, is_sensitive, updated_at
+         FROM clips WHERE 1=1",
+    );
+    let subtype_bind = append_type_filter_sql(&mut sql, "", type_filter)?;
+    if folder_filter.is_some() {
+        sql.push_str(" AND folder_id = ?");
+    }
+    if !words.is_empty() {
+        sql.push_str(" AND (");
+        for (idx, _) in words.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(" AND ");
+            }
+            sql.push_str("(LOWER(text_preview) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)");
+        }
+        sql.push(')');
+    }
+    sql.push_str(" ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?");
+
+    let mut query = sqlx::query_as::<_, Clip>(&sql);
+    if let Some(subtype) = subtype_bind {
+        query = query.bind(subtype);
+    }
+    if let Some(fid) = folder_filter {
+        query = query.bind(fid);
+    }
+    for word in &words {
+        let like = format!("%{}%", word);
+        query = query.bind(like.clone()).bind(like);
+    }
+    let clips = query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::with_capacity(clips.len());
+    for clip in &clips {
+        items.push(clip_to_item_async(clip, images_dir, false).await);
+    }
+
+    Ok(items)
+}
+
 async fn search_clips_fts(
     pool: &sqlx::SqlitePool,
     query_lower: &str,
     folder_filter: Option<i64>,
+    type_filter: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Option<Vec<Clip>>, String> {
@@ -718,12 +888,16 @@ async fn search_clips_fts(
          JOIN clips c ON c.id = f.rowid
          WHERE clips_fts MATCH ?",
     );
+    let subtype_bind = append_type_filter_sql(&mut sql, "c.", type_filter)?;
     if folder_filter.is_some() {
         sql.push_str(" AND c.folder_id = ?");
     }
     sql.push_str(" ORDER BY bm25(clips_fts), c.created_at DESC LIMIT ? OFFSET ?");
 
     let mut query = sqlx::query_as::<_, Clip>(&sql).bind(match_query);
+    if let Some(subtype) = subtype_bind {
+        query = query.bind(subtype);
+    }
     if let Some(fid) = folder_filter {
         query = query.bind(fid);
     }
@@ -739,6 +913,30 @@ async fn search_clips_fts(
             Ok(None)
         }
     }
+}
+
+fn append_type_filter_sql(
+    sql: &mut String,
+    prefix: &str,
+    type_filter: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(filter) = type_filter else {
+        return Ok(None);
+    };
+    match filter {
+        "text" => sql.push_str(&format!(
+            " AND {prefix}clip_type = 'text' AND {prefix}subtype IS NULL"
+        )),
+        "image" => sql.push_str(&format!(" AND {prefix}clip_type = 'image'")),
+        "html" => sql.push_str(&format!(" AND {prefix}clip_type = 'html'")),
+        "rtf" => sql.push_str(&format!(" AND {prefix}clip_type = 'rtf'")),
+        "url" | "email" | "color" | "path" | "phone" | "ip" | "json" | "code" => {
+            sql.push_str(&format!(" AND {prefix}subtype = ?"));
+            return Ok(Some(filter.to_string()));
+        }
+        _ => return Err("Invalid type filter".to_string()),
+    }
+    Ok(None)
 }
 
 fn build_fts_query(query: &str) -> Option<String> {

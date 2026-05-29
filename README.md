@@ -43,6 +43,7 @@
 | 🔒 | **Private & Local** | All data stored locally — never leaves your machine |
 | ⚡ | **Fast & Lightweight** | Rust backend, ~50MB RAM, instant search |
 | 🔍 | **Smart Search** | Multi-word AND search + fuzzy matching, relevance-ranked (exact phrase first) |
+| 🧪 | **Type Filter** | Filter the list by content type — Text, Image, URL, Email, Color, Path, Phone, IP, JSON, Code — with a live result count, combinable with search |
 | 🏷️ | **Content Detection** | Auto-detect URLs, emails, color codes, file paths — styled cards |
 | 🛡️ | **Sensitive Detection** | Auto-detect API keys, tokens, credit cards — blurred + shield icon |
 | 👁️ | **Incognito Mode** | Pause clipboard recording with one click |

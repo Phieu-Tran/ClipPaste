@@ -527,6 +527,26 @@ pub async fn export_data(
     Ok(save_path)
 }
 
+async fn verify_imported_db(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&format!("sqlite:{}", path_str))
+        .await
+        .map_err(|e| format!("Imported DB cannot be opened: {}", e))?;
+
+    let result: Result<String, _> = sqlx::query_scalar("PRAGMA integrity_check(1)")
+        .fetch_one(&pool)
+        .await;
+    pool.close().await;
+
+    match result {
+        Ok(ref s) if s == "ok" => Ok(()),
+        Ok(s) => Err(format!("Imported DB failed integrity_check: {}", s)),
+        Err(e) => Err(format!("Imported DB integrity_check failed: {}", e)),
+    }
+}
+
 #[tauri::command]
 pub async fn import_data(
     app: AppHandle,
@@ -585,17 +605,12 @@ pub async fn import_data(
         .parent()
         .ok_or_else(|| "Cannot determine data directory".to_string())?
         .to_path_buf();
-    let data_dir_clone = data_dir.clone();
-
-    // Close the DB pool before replacing the file — otherwise SQLite WAL/SHM
-    // from the old connection will overwrite the imported DB on next open
-    db.pool.close().await;
 
     // Extract to a temp directory first to avoid overwriting the live DB
     let temp_dir = data_dir.join(".import_temp");
     let temp_dir_clone = temp_dir.clone();
 
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
+    let extract_result = tokio::task::spawn_blocking(move || -> Result<(), String> {
         let file =
             std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
@@ -672,6 +687,28 @@ pub async fn import_data(
             return Err("Import failed: extracted clipboard.db not found".to_string());
         }
 
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Err(e) = extract_result {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err(e);
+    }
+
+    if let Err(e) = verify_imported_db(&temp_dir.join("clipboard.db")).await {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err(e);
+    }
+
+    // Close the DB pool only after the backup has been extracted and validated.
+    // This avoids leaving the app with a closed pool when the selected zip is invalid.
+    db.pool.close().await;
+
+    let data_dir_clone = data_dir.clone();
+    let temp_dir_clone = temp_dir.clone();
+    let install_result = tokio::task::spawn_blocking(move || -> Result<(), String> {
         // Stage the imported DB: rename current DB and place new one.
         // The app will restart after import, picking up the new DB.
         let src_db = temp_dir_clone.join("clipboard.db");
@@ -715,7 +752,12 @@ pub async fn import_data(
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())?;
+
+    if let Err(e) = install_result {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err(e);
+    }
 
     log::info!("Imported backup from zip");
 
@@ -900,9 +942,7 @@ pub async fn get_clips_by_date(
 
 /// Run SQLite integrity check and return "ok" or the first error found.
 #[tauri::command]
-pub async fn check_db_integrity(
-    db: tauri::State<'_, Arc<Database>>,
-) -> Result<String, String> {
+pub async fn check_db_integrity(db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
     let result: Result<String, _> = sqlx::query_scalar("PRAGMA integrity_check(1)")
         .fetch_one(&db.pool)
         .await;

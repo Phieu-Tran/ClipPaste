@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Type filter**: filter the clip list by content type — Text, Image, URL, Email, Color, Path, Phone, IP, JSON, Code — from a pill toolbar next to the search box. Shows a live result count, works inside folders and the "All" view, and combines with text search. Backed by a dedicated indexed `get_clips_by_type_filter` command plus type-aware FTS/LIKE search paths.
+- **Global scratchpad hotkey**: the scratchpad panel now has its own OS-level global shortcut (default `Ctrl+Shift+S`), registered alongside the main hotkey. Conflicting main/scratchpad hotkeys are rejected.
+
+### Changed
+- **Contextual bulk-action bar (Folders settings)**: the per-folder action row now shows "N selected" and reveals Move / Delete only when clips are selected, instead of always-visible disabled buttons.
+- **Snappier selection & scrolling**: clip-card selection now uses an instant transform transition (dropped the pop keyframe), and keyboard navigation scrolls the selected card into view instantly instead of smooth-scrolling — removes lag when arrowing through clips.
+- **Stable list order with filters**: type-filtered browsing now uses the exact same ordering as the unfiltered list (pinned → noted → newest inside folders, newest in "All"), so toggling a filter no longer reshuffles clips. Shared `FOLDER_BROWSE_ORDER_BY` between `get_clips` and `get_clips_by_type_filter`.
+- **Hotkeys respect ignored apps**: pressing either global hotkey is now suppressed while an ignored app (e.g. password manager) is in the foreground, and the previously focused window is captured for accurate paste targeting.
+- **Stricter settings validation**: `save_settings` now rejects invalid `theme`, `mica_effect`, and `hotkey` values with an explicit error instead of silently ignoring them, and surfaces autostart toggle failures.
+
+### Fixed
+- **Safer database auto-repair**: corrupt-DB recovery now uses `VACUUM INTO` to produce a full copy (real rows, not just schema) and only swaps it in after the repaired file passes `PRAGMA integrity_check`; the original DB plus its WAL/SHM are preserved as a timestamped backup. Previously the rebuild copied schema only and could lose data.
+
+### Internal
+- **CI on every PR / push to `main`**: new `.github/workflows/ci.yml` runs Prettier check, frontend build, vitest unit tests, and `cargo clippy -D warnings` + `cargo test` on both Windows and Linux — catching compile/lint/test regressions before a release tag is cut.
+- Added Windows/POSIX dev scripts under `scripts/` (`kill-dev`, `tauri`, `test`).
+
+---
+
 ## [1.10.12] - 2026-05-29
 
 ### Added

@@ -138,7 +138,7 @@ export function ClipList({
     const itemEnd = itemStart + TOTAL_COLUMN_WIDTH;
     const viewportStart = container.scrollLeft;
     const viewportEnd = viewportStart + container.clientWidth;
-    const edgeComfort = Math.min(TOTAL_COLUMN_WIDTH * 0.55, container.clientWidth * 0.22);
+    const edgeComfort = Math.min(96, Math.max(56, container.clientWidth * 0.08));
 
     let targetLeft: number | null = null;
     if (itemStart < viewportStart + edgeComfort) {
@@ -149,12 +149,7 @@ export function ClipList({
 
     if (targetLeft !== null) {
       const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
-      container.scrollTo({
-        left: Math.max(0, Math.min(targetLeft, maxScroll)),
-        behavior: 'smooth',
-      });
-    } else {
-      virtualizer.scrollToIndex(index, { align: 'auto', behavior: 'smooth' });
+      container.scrollLeft = Math.max(0, Math.min(targetLeft, maxScroll));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClipId]);
@@ -283,9 +278,7 @@ export function ClipList({
       onScroll={handleScroll}
       onWheel={handleWheel}
       style={{
-        scrollSnapType: 'x proximity',
         scrollPaddingLeft: LAYOUT.SIDE_PADDING,
-        scrollBehavior: 'smooth',
       }}
     >
       {/* Virtual spacer — the full scrollable width */}
@@ -311,7 +304,6 @@ export function ClipList({
                 left: virtualItem.start + LAYOUT.SIDE_PADDING,
                 width: virtualItem.size,
                 height: '100%',
-                scrollSnapAlign: 'start',
                 ...(isSearching ? {} : { animationDelay: `${viewIndex * 30}ms` }),
               }}
               data-stagger-key={staggerKey}

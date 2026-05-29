@@ -23,8 +23,20 @@ export const cmd = {
     previewOnly?: boolean;
   }) => invoke<ClipboardItem[]>('get_clips', args),
 
-  searchClips: (args: { query: string; filterId?: string | null; limit: number; offset: number }) =>
-    invoke<ClipboardItem[]>('search_clips', args),
+  searchClips: (args: {
+    query: string;
+    filterId?: string | null;
+    typeFilter?: string | null;
+    limit: number;
+    offset: number;
+  }) => invoke<ClipboardItem[]>('search_clips', args),
+
+  getClipsByTypeFilter: (args: {
+    typeFilter: string;
+    folderId?: string | null;
+    limit: number;
+    offset: number;
+  }) => invoke<ClipboardItem[]>('get_clips_by_type_filter', args),
 
   getInitialState: () =>
     invoke<{ clips: ClipboardItem[]; folders: FolderItem[]; total_count: number }>(

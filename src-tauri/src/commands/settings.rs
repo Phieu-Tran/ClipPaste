@@ -2,8 +2,22 @@ use crate::database::Database;
 use dark_light::Mode;
 use std::str::FromStr;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+async fn save_setting_value(
+    pool: &sqlx::SqlitePool,
+    key: &str,
+    value: impl ToString,
+) -> Result<(), String> {
+    sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+        .bind(key)
+        .bind(value.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to save setting {}: {}", key, e))?;
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn get_settings(
@@ -78,53 +92,29 @@ pub async fn save_settings(
         } else {
             max_items.clamp(10, 100_000)
         };
-        sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('max_items', ?)"#)
-            .bind(max_items.to_string())
-            .execute(pool)
-            .await
-            .ok();
+        save_setting_value(pool, "max_items", max_items).await?;
     }
 
     if let Some(days) = settings.get("auto_delete_days").and_then(|v| v.as_i64()) {
         // 0 = disabled, otherwise clamp to 1..3650
         let days = if days <= 0 { 0 } else { days.clamp(1, 3650) };
-        sqlx::query(
-            r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_delete_days', ?)"#,
-        )
-        .bind(days.to_string())
-        .execute(pool)
-        .await
-        .ok();
+        save_setting_value(pool, "auto_delete_days", days).await?;
     }
 
     if let Some(enabled) = settings.get("image_auto_delete").and_then(|v| v.as_bool()) {
-        sqlx::query(
-            r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('image_auto_delete', ?)"#,
-        )
-        .bind(enabled.to_string())
-        .execute(pool)
-        .await
-        .ok();
+        save_setting_value(pool, "image_auto_delete", enabled).await?;
     }
 
     if let Some(days) = settings.get("image_delete_days").and_then(|v| v.as_i64()) {
         let days = if days <= 0 { 0 } else { days.clamp(1, 3650) };
-        sqlx::query(
-            r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('image_delete_days', ?)"#,
-        )
-        .bind(days.to_string())
-        .execute(pool)
-        .await
-        .ok();
+        save_setting_value(pool, "image_delete_days", days).await?;
     }
 
     if let Some(theme) = settings.get("theme").and_then(|v| v.as_str()) {
         if matches!(theme, "light" | "dark" | "system") {
-            sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', ?)"#)
-                .bind(theme)
-                .execute(pool)
-                .await
-                .ok();
+            save_setting_value(pool, "theme", theme).await?;
+        } else {
+            return Err(format!("Invalid theme: {}", theme));
         }
     }
 
@@ -133,13 +123,9 @@ pub async fn save_settings(
             mica_effect,
             "clear" | "mica" | "mica_alt" | "acrylic" | "blur"
         ) {
-            sqlx::query(
-                r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('mica_effect', ?)"#,
-            )
-            .bind(mica_effect)
-            .execute(pool)
-            .await
-            .ok();
+            save_setting_value(pool, "mica_effect", mica_effect).await?;
+        } else {
+            return Err(format!("Invalid mica_effect: {}", mica_effect));
         }
     }
 
@@ -198,46 +184,35 @@ pub async fn save_settings(
     if let Some(hotkey) = settings.get("hotkey").and_then(|v| v.as_str()) {
         // Validate hotkey format before saving
         if Shortcut::from_str(hotkey).is_ok() {
-            sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('hotkey', ?)"#)
-                .bind(hotkey)
-                .execute(pool)
-                .await
-                .ok();
+            save_setting_value(pool, "hotkey", hotkey).await?;
         } else {
-            log::warn!("SETTINGS: Invalid hotkey format rejected: {}", hotkey);
+            return Err(format!("Invalid hotkey format: {}", hotkey));
         }
     }
 
     if let Some(auto_paste) = settings.get("auto_paste").and_then(|v| v.as_bool()) {
-        sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_paste', ?)"#)
-            .bind(auto_paste.to_string())
-            .execute(pool)
-            .await
-            .ok();
+        save_setting_value(pool, "auto_paste", auto_paste).await?;
     }
 
     if let Some(ignore_ghost) = settings.get("ignore_ghost_clips").and_then(|v| v.as_bool()) {
-        sqlx::query(
-            r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('ignore_ghost_clips', ?)"#,
-        )
-        .bind(ignore_ghost.to_string())
-        .execute(pool)
-        .await
-        .ok();
+        save_setting_value(pool, "ignore_ghost_clips", ignore_ghost).await?;
     }
 
     if let Some(startup) = settings
         .get("startup_with_windows")
         .and_then(|v| v.as_bool())
     {
-        let current_state = app.autolaunch().is_enabled().unwrap_or(false);
+        let current_state = app
+            .autolaunch()
+            .is_enabled()
+            .map_err(|e| format!("Failed to read autostart state: {}", e))?;
         if startup != current_state {
             if startup {
-                if let Err(e) = app.autolaunch().enable() {
-                    log::warn!("Failed to enable autostart: {}", e);
-                }
+                app.autolaunch()
+                    .enable()
+                    .map_err(|e| format!("Failed to enable autostart: {}", e))?;
             } else if let Err(e) = app.autolaunch().disable() {
-                log::warn!("Failed to disable autostart: {}", e);
+                return Err(format!("Failed to disable autostart: {}", e));
             }
         }
     }
@@ -361,49 +336,106 @@ pub async fn remove_duplicate_clips(db: tauri::State<'_, Arc<Database>>) -> Resu
     Ok(result.rows_affected() as i64)
 }
 
-#[tauri::command]
-pub async fn register_global_shortcut(
-    hotkey: String,
-    window: tauri::WebviewWindow,
+pub fn register_app_shortcuts(
+    app: &AppHandle,
+    db: Arc<Database>,
+    main_hotkey: &str,
+    scratchpad_hotkey: &str,
 ) -> Result<(), String> {
-    use tauri_plugin_global_shortcut::ShortcutState;
+    let main_shortcut =
+        Shortcut::from_str(main_hotkey).map_err(|e| format!("Invalid hotkey: {:?}", e))?;
+    let (scratchpad_hotkey, scratchpad_shortcut) = match Shortcut::from_str(scratchpad_hotkey) {
+        Ok(shortcut) => (scratchpad_hotkey.to_string(), shortcut),
+        Err(e) => {
+            log::warn!(
+                "Invalid scratchpad hotkey {:?}: {:?}; falling back to Ctrl+Shift+S",
+                scratchpad_hotkey,
+                e
+            );
+            (
+                "Ctrl+Shift+S".to_string(),
+                Shortcut::from_str("Ctrl+Shift+S").map_err(|fallback_err| {
+                    format!("Invalid fallback hotkey: {:?}", fallback_err)
+                })?,
+            )
+        }
+    };
 
-    let app = window.app_handle();
-    let shortcut = Shortcut::from_str(&hotkey).map_err(|e| format!("Invalid hotkey: {:?}", e))?;
+    if main_hotkey.eq_ignore_ascii_case(&scratchpad_hotkey) {
+        return Err("Main hotkey conflicts with scratchpad hotkey".to_string());
+    }
 
-    // Unregister all existing shortcuts first
     if let Err(e) = app.global_shortcut().unregister_all() {
         log::warn!("Failed to unregister existing shortcuts: {:?}", e);
     }
 
-    // Get the main window for the handler
     let main_window = app
         .get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
 
-    // Register the new shortcut with toggle behavior (show/hide)
     let win_clone = main_window.clone();
-    if let Err(e) = app
-        .global_shortcut()
-        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+    let db_for_main_hotkey = db.clone();
+    app.global_shortcut()
+        .on_shortcut(main_shortcut, move |_app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                if win_clone.is_visible().unwrap_or(false)
-                    && win_clone.is_focused().unwrap_or(false)
-                {
+                let already_open = win_clone.is_visible().unwrap_or(false)
+                    && win_clone.is_focused().unwrap_or(false);
+                if already_open {
                     crate::animate_window_hide(&win_clone, None);
                 } else {
+                    if crate::clipboard::is_foreground_app_ignored(&db_for_main_hotkey) {
+                        log::info!("HOTKEY: Suppressed (foreground app is ignored)");
+                        return;
+                    }
+                    crate::clipboard::capture_prev_foreground();
                     crate::position_window_at_bottom(&win_clone);
                     let _ = win_clone.show();
                     let _ = win_clone.set_focus();
                 }
             }
         })
-    {
-        return Err(format!("Failed to register hotkey: {:?}", e));
-    }
+        .map_err(|e| format!("Failed to register hotkey: {:?}", e))?;
 
-    log::info!("Registered global shortcut: {}", hotkey);
+    let app_for_sp = app.clone();
+    let db_for_sp_hotkey = db;
+    app.global_shortcut()
+        .on_shortcut(scratchpad_shortcut, move |_app, _shortcut, event| {
+            if event.state() == ShortcutState::Pressed {
+                if crate::clipboard::is_foreground_app_ignored(&db_for_sp_hotkey) {
+                    log::info!("HOTKEY: Scratchpad suppressed (foreground app is ignored)");
+                    return;
+                }
+                crate::clipboard::capture_prev_foreground();
+                if let Some(sp_win) = app_for_sp.get_webview_window("scratchpad") {
+                    let _ = sp_win.show();
+                    let _ = sp_win.emit("scratchpad-toggle", ());
+                }
+            }
+        })
+        .map_err(|e| format!("Failed to register scratchpad hotkey: {:?}", e))?;
+
+    log::info!(
+        "Registered global shortcuts: main={}, scratchpad={}",
+        main_hotkey,
+        scratchpad_hotkey
+    );
     Ok(())
+}
+
+#[tauri::command]
+pub async fn register_global_shortcut(
+    hotkey: String,
+    window: tauri::WebviewWindow,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    let app = window.app_handle();
+    let scratchpad_hotkey = db
+        .get_setting("scratchpad_hotkey")
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+
+    register_app_shortcuts(app, db.inner().clone(), &hotkey, &scratchpad_hotkey)
 }
 
 #[tauri::command]

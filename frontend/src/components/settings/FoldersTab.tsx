@@ -402,7 +402,7 @@ export function FoldersTab({
         </div>
       </div>
 
-      <div className="grid min-h-[420px] grid-cols-[270px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-background/40">
+      <div className="grid min-h-[460px] grid-cols-[250px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-background/40">
         <aside className="flex min-h-0 flex-col border-r border-border bg-card/70">
           <div className="border-b border-border p-3">
             <div className="flex items-center gap-2 rounded-lg border border-border bg-input px-3 py-2">
@@ -535,7 +535,11 @@ export function FoldersTab({
           </div>
 
           {selectedFolder && (
-            <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+            <div
+              className={`flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2 transition-colors ${
+                selectedClipCount > 0 ? 'bg-primary/5' : ''
+              }`}
+            >
               <button
                 onClick={toggleSelectAll}
                 disabled={!selectedFolderClips || selectedFolderClips.length === 0}
@@ -546,28 +550,33 @@ export function FoldersTab({
                   : 'Select all'}
               </button>
 
-              <div className="flex items-center gap-1.5">
-                <div className="relative">
+              {selectedClipCount > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="mr-1 text-xs font-medium text-primary">
+                    {selectedClipCount} selected
+                  </span>
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setMoveTargetClipId(moveTargetClipId === '__bulk__' ? null : '__bulk__');
+                        setMoveSearch('');
+                      }}
+                      className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      Move
+                    </button>
+                    {moveTargetClipId === '__bulk__' && renderMovePopover(selectedFolder.id)}
+                  </div>
                   <button
-                    onClick={() => {
-                      setMoveTargetClipId(moveTargetClipId === '__bulk__' ? null : '__bulk__');
-                      setMoveSearch('');
-                    }}
-                    disabled={selectedClipCount === 0}
-                    className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                    onClick={handleBulkDelete}
+                    className="rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
                   >
-                    Move selected
+                    Delete
                   </button>
-                  {moveTargetClipId === '__bulk__' && renderMovePopover(selectedFolder.id)}
                 </div>
-                <button
-                  onClick={handleBulkDelete}
-                  disabled={selectedClipCount === 0}
-                  className="rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                >
-                  Delete selected
-                </button>
-              </div>
+              ) : (
+                <span className="text-xs text-muted-foreground">Select clips for bulk actions</span>
+              )}
             </div>
           )}
 

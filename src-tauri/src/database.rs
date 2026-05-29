@@ -32,6 +32,18 @@ fn is_managed_image_file(filename: &str) -> bool {
     false
 }
 
+fn sqlite_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn backup_related_db_file(src: &str, dst: &str) {
+    if std::path::Path::new(src).exists() {
+        if let Err(e) = std::fs::rename(src, dst) {
+            log::warn!("DB repair: could not backup related file {}: {}", src, e);
+        }
+    }
+}
+
 impl Database {
     pub async fn new(db_path: &str, data_dir: &std::path::Path) -> Self {
         let options = sqlx::sqlite::SqliteConnectOptions::new()
@@ -170,7 +182,8 @@ impl Database {
     }
 
     /// Check database integrity on startup. Returns true if DB is healthy.
-    /// If corrupt, attempts auto-repair by recovering readable data into a new DB.
+    /// If corrupt, attempts a non-destructive copy repair and only swaps files
+    /// after the repaired DB passes integrity_check.
     pub async fn check_and_repair(db_path: &str, data_dir: &std::path::Path) -> bool {
         // Quick integrity check (limited to first error)
         let pool = match sqlx::sqlite::SqlitePoolOptions::new()
@@ -206,19 +219,17 @@ impl Database {
         }
     }
 
-    /// Attempt to repair a corrupt DB by dumping readable data to a new file.
-    /// Returns true if repair succeeded.
+    /// Attempt to repair a corrupt DB by vacuuming readable data into a new file.
+    /// Returns true only if the repaired database passes integrity_check.
     async fn attempt_repair(db_path: &str, _data_dir: &std::path::Path) -> bool {
-        log::info!("DB repair: attempting auto-repair...");
+        log::info!("DB repair: attempting non-destructive copy repair...");
 
-        let backup_path = format!(
-            "{}.corrupt-{}",
-            db_path,
-            chrono::Local::now().format("%Y%m%d%H%M%S")
-        );
-        let new_path = format!("{}.repaired", db_path);
+        let stamp = chrono::Local::now().format("%Y%m%d%H%M%S");
+        let backup_path = format!("{}.corrupt-{}", db_path, stamp);
+        let repaired_path = format!("{}.repaired-{}", db_path, stamp);
 
-        // Open corrupt DB read-only
+        // Open corrupt DB read-only. If SQLite can still read the file, VACUUM
+        // INTO produces a compact copy containing real rows, not just schema.
         let src_opts = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(db_path)
             .read_only(true);
@@ -234,67 +245,63 @@ impl Database {
             }
         };
 
-        // Get table list
-        let tables: Vec<(String, String)> = match sqlx::query_as(
-            "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL"
-        ).fetch_all(&src_pool).await {
-            Ok(t) => t,
-            Err(e) => {
-                log::error!("DB repair: cannot read schema: {}", e);
-                src_pool.close().await;
-                return false;
-            }
-        };
+        let _ = std::fs::remove_file(&repaired_path);
+        let repaired_sql = sqlite_string_literal(&repaired_path);
+        if let Err(e) = sqlx::query(&format!("VACUUM INTO {}", repaired_sql))
+            .execute(&src_pool)
+            .await
+        {
+            log::error!("DB repair: VACUUM INTO failed: {}", e);
+            src_pool.close().await;
+            let _ = std::fs::remove_file(&repaired_path);
+            return false;
+        }
+        src_pool.close().await;
 
-        // Create new DB
-        let _ = std::fs::remove_file(&new_path);
-        let dst_opts = sqlx::sqlite::SqliteConnectOptions::new()
-            .filename(&new_path)
-            .create_if_missing(true);
-        let dst_pool = match sqlx::sqlite::SqlitePoolOptions::new()
+        let repaired_pool = match sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
-            .connect_with(dst_opts)
+            .connect(&format!("sqlite:{}", repaired_path))
             .await
         {
             Ok(p) => p,
             Err(e) => {
-                log::error!("DB repair: cannot create new DB: {}", e);
-                src_pool.close().await;
+                log::error!("DB repair: cannot open repaired DB: {}", e);
+                let _ = std::fs::remove_file(&repaired_path);
                 return false;
             }
         };
-
-        // Copy schema
-        for (name, sql) in &tables {
-            if let Err(e) = sqlx::query(sql).execute(&dst_pool).await {
-                log::warn!("DB repair: skip table {} schema: {}", name, e);
+        let repaired_check: Result<String, _> = sqlx::query_scalar("PRAGMA integrity_check(1)")
+            .fetch_one(&repaired_pool)
+            .await;
+        repaired_pool.close().await;
+        match repaired_check {
+            Ok(ref s) if s == "ok" => {}
+            Ok(s) => {
+                log::error!("DB repair: repaired DB failed integrity_check: {}", s);
+                let _ = std::fs::remove_file(&repaired_path);
+                return false;
+            }
+            Err(e) => {
+                log::error!("DB repair: repaired DB integrity_check error: {}", e);
+                let _ = std::fs::remove_file(&repaired_path);
+                return false;
             }
         }
-
-        // Copy indexes
-        let indexes: Vec<(String,)> =
-            sqlx::query_as("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
-                .fetch_all(&src_pool)
-                .await
-                .unwrap_or_default();
-        for (sql,) in &indexes {
-            let _ = sqlx::query(sql).execute(&dst_pool).await;
-        }
-
-        src_pool.close().await;
-        dst_pool.close().await;
 
         // Swap files
         if let Err(e) = std::fs::rename(db_path, &backup_path) {
             log::error!("DB repair: cannot backup corrupt file: {}", e);
-            let _ = std::fs::remove_file(&new_path);
+            let _ = std::fs::remove_file(&repaired_path);
             return false;
         }
+        backup_related_db_file(&format!("{}-wal", db_path), &format!("{}-wal", backup_path));
+        backup_related_db_file(&format!("{}-shm", db_path), &format!("{}-shm", backup_path));
+
         // Remove stale WAL/SHM
         let _ = std::fs::remove_file(format!("{}-wal", db_path));
         let _ = std::fs::remove_file(format!("{}-shm", db_path));
 
-        if let Err(e) = std::fs::rename(&new_path, db_path) {
+        if let Err(e) = std::fs::rename(&repaired_path, db_path) {
             log::error!("DB repair: cannot replace DB: {}", e);
             // Restore backup
             let _ = std::fs::rename(&backup_path, db_path);
@@ -305,7 +312,7 @@ impl Database {
             "DB repair: success! Corrupt backup saved to: {}",
             backup_path
         );
-        log::info!("DB repair: data will be re-populated by migrations. Some history may be lost.");
+        log::info!("DB repair: repaired database passed integrity_check.");
         true
     }
 
