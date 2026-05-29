@@ -1,21 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardItem, FolderItem } from '../../types';
 import {
-  Trash2,
-  Plus,
-  Folder as FolderIcon,
-  Pencil,
-  ChevronRight,
-  FileText,
-  Image as ImageIcon,
-  Link2,
+  ArrowRightLeft,
+  Check,
   Code,
   File as FileIcon,
-  Type,
-  ArrowRightLeft,
-  Search,
+  FileText,
+  Folder as FolderIcon,
+  Image as ImageIcon,
   Inbox,
+  Link2,
   Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Type,
+  X,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -71,14 +73,15 @@ export function FoldersTab({
   setRenameValue,
   loadFolders,
 }: FoldersTabProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [clipsByFolder, setClipsByFolder] = useState<Record<string, ClipboardItem[]>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [moveTargetClipId, setMoveTargetClipId] = useState<string | null>(null);
   const [moveSearch, setMoveSearch] = useState('');
+  const [folderSearch, setFolderSearch] = useState('');
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const movePopoverRef = useRef<HTMLDivElement | null>(null);
 
-  // Close move popover on outside click
   useEffect(() => {
     if (!moveTargetClipId) return;
     const onDown = (e: MouseEvent) => {
@@ -92,8 +95,24 @@ export function FoldersTab({
   }, [moveTargetClipId]);
 
   const customFolders = useMemo(() => folders.filter((f) => !f.is_system), [folders]);
+  const totalFiledClips = useMemo(
+    () => customFolders.reduce((sum, folder) => sum + folder.item_count, 0),
+    [customFolders]
+  );
+  const filteredFolders = useMemo(() => {
+    const query = folderSearch.trim().toLowerCase();
+    if (!query) return customFolders;
+    return customFolders.filter((folder) => folder.name.toLowerCase().includes(query));
+  }, [customFolders, folderSearch]);
+  const selectedFolder = useMemo(
+    () => customFolders.find((folder) => folder.id === selectedFolderId) ?? null,
+    [customFolders, selectedFolderId]
+  );
+  const selectedFolderClips = selectedFolderId ? clipsByFolder[selectedFolderId] : undefined;
+  const isSelectedFolderLoading = selectedFolderId ? loadingId === selectedFolderId : false;
+  const selectedClipCount = selectedClipIds.size;
 
-  const loadClipsForFolder = async (folderId: string) => {
+  const loadClipsForFolder = useCallback(async (folderId: string) => {
     setLoadingId(folderId);
     try {
       const clips = await invoke<ClipboardItem[]>('get_clips', {
@@ -108,18 +127,27 @@ export function FoldersTab({
     } finally {
       setLoadingId((cur) => (cur === folderId ? null : cur));
     }
-  };
+  }, []);
 
-  const toggleExpand = async (folderId: string) => {
-    if (expandedId === folderId) {
-      setExpandedId(null);
+  useEffect(() => {
+    if (customFolders.length === 0) {
+      setSelectedFolderId(null);
       return;
     }
-    setExpandedId(folderId);
-    if (!clipsByFolder[folderId]) {
-      await loadClipsForFolder(folderId);
+    if (!selectedFolderId || !customFolders.some((folder) => folder.id === selectedFolderId)) {
+      setSelectedFolderId(customFolders[0].id);
     }
-  };
+  }, [customFolders, selectedFolderId]);
+
+  useEffect(() => {
+    if (selectedFolderId && !clipsByFolder[selectedFolderId]) {
+      loadClipsForFolder(selectedFolderId);
+    }
+    setSelectedClipIds(new Set());
+    setMoveTargetClipId(null);
+    setMoveSearch('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFolderId]);
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -136,7 +164,7 @@ export function FoldersTab({
   const handleDeleteFolder = async (id: string) => {
     try {
       await invoke('delete_folder', { id });
-      if (expandedId === id) setExpandedId(null);
+      if (selectedFolderId === id) setSelectedFolderId(null);
       setClipsByFolder((prev) => {
         const next = { ...prev };
         delete next[id];
@@ -167,6 +195,11 @@ export function FoldersTab({
     }
   };
 
+  const refreshSelectedFolder = async () => {
+    await loadFolders();
+    if (selectedFolderId) await loadClipsForFolder(selectedFolderId);
+  };
+
   const handleMoveClip = async (
     clipUuid: string,
     fromFolderId: string,
@@ -181,7 +214,26 @@ export function FoldersTab({
       if (toFolderId && clipsByFolder[toFolderId]) {
         await loadClipsForFolder(toFolderId);
       }
-      toast.success(toFolderId ? 'Clip moved' : 'Clip moved to home');
+      toast.success(toFolderId ? 'Clip moved' : 'Clip moved to All');
+    } catch (e) {
+      toast.error(`Failed: ${e}`);
+    }
+  };
+
+  const handleBulkMove = async (toFolderId: string | null) => {
+    if (!selectedFolderId || selectedClipIds.size === 0) return;
+    const ids = Array.from(selectedClipIds);
+    try {
+      await invoke('bulk_move_clips', { ids, folderId: toFolderId });
+      setMoveTargetClipId(null);
+      setMoveSearch('');
+      setSelectedClipIds(new Set());
+      await loadFolders();
+      await loadClipsForFolder(selectedFolderId);
+      if (toFolderId && clipsByFolder[toFolderId]) {
+        await loadClipsForFolder(toFolderId);
+      }
+      toast.success(`Moved ${ids.length} clip${ids.length === 1 ? '' : 's'}`);
     } catch (e) {
       toast.error(`Failed: ${e}`);
     }
@@ -190,6 +242,11 @@ export function FoldersTab({
   const handleDeleteClip = async (clipUuid: string, folderId: string) => {
     try {
       await invoke('delete_clip', { id: clipUuid });
+      setSelectedClipIds((prev) => {
+        const next = new Set(prev);
+        next.delete(clipUuid);
+        return next;
+      });
       await loadFolders();
       await loadClipsForFolder(folderId);
       toast.success('Clip deleted');
@@ -198,266 +255,408 @@ export function FoldersTab({
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedClipIds.size === 0) return;
+    const ids = Array.from(selectedClipIds);
+    try {
+      const count = await invoke<number>('bulk_delete_clips', { ids });
+      setSelectedClipIds(new Set());
+      await refreshSelectedFolder();
+      toast.success(`Deleted ${count} clip${count === 1 ? '' : 's'}`);
+    } catch (e) {
+      toast.error(`Failed: ${e}`);
+    }
+  };
+
+  const toggleClipSelection = (clipId: string) => {
+    setSelectedClipIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clipId)) next.delete(clipId);
+      else next.add(clipId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!selectedFolderClips || selectedFolderClips.length === 0) return;
+    setSelectedClipIds((prev) =>
+      prev.size === selectedFolderClips.length
+        ? new Set()
+        : new Set(selectedFolderClips.map((clip) => clip.id))
+    );
+  };
+
+  const renderMovePopover = (fromFolderId: string, clipId?: string) => {
+    const lowerSearch = moveSearch.toLowerCase();
+    const matchingFolders = customFolders
+      .filter((folder) => folder.id !== fromFolderId)
+      .filter((folder) => folder.name.toLowerCase().includes(lowerSearch));
+    const isBulk = !clipId;
+
+    return (
+      <div
+        ref={movePopoverRef}
+        className="absolute right-0 top-8 z-30 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
+          <Search size={12} className="text-muted-foreground" />
+          <input
+            autoFocus
+            type="text"
+            value={moveSearch}
+            onChange={(e) => setMoveSearch(e.target.value)}
+            placeholder="Search folders..."
+            className="min-w-0 flex-1 bg-transparent text-xs focus:outline-none"
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto py-1">
+          {'all'.includes(lowerSearch) && (
+            <button
+              onClick={() =>
+                isBulk ? handleBulkMove(null) : handleMoveClip(clipId, fromFolderId, null)
+              }
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
+            >
+              <Inbox size={13} className="text-muted-foreground" />
+              <span>Move to All</span>
+            </button>
+          )}
+          {matchingFolders.map((folder) => (
+            <button
+              key={folder.id}
+              onClick={() =>
+                isBulk ? handleBulkMove(folder.id) : handleMoveClip(clipId, fromFolderId, folder.id)
+              }
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
+            >
+              <FolderIcon size={13} className="text-blue-400" />
+              <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {folder.item_count}
+              </span>
+            </button>
+          ))}
+          {matchingFolders.length === 0 && !'all'.includes(lowerSearch) && (
+            <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
+              No matching folder
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <section className="space-y-4">
       <div className="flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-muted-foreground">Manage Folders</h3>
         {customFolders.length > 0 && (
           <span className="text-xs text-muted-foreground">
-            {customFolders.length} folder{customFolders.length === 1 ? '' : 's'}
+            {customFolders.length} folder{customFolders.length === 1 ? '' : 's'} ·{' '}
+            {totalFiledClips.toLocaleString()} clips
           </span>
         )}
       </div>
 
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={newFolderName}
-          onChange={(e) => setNewFolderName(e.target.value)}
-          placeholder="New folder name"
-          className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
-        />
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="New folder name"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+          />
+          <button
+            onClick={handleCreateFolder}
+            disabled={!newFolderName.trim()}
+            className="btn btn-secondary px-3"
+          >
+            <Plus size={16} className="mr-1" />
+            Add
+          </button>
+        </div>
         <button
-          onClick={handleCreateFolder}
-          disabled={!newFolderName.trim()}
+          onClick={refreshSelectedFolder}
           className="btn btn-secondary px-3"
+          title="Refresh folders"
         >
-          <Plus size={16} className="mr-1" />
-          Add
+          <RefreshCw size={15} />
         </button>
       </div>
 
-      <div className="space-y-2">
-        {customFolders.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
-            No custom folders created.
-          </p>
-        ) : (
-          customFolders.map((folder) => {
-            const isExpanded = expandedId === folder.id;
-            const isEditing = editingFolderId === folder.id;
-            const clips = clipsByFolder[folder.id];
-            const isLoading = loadingId === folder.id && !clips;
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Folders</div>
+          <div className="text-lg font-semibold tabular-nums">{customFolders.length}</div>
+        </div>
+        <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Filed</div>
+          <div className="text-lg font-semibold tabular-nums">{totalFiledClips}</div>
+        </div>
+        <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Selected</div>
+          <div className="text-lg font-semibold tabular-nums">{selectedClipCount}</div>
+        </div>
+      </div>
 
-            return (
-              <div
-                key={folder.id}
-                className="overflow-hidden rounded-lg border border-border bg-card transition-colors"
-              >
-                {/* Header row */}
-                <div
-                  className={`flex items-center gap-2 px-3 py-2.5 ${
-                    isEditing ? '' : 'cursor-pointer hover:bg-accent/40'
-                  } ${isExpanded ? 'bg-accent/30' : ''}`}
-                  onClick={() => {
-                    if (!isEditing) toggleExpand(folder.id);
-                  }}
+      <div className="grid min-h-[420px] grid-cols-[270px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-background/40">
+        <aside className="flex min-h-0 flex-col border-r border-border bg-card/70">
+          <div className="border-b border-border p-3">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-input px-3 py-2">
+              <Search size={15} className="shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                value={folderSearch}
+                onChange={(e) => setFolderSearch(e.target.value)}
+                placeholder="Filter folders"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+              {folderSearch && (
+                <button
+                  onClick={() => setFolderSearch('')}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
-                  {isEditing ? (
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {customFolders.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-xs text-muted-foreground">
+                No custom folders created.
+              </p>
+            ) : filteredFolders.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-xs text-muted-foreground">
+                No folders match "{folderSearch.trim()}".
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {filteredFolders.map((folder) => {
+                  const isSelected = selectedFolderId === folder.id;
+                  const isEditing = editingFolderId === folder.id;
+
+                  return (
                     <div
-                      className="flex flex-1 items-center gap-2"
-                      onClick={(e) => e.stopPropagation()}
+                      key={folder.id}
+                      className={`rounded-md border transition-colors ${
+                        isSelected ? 'border-primary/40 bg-primary/10' : 'border-transparent'
+                      }`}
                     >
-                      <FolderIcon size={16} className="shrink-0 text-blue-400" />
-                      <input
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') saveRenameFolder();
-                          if (e.key === 'Escape') setEditingFolderId(null);
-                        }}
-                      />
-                      <button
-                        onClick={saveRenameFolder}
-                        className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingFolderId(null)}
-                        className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
-                      >
-                        Cancel
-                      </button>
+                      {isEditing ? (
+                        <div className="flex items-center gap-1.5 p-2">
+                          <FolderIcon size={15} className="shrink-0 text-blue-400" />
+                          <input
+                            type="text"
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveRenameFolder();
+                              if (e.key === 'Escape') setEditingFolderId(null);
+                            }}
+                          />
+                          <button
+                            onClick={saveRenameFolder}
+                            className="rounded p-1.5 text-primary hover:bg-primary/10"
+                            title="Save"
+                          >
+                            <Check size={13} />
+                          </button>
+                          <button
+                            onClick={() => setEditingFolderId(null)}
+                            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="Cancel"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSelectedFolderId(folder.id)}
+                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-accent/40"
+                        >
+                          <FolderIcon size={16} className="shrink-0 text-blue-400" />
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {folder.name}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                            {folder.item_count}
+                          </span>
+                        </button>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <ChevronRight
-                        size={14}
-                        className={`shrink-0 text-muted-foreground transition-transform ${
-                          isExpanded ? 'rotate-90' : ''
-                        }`}
-                      />
-                      <FolderIcon size={16} className="shrink-0 text-blue-400" />
-                      <span className="flex-1 truncate text-sm font-medium">{folder.name}</span>
-                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                        {folder.item_count}
-                      </span>
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startRenameFolder(folder);
-                          }}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Rename"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteFolder(folder.id);
-                          }}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          title="Delete folder"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Expanded clip list */}
-                {isExpanded && !isEditing && (
-                  <div className="border-t border-border bg-background/40">
-                    {isLoading ? (
-                      <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
-                        <Loader2 size={14} className="animate-spin" />
-                        Loading clips…
-                      </div>
-                    ) : !clips || clips.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center gap-1.5 py-6 text-xs text-muted-foreground">
-                        <Inbox size={18} className="opacity-50" />
-                        <span>No clips in this folder</span>
-                      </div>
-                    ) : (
-                      <ul className="max-h-72 divide-y divide-border/50 overflow-y-auto">
-                        {clips.map((clip) => {
-                          const isMoveOpen = moveTargetClipId === clip.id;
-                          const previewText =
-                            clip.clip_type === 'image'
-                              ? 'Image'
-                              : clip.preview?.trim() || '(empty)';
-                          return (
-                            <li
-                              key={clip.id}
-                              className="group relative flex items-center gap-2 px-3 py-2 hover:bg-accent/30"
-                            >
-                              <ClipTypeIcon type={clip.clip_type} />
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-xs text-foreground/90">
-                                  {previewText}
-                                </div>
-                                {clip.note && (
-                                  <div className="truncate text-[11px] italic text-muted-foreground">
-                                    {clip.note}
-                                  </div>
-                                )}
-                              </div>
-                              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                                {formatRelativeTime(clip.created_at)}
-                              </span>
-                              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setMoveTargetClipId(isMoveOpen ? null : clip.id);
-                                    setMoveSearch('');
-                                  }}
-                                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                                  title="Move to another folder"
-                                >
-                                  <ArrowRightLeft size={12} />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteClip(clip.id, folder.id);
-                                  }}
-                                  className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                  title="Delete clip"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-
-                              {/* Move popover */}
-                              {isMoveOpen && (
-                                <div
-                                  ref={movePopoverRef}
-                                  className="absolute right-2 top-9 z-20 w-60 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
-                                    <Search size={12} className="text-muted-foreground" />
-                                    <input
-                                      autoFocus
-                                      type="text"
-                                      value={moveSearch}
-                                      onChange={(e) => setMoveSearch(e.target.value)}
-                                      placeholder="Search folders…"
-                                      className="flex-1 bg-transparent text-xs focus:outline-none"
-                                    />
-                                  </div>
-                                  <div className="max-h-56 overflow-y-auto py-1">
-                                    {/* Move to home */}
-                                    {'home'.includes(moveSearch.toLowerCase()) && (
-                                      <button
-                                        onClick={() => handleMoveClip(clip.id, folder.id, null)}
-                                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
-                                      >
-                                        <Inbox size={13} className="text-muted-foreground" />
-                                        <span>Move to Home</span>
-                                      </button>
-                                    )}
-                                    {customFolders
-                                      .filter((f) => f.id !== folder.id)
-                                      .filter((f) =>
-                                        f.name.toLowerCase().includes(moveSearch.toLowerCase())
-                                      )
-                                      .map((f) => (
-                                        <button
-                                          key={f.id}
-                                          onClick={() => handleMoveClip(clip.id, folder.id, f.id)}
-                                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
-                                        >
-                                          <FolderIcon size={13} className="text-blue-400" />
-                                          <span className="flex-1 truncate">{f.name}</span>
-                                          <span className="text-[10px] tabular-nums text-muted-foreground">
-                                            {f.item_count}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    {customFolders.filter(
-                                      (f) =>
-                                        f.id !== folder.id &&
-                                        f.name.toLowerCase().includes(moveSearch.toLowerCase())
-                                    ).length === 0 &&
-                                      !'home'.includes(moveSearch.toLowerCase()) && (
-                                        <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
-                                          No matching folder
-                                        </div>
-                                      )}
-                                  </div>
-                                </div>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
+                  );
+                })}
               </div>
-            );
-          })
-        )}
+            )}
+          </div>
+        </aside>
+
+        <div className="flex min-h-0 min-w-0 flex-col">
+          <div className="flex items-center justify-between gap-3 border-b border-border bg-card/50 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <FolderIcon size={16} className="shrink-0 text-blue-400" />
+                <h4 className="truncate text-sm font-semibold">
+                  {selectedFolder ? selectedFolder.name : 'No folder selected'}
+                </h4>
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {selectedFolder
+                  ? `${selectedFolder.item_count.toLocaleString()} clips in folder`
+                  : 'Select a folder to manage its clips.'}
+              </div>
+            </div>
+
+            {selectedFolder && (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  onClick={() => startRenameFolder(selectedFolder)}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Rename folder"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={() => handleDeleteFolder(selectedFolder.id)}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  title="Delete folder"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {selectedFolder && (
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+              <button
+                onClick={toggleSelectAll}
+                disabled={!selectedFolderClips || selectedFolderClips.length === 0}
+                className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              >
+                {selectedFolderClips && selectedClipIds.size === selectedFolderClips.length
+                  ? 'Clear selection'
+                  : 'Select all'}
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setMoveTargetClipId(moveTargetClipId === '__bulk__' ? null : '__bulk__');
+                      setMoveSearch('');
+                    }}
+                    disabled={selectedClipCount === 0}
+                    className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                  >
+                    Move selected
+                  </button>
+                  {moveTargetClipId === '__bulk__' && renderMovePopover(selectedFolder.id)}
+                </div>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedClipCount === 0}
+                  className="rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                >
+                  Delete selected
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {!selectedFolder ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+                <FolderIcon size={24} className="opacity-50" />
+                <span>No folder selected</span>
+              </div>
+            ) : isSelectedFolderLoading && !selectedFolderClips ? (
+              <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                <Loader2 size={14} className="animate-spin" />
+                Loading clips...
+              </div>
+            ) : !selectedFolderClips || selectedFolderClips.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                <Inbox size={20} className="opacity-50" />
+                <span>No clips in this folder</span>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border/50">
+                {selectedFolderClips.map((clip) => {
+                  const isMoveOpen = moveTargetClipId === clip.id;
+                  const isChecked = selectedClipIds.has(clip.id);
+                  const previewText =
+                    clip.clip_type === 'image' ? 'Image' : clip.preview?.trim() || '(empty)';
+
+                  return (
+                    <li
+                      key={clip.id}
+                      className={`group relative flex items-center gap-2 px-3 py-2 hover:bg-accent/30 ${
+                        isChecked ? 'bg-primary/5' : ''
+                      }`}
+                    >
+                      <button
+                        onClick={() => toggleClipSelection(clip.id)}
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          isChecked
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border text-transparent hover:border-primary/60'
+                        }`}
+                        title="Select clip"
+                      >
+                        <Check size={11} />
+                      </button>
+                      <ClipTypeIcon type={clip.clip_type} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs text-foreground/90">{previewText}</div>
+                        {clip.note && (
+                          <div className="truncate text-[11px] italic text-muted-foreground">
+                            {clip.note}
+                          </div>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                        {formatRelativeTime(clip.created_at)}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMoveTargetClipId(isMoveOpen ? null : clip.id);
+                            setMoveSearch('');
+                          }}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Move to another folder"
+                        >
+                          <ArrowRightLeft size={12} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClip(clip.id, selectedFolder.id);
+                          }}
+                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          title="Delete clip"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+
+                      {isMoveOpen && renderMovePopover(selectedFolder.id, clip.id)}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

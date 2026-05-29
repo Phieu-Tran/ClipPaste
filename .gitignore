@@ -27,3 +27,11 @@ nul
 
 # Local test suite (not committed)
 tests/
+src-tauri/src/tests.rs
+
+# Tauri generated files
+src-tauri/gen/
+
+# Test runner scripts
+scripts/test.ps1
+scripts/test.sh

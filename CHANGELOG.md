@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.12] - 2026-05-29
+
+### Added
+- **DB integrity check**: new "Verify DB" button in Dashboard quick actions runs `PRAGMA integrity_check` and reports result via toast.
+- **Dashboard history pagination**: History Timeline now loads 100 clips per page with a "Load more" button — prevents UI freeze on high-volume days.
+
+### Changed
+- **Type-safe Tauri commands**: all `invoke()` calls in core hooks (`useClipActions`, `useBatchActions`, `useFolderActions`, `useDragDrop`) and `App.tsx` now go through a single typed `cmd.*` object in `commands.ts`, giving compile-time safety on command names and argument shapes.
+- **Named timing/debounce constants**: magic numbers (100 ms search debounce, 200 ms dashboard search debounce, 500 ms folder refresh debounce, 700 ms copy flash, 50 ms search focus delay, 4 s delete toast) moved to `DEBOUNCE` and `TIMING` objects in `constants.ts`.
+- **Multi-select cleared on search**: entering a search query now automatically clears any active multi-selection to prevent accidental batch-paste of clips not visible on screen.
+- **BatchActionBar extracted**: the floating batch-action overlay (~100 lines) split from `App.tsx` into its own `BatchActionBar.tsx` component — manages folder-dropdown state internally, simplifying App.tsx.
+- Shared API types (`DashboardStats`, `DashClip`, `ImageCleanupPreview`, `SyncStatus`, `SyncSettings`) moved from local component interfaces to `types/index.ts` for reuse across the codebase.
+
+---
+
 ## [1.10.11] - 2026-05-28
 
 ### Added

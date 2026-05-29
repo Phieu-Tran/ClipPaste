@@ -101,7 +101,7 @@ const SEARCH_CACHE_MAX: usize = 50_000;
 /// Version of the sensitive/subtype detection rules. Bump this when `detect_sensitive`
 /// or `detect_subtype` logic changes in a way that should re-classify existing clips.
 /// On startup, if the DB-stored version is lower, rescan runs; otherwise it's skipped.
-pub const DETECTION_RULES_VERSION: i64 = 1;
+pub const DETECTION_RULES_VERSION: i64 = 2;
 
 /// Load all clip previews into memory for instant search.
 /// Capped at SEARCH_CACHE_MAX entries (most recent first) to bound memory usage.
@@ -245,7 +245,52 @@ pub fn truncate_utf8(s: &str, max_chars: usize) -> &str {
     }
 }
 
-/// Detect content subtype from text (url, email, color, path)
+pub fn prepare_text_clip(text: &str) -> Option<(Vec<u8>, String, Option<String>)> {
+    if text.is_empty() {
+        return None;
+    }
+
+    Some((
+        text.as_bytes().to_vec(),
+        truncate_utf8(text, 2000).to_string(),
+        detect_subtype(text),
+    ))
+}
+
+fn is_ipv4_address(value: &str) -> bool {
+    let parts: Vec<&str> = value.split('.').collect();
+    parts.len() == 4
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.len() <= 3
+                && part.chars().all(|ch| ch.is_ascii_digit())
+                && part.parse::<u8>().is_ok()
+        })
+}
+
+fn is_numeric_dot_address_like(value: &str) -> bool {
+    if !value.contains('.') || !value.chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+        return false;
+    }
+
+    let parts: Vec<&str> = value.split('.').collect();
+    if !(3..=4).contains(&parts.len()) {
+        return false;
+    }
+
+    let Some(first) = parts.first() else {
+        return false;
+    };
+    if first.starts_with('0') {
+        return false;
+    }
+
+    parts.iter().all(|part| {
+        !part.is_empty() && part.len() <= 3 && part.chars().all(|ch| ch.is_ascii_digit())
+    })
+}
+
+/// Detect content subtype from text (url, email, color, path, phone, ip)
 pub fn detect_subtype(text: &str) -> Option<String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -298,8 +343,15 @@ pub fn detect_subtype(text: &str) -> Option<String> {
         return Some("path".to_string());
     }
 
+    if is_ipv4_address(trimmed) {
+        return Some("ip".to_string());
+    }
+
     // Phone number: +1-234-567-8900, (234) 567-8900, etc. (single-line, short)
-    if trimmed.len() <= 25 && !trimmed.contains(char::is_alphabetic) {
+    if trimmed.len() <= 25
+        && !trimmed.contains(char::is_alphabetic)
+        && !is_numeric_dot_address_like(trimmed)
+    {
         let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
         if digits.len() >= 7
             && digits.len() <= 15
@@ -650,13 +702,12 @@ async fn process_clipboard_change(
     if !found_content {
         // Try Text
         if let Ok(text) = read_text().await {
-            let text = text.trim();
-            if !text.is_empty() {
-                clip_content = text.as_bytes().to_vec();
+            if let Some((content, preview, subtype)) = prepare_text_clip(&text) {
+                clip_content = content;
                 clip_hash = calculate_hash(&clip_content);
                 clip_type = "text";
-                clip_preview = truncate_utf8(text, 2000).to_string();
-                clip_subtype = detect_subtype(text);
+                clip_preview = preview;
+                clip_subtype = subtype;
                 found_content = true;
                 log::trace!(
                     "CLIPBOARD: Found text ({} chars, subtype: {:?})",
@@ -808,7 +859,7 @@ async fn process_clipboard_change(
         // Update in-memory search cache
         add_to_search_cache(&clip_uuid, &clip_preview, None);
 
-        // FTS5 index no longer used — search uses in-memory SEARCH_CACHE
+        // Search metadata is maintained by SEARCH_CACHE and the clips_fts triggers.
 
         let _ = app.emit(
             "clipboard-change",

@@ -11,6 +11,10 @@ import {
   Download,
   Layers2,
   RefreshCw,
+  Loader2,
+  Network,
+  ChevronDown,
+  ShieldCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
@@ -62,10 +66,13 @@ interface DashboardTabProps {
   setDashSourceApp: (v: string | null) => void;
   dashClips: DashClip[];
   dashClipsLoading: boolean;
+  dashClipsHasMore: boolean;
+  onLoadMoreDashClips: () => void;
   onOpenStorageSettings: () => void;
   onExportBackup: () => Promise<void>;
   onRemoveDuplicates: () => Promise<void>;
   onRefreshStats: () => Promise<void>;
+  onCheckDbIntegrity: () => Promise<void>;
 }
 
 function formatBytes(bytes: number): string {
@@ -135,10 +142,13 @@ export function DashboardTab({
   setDashSourceApp,
   dashClips,
   dashClipsLoading,
+  dashClipsHasMore,
+  onLoadMoreDashClips,
   onOpenStorageSettings,
   onExportBackup,
   onRemoveDuplicates,
   onRefreshStats,
+  onCheckDbIntegrity,
 }: DashboardTabProps) {
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
@@ -217,7 +227,7 @@ export function DashboardTab({
         </div>
       </section>
 
-      <section className="grid grid-cols-4 gap-2">
+      <section className="grid grid-cols-5 gap-2">
         <button
           onClick={onOpenStorageSettings}
           className="flex min-h-[58px] items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2 text-left text-xs hover:bg-accent/40"
@@ -237,16 +247,36 @@ export function DashboardTab({
           disabled={!!runningAction}
           className="flex min-h-[58px] items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2 text-left text-xs hover:bg-accent/40 disabled:opacity-50"
         >
-          <Download size={15} className="text-emerald-400" />
-          Export Backup
+          {runningAction === 'export' ? (
+            <Loader2 size={15} className="animate-spin text-emerald-400" />
+          ) : (
+            <Download size={15} className="text-emerald-400" />
+          )}
+          {runningAction === 'export' ? 'Exporting...' : 'Export Backup'}
         </button>
         <button
           onClick={() => runAction('duplicates', onRemoveDuplicates)}
           disabled={!!runningAction}
           className="flex min-h-[58px] items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2 text-left text-xs hover:bg-accent/40 disabled:opacity-50"
         >
-          <Layers2 size={15} className="text-amber-400" />
-          Remove Duplicates
+          {runningAction === 'duplicates' ? (
+            <Loader2 size={15} className="animate-spin text-amber-400" />
+          ) : (
+            <Layers2 size={15} className="text-amber-400" />
+          )}
+          {runningAction === 'duplicates' ? 'Removing...' : 'Remove Duplicates'}
+        </button>
+        <button
+          onClick={() => runAction('integrity', onCheckDbIntegrity)}
+          disabled={!!runningAction}
+          className="flex min-h-[58px] items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2 text-left text-xs hover:bg-accent/40 disabled:opacity-50"
+        >
+          {runningAction === 'integrity' ? (
+            <Loader2 size={15} className="animate-spin text-violet-400" />
+          ) : (
+            <ShieldCheck size={15} className="text-violet-400" />
+          )}
+          {runningAction === 'integrity' ? 'Checking...' : 'Verify DB'}
         </button>
       </section>
 
@@ -461,18 +491,28 @@ export function DashboardTab({
                             ? 'bg-pink-500/20 text-pink-400'
                             : clip.subtype === 'path'
                               ? 'bg-amber-500/20 text-amber-400'
-                              : 'bg-muted/30 text-muted-foreground/60'
+                              : clip.subtype === 'phone'
+                                ? 'bg-cyan-500/20 text-cyan-400'
+                                : clip.subtype === 'ip'
+                                  ? 'bg-sky-500/20 text-sky-400'
+                                  : 'bg-muted/30 text-muted-foreground/60'
                     )}
                   >
-                    {clip.subtype === 'url'
-                      ? '\uD83D\uDD17'
-                      : clip.subtype === 'email'
-                        ? '\u2709'
-                        : clip.subtype === 'color'
-                          ? '\uD83C\uDFA8'
-                          : clip.subtype === 'path'
-                            ? '\uD83D\uDCC1'
-                            : 'T'}
+                    {clip.subtype === 'ip' ? (
+                      <Network size={11} />
+                    ) : clip.subtype === 'url' ? (
+                      '\uD83D\uDD17'
+                    ) : clip.subtype === 'email' ? (
+                      '\u2709'
+                    ) : clip.subtype === 'color' ? (
+                      '\uD83C\uDFA8'
+                    ) : clip.subtype === 'path' ? (
+                      '\uD83D\uDCC1'
+                    ) : clip.subtype === 'phone' ? (
+                      '\u260E'
+                    ) : (
+                      'T'
+                    )}
                   </div>
                 )}
                 {/* Content preview */}
@@ -493,6 +533,20 @@ export function DashboardTab({
               </div>
             ))}
           </div>
+        )}
+        {dashClipsHasMore && (
+          <button
+            onClick={onLoadMoreDashClips}
+            disabled={dashClipsLoading}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border/50 py-1.5 text-xs text-muted-foreground hover:bg-accent/30 disabled:opacity-50"
+          >
+            {dashClipsLoading ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <ChevronDown size={12} />
+            )}
+            Load more
+          </button>
         )}
       </section>
 

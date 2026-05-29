@@ -18,10 +18,30 @@ import {
   Phone,
   Braces,
   Code2,
+  Network,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { enqueue } from '../imageQueue';
 import { getIcon } from '../iconCache';
+
+const IMAGE_DATA_URL_CACHE_LIMIT = 160;
+const imageDataUrlCache = new Map<string, string>();
+
+function readCachedImage(clipId: string): string {
+  const cached = imageDataUrlCache.get(clipId);
+  if (!cached) return '';
+  imageDataUrlCache.delete(clipId);
+  imageDataUrlCache.set(clipId, cached);
+  return cached;
+}
+
+function cacheImage(clipId: string, src: string) {
+  imageDataUrlCache.set(clipId, src);
+  if (imageDataUrlCache.size > IMAGE_DATA_URL_CACHE_LIMIT) {
+    const firstKey = imageDataUrlCache.keys().next().value;
+    if (firstKey) imageDataUrlCache.delete(firstKey);
+  }
+}
 
 /** Loads images through the backend so custom data directories stay supported. */
 function ImageWithFallback({
@@ -33,13 +53,48 @@ function ImageWithFallback({
   alt: string;
   className: string;
 }) {
-  const [imgSrc, setImgSrc] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const [imgSrc, setImgSrc] = useState(() => readCachedImage(clipId));
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    const node = rootRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '240px' }
+    );
+    observer.observe(node);
+    const fallbackTimer = window.setTimeout(() => setIsVisible(true), 250);
+
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const cached = readCachedImage(clipId);
+    setImgSrc(cached);
+    setFailed(false);
+    setIsVisible(Boolean(cached));
+  }, [clipId]);
+
+  useEffect(() => {
+    if (!isVisible || imgSrc) return;
+
     let cancelled = false;
     setFailed(false);
-    setImgSrc('');
 
     enqueue(() =>
       invoke<string>('get_clip_image_data_url', {
@@ -48,6 +103,7 @@ function ImageWithFallback({
       })
     )
       .then((src) => {
+        cacheImage(clipId, src);
         if (!cancelled) setImgSrc(src);
       })
       .catch(() => {
@@ -57,7 +113,7 @@ function ImageWithFallback({
     return () => {
       cancelled = true;
     };
-  }, [clipId]);
+  }, [clipId, imgSrc, isVisible]);
 
   const handleError = useCallback(() => {
     setFailed(true);
@@ -65,7 +121,7 @@ function ImageWithFallback({
 
   if (failed) {
     return (
-      <div className="flex flex-col items-center gap-1 text-muted-foreground/50">
+      <div ref={rootRef} className="flex flex-col items-center gap-1 text-muted-foreground/50">
         <ImageIcon size={24} />
         <span className="text-[10px]">Image</span>
       </div>
@@ -73,10 +129,24 @@ function ImageWithFallback({
   }
 
   if (!imgSrc) {
-    return <div className="h-8 w-8 animate-pulse rounded bg-muted/40" />;
+    return (
+      <div ref={rootRef} className="flex h-full w-full items-center justify-center">
+        <div className="h-full max-h-28 w-full max-w-44 animate-pulse rounded-md bg-muted/35" />
+      </div>
+    );
   }
 
-  return <img src={imgSrc} alt={alt} className={className} onError={handleError} />;
+  return (
+    <div ref={rootRef} className="flex h-full w-full items-center justify-center">
+      <img
+        src={imgSrc}
+        alt={alt}
+        className={clsx(className, 'opacity-100 transition-opacity duration-200 ease-out')}
+        loading="lazy"
+        onError={handleError}
+      />
+    </div>
+  );
 }
 
 interface ClipCardProps {
@@ -93,6 +163,7 @@ interface ClipCardProps {
   onNativeDragStart?: (e: React.DragEvent, clip: ClipboardItem) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   searchQuery?: string;
+  isCopied?: boolean;
 }
 
 /** Try to extract domain from a URL string */
@@ -112,6 +183,7 @@ const SUBTYPE_CONFIG: Record<string, { icon: typeof Link; label: string; color: 
   color: { icon: Palette, label: 'Color', color: 'text-pink-400' },
   path: { icon: FolderOpen, label: 'Path', color: 'text-amber-400' },
   phone: { icon: Phone, label: 'Phone', color: 'text-cyan-400' },
+  ip: { icon: Network, label: 'IP', color: 'text-sky-400' },
   json: { icon: Braces, label: 'JSON', color: 'text-orange-400' },
   code: { icon: Code2, label: 'Code', color: 'text-violet-400' },
 };
@@ -187,6 +259,7 @@ export const ClipCard = memo(function ClipCard({
   onNativeDragStart,
   onContextMenu,
   searchQuery,
+  isCopied,
 }: ClipCardProps) {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -196,6 +269,8 @@ export const ClipCard = memo(function ClipCard({
     };
   }, []);
   const title = clip.source_app || clip.clip_type.toUpperCase();
+  const sourceIcon = useMemo(() => getIcon(clip.source_app), [clip.source_app]);
+  const showCopied = copied || isCopied;
 
   // Memoize the content rendering — now subtype-aware
   const renderedContent = useMemo(() => {
@@ -291,6 +366,21 @@ export const ClipCard = memo(function ClipCard({
           <div className="flex items-center gap-1.5 rounded-md bg-cyan-500/10 px-1.5 py-1">
             <Phone size={12} className="flex-shrink-0 text-cyan-400" />
             <span className="text-[11px] font-semibold text-cyan-400">Phone</span>
+          </div>
+          <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
+            <HighlightText text={clip.content.trim()} query={searchQuery} />
+          </pre>
+        </div>
+      );
+    }
+
+    // IP subtype
+    if (clip.subtype === 'ip') {
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-sky-500/10 px-1.5 py-1">
+            <Network size={12} className="flex-shrink-0 text-sky-400" />
+            <span className="text-[11px] font-semibold text-sky-400">IP</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
@@ -428,11 +518,12 @@ export const ClipCard = memo(function ClipCard({
       aria-label={`${title} clip: ${clip.preview?.substring(0, 50) || clip.clip_type}. ${clip.is_sensitive ? 'Sensitive content.' : ''}`}
       style={{
         width: TOTAL_COLUMN_WIDTH - LAYOUT.CARD_GAP,
-        height: LAYOUT.WINDOW_HEIGHT - LAYOUT.CONTROL_BAR_HEIGHT - LAYOUT.CARD_VERTICAL_PADDING * 2,
+        height: `calc(100% - ${LAYOUT.CARD_VERTICAL_PADDING * 2}px)`,
       }}
       className="flex-shrink-0"
     >
       <div
+        key={isSelected ? `selected-${clip.id}` : `idle-${clip.id}`}
         ref={cardRef}
         draggable
         onDragStart={handleNativeDragStart}
@@ -441,12 +532,14 @@ export const ClipCard = memo(function ClipCard({
         onContextMenu={handleContextMenu}
         className={clsx(
           'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border bg-card',
-          'transition-all duration-200 ease-out',
+          'transform-gpu transition-all duration-200 active:scale-[0.995]',
+          isSelected && !isMultiSelected && 'animate-selection-pop',
+          showCopied && 'animate-copy-card-flash',
           isMultiSelected
-            ? 'border-blue-500/70 ring-2 ring-blue-500/40'
+            ? 'z-10 -translate-y-1 scale-[1.018] border-blue-500/70 shadow-xl shadow-blue-500/15 ring-2 ring-blue-500/40'
             : isSelected
-              ? 'z-10 -translate-y-1.5 scale-[1.04] border-blue-500/80 ring-[3px] ring-blue-500/40'
-              : 'border-white/[0.08] hover:-translate-y-[3px] hover:scale-[1.02] hover:border-white/[0.16] dark:border-white/[0.08] dark:hover:border-white/[0.16]',
+              ? 'z-10 -translate-y-1 scale-[1.025] border-blue-500/80 shadow-xl shadow-blue-500/20 ring-[3px] ring-blue-500/35'
+              : 'border-white/[0.08] shadow-sm hover:z-10 hover:-translate-y-1 hover:scale-[1.018] hover:border-white/[0.18] hover:shadow-xl hover:shadow-black/20 dark:border-white/[0.08] dark:hover:border-white/[0.18]',
           'group'
         )}
       >
@@ -464,11 +557,12 @@ export const ClipCard = memo(function ClipCard({
             'flex flex-shrink-0 items-center gap-1.5 border-b border-black/10 px-2.5 py-2 dark:border-black/20'
           )}
         >
-          {getIcon(clip.source_app) && (
+          {sourceIcon && (
             <img
-              src={`data:image/png;base64,${getIcon(clip.source_app)}`}
+              src={`data:image/png;base64,${sourceIcon}`}
               alt=""
               className="h-4 w-4 object-contain"
+              loading="lazy"
             />
           )}
           <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-foreground shadow-sm">
@@ -513,7 +607,7 @@ export const ClipCard = memo(function ClipCard({
             className="rounded-md p-1 opacity-0 transition-opacity duration-150 hover:bg-black/10 group-hover:opacity-100"
             title="Copy to clipboard"
           >
-            {copied ? (
+            {showCopied ? (
               <Check size={14} className="animate-copy-pulse text-emerald-500" />
             ) : (
               <Copy size={14} className="text-foreground/70 hover:text-foreground" />
@@ -572,4 +666,17 @@ export const ClipCard = memo(function ClipCard({
       </div>
     </div>
   );
-});
+}, areClipCardPropsEqual);
+
+function areClipCardPropsEqual(prev: ClipCardProps, next: ClipCardProps): boolean {
+  return (
+    prev.clip === next.clip &&
+    prev.isSelected === next.isSelected &&
+    prev.isMultiSelected === next.isMultiSelected &&
+    prev.multiSelectIndex === next.multiSelectIndex &&
+    prev.showPin === next.showPin &&
+    prev.folderName === next.folderName &&
+    prev.searchQuery === next.searchQuery &&
+    prev.isCopied === next.isCopied
+  );
+}

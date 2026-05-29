@@ -516,14 +516,66 @@ pub async fn search_clips(
     query: String,
     filter_id: Option<String>,
     limit: i64,
-    _offset: i64,
+    offset: i64,
     db: tauri::State<'_, Arc<Database>>,
 ) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
     let query_lower = query.to_lowercase();
     let folder_filter: Option<i64> = filter_id.as_deref().and_then(|id| id.parse::<i64>().ok());
+    let limit = limit.max(0);
+    let offset = offset.max(0);
 
+    if let Some(clips) = search_clips_fts(pool, &query_lower, folder_filter, limit, offset).await? {
+        if offset > 0 || clips.len() >= limit as usize {
+            let mut items = Vec::with_capacity(clips.len());
+            for clip in &clips {
+                items.push(clip_to_item_async(clip, &db.images_dir, false).await);
+            }
+            return Ok(items);
+        }
+
+        let mut seen: std::collections::HashSet<String> =
+            clips.iter().map(|clip| clip.uuid.clone()).collect();
+        let mut fallback = search_clips_cache(
+            pool,
+            &db.images_dir,
+            &query_lower,
+            folder_filter,
+            limit,
+            offset,
+        )
+        .await?;
+        fallback.retain(|item| seen.insert(item.id.clone()));
+
+        let remaining = (limit as usize).saturating_sub(clips.len());
+        let mut items = Vec::with_capacity(limit as usize);
+        for clip in &clips {
+            items.push(clip_to_item_async(clip, &db.images_dir, false).await);
+        }
+        items.extend(fallback.into_iter().take(remaining));
+        return Ok(items);
+    }
+
+    search_clips_cache(
+        pool,
+        &db.images_dir,
+        &query_lower,
+        folder_filter,
+        limit,
+        offset,
+    )
+    .await
+}
+
+async fn search_clips_cache(
+    pool: &sqlx::SqlitePool,
+    images_dir: &std::path::Path,
+    query_lower: &str,
+    folder_filter: Option<i64>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<ClipboardItem>, String> {
     // Split query into words for multi-word matching — collect as &str slices to avoid allocations
     let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -541,7 +593,7 @@ pub async fn search_clips(
             })
             .filter_map(|(uuid, (preview, fid, note))| {
                 // Tier 0: exact phrase match
-                if preview.contains(&query_lower) {
+                if preview.contains(query_lower) {
                     return Some((uuid.clone(), *fid, 0u8));
                 }
                 // Tier 1: all words present as substrings (AND match)
@@ -569,29 +621,7 @@ pub async fn search_clips(
     };
 
     // Sort: relevance FIRST (exact > words > note > fuzzy), folder as tiebreaker
-    let mut matched = matched;
-    matched.sort_by_key(|(_, fid, tier)| {
-        let folder_rank = if let Some(target_fid) = folder_filter {
-            if *fid == Some(target_fid) {
-                0u8
-            } else if fid.is_some() {
-                1
-            } else {
-                2
-            }
-        } else if fid.is_some() {
-            0
-        } else {
-            1
-        };
-        // Primary: match tier (0=best), Secondary: folder rank
-        (*tier, folder_rank)
-    });
-    let matched: Vec<String> = matched
-        .into_iter()
-        .take(limit as usize)
-        .map(|(uuid, _, _)| uuid)
-        .collect();
+    let matched = paginate_search_matches(matched, folder_filter, limit, offset);
 
     let mut clips: Vec<Clip> = if matched.is_empty() {
         Vec::new()
@@ -619,7 +649,7 @@ pub async fn search_clips(
 
         // 1. Relevance tier: exact phrase / starts_with > all words > rest
         let relevance_tier = |preview: &str| -> u8 {
-            if preview.contains(&query_lower) || preview.starts_with(&query_lower) {
+            if preview.contains(query_lower) || preview.starts_with(query_lower) {
                 0
             } else if query_words.iter().all(|w| preview.contains(w)) {
                 1
@@ -631,8 +661,8 @@ pub async fn search_clips(
         let b_rel = relevance_tier(&b_preview);
 
         // 2. Within same relevance: starts_with bonus
-        let a_starts = a_preview.starts_with(&query_lower);
-        let b_starts = b_preview.starts_with(&query_lower);
+        let a_starts = a_preview.starts_with(query_lower);
+        let b_starts = b_preview.starts_with(query_lower);
 
         // 3. Folder as tiebreaker (not primary)
         let folder_rank = |clip: &Clip| -> u8 {
@@ -662,10 +692,144 @@ pub async fn search_clips(
     // Cards only display ~300 chars anyway. Full content loaded on paste.
     let mut items = Vec::with_capacity(clips.len());
     for clip in &clips {
-        items.push(clip_to_item_async(clip, &db.images_dir, false).await);
+        items.push(clip_to_item_async(clip, images_dir, false).await);
     }
 
     Ok(items)
+}
+
+async fn search_clips_fts(
+    pool: &sqlx::SqlitePool,
+    query_lower: &str,
+    folder_filter: Option<i64>,
+    limit: i64,
+    offset: i64,
+) -> Result<Option<Vec<Clip>>, String> {
+    let Some(match_query) = build_fts_query(query_lower) else {
+        return Ok(None);
+    };
+
+    let mut sql = String::from(
+        "SELECT c.id, c.uuid, c.clip_type, X'' as content, c.text_preview, c.content_hash,
+                c.folder_id, c.is_deleted, c.source_app, c.source_icon, c.metadata,
+                c.created_at, c.last_accessed, c.last_pasted_at, c.is_pinned,
+                c.subtype, c.note, c.paste_count, c.is_sensitive, c.updated_at
+         FROM clips_fts f
+         JOIN clips c ON c.id = f.rowid
+         WHERE clips_fts MATCH ?",
+    );
+    if folder_filter.is_some() {
+        sql.push_str(" AND c.folder_id = ?");
+    }
+    sql.push_str(" ORDER BY bm25(clips_fts), c.created_at DESC LIMIT ? OFFSET ?");
+
+    let mut query = sqlx::query_as::<_, Clip>(&sql).bind(match_query);
+    if let Some(fid) = folder_filter {
+        query = query.bind(fid);
+    }
+    query = query.bind(limit).bind(offset);
+
+    match query.fetch_all(pool).await {
+        Ok(clips) => Ok(Some(clips)),
+        Err(e) => {
+            log::debug!(
+                "FTS search unavailable, falling back to cache search: {}",
+                e
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn build_fts_query(query: &str) -> Option<String> {
+    let terms: Vec<String> = query
+        .split_whitespace()
+        .filter_map(|word| {
+            let cleaned: String = word
+                .chars()
+                .filter(|ch| ch.is_alphanumeric() || *ch == '_')
+                .collect();
+            if cleaned.len() >= 2 {
+                Some(format!("{cleaned}*"))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if terms.is_empty() {
+        None
+    } else {
+        Some(terms.join(" AND "))
+    }
+}
+
+fn search_folder_rank(fid: Option<i64>, folder_filter: Option<i64>) -> u8 {
+    if let Some(target_fid) = folder_filter {
+        if fid == Some(target_fid) {
+            0
+        } else if fid.is_some() {
+            1
+        } else {
+            2
+        }
+    } else if fid.is_some() {
+        0
+    } else {
+        1
+    }
+}
+
+fn paginate_search_matches(
+    mut matched: Vec<(String, Option<i64>, u8)>,
+    folder_filter: Option<i64>,
+    limit: i64,
+    offset: i64,
+) -> Vec<String> {
+    let limit = limit.max(0) as usize;
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    matched.sort_by_key(|(uuid, fid, tier)| {
+        (*tier, search_folder_rank(*fid, folder_filter), uuid.clone())
+    });
+
+    matched
+        .into_iter()
+        .skip(offset.max(0) as usize)
+        .take(limit)
+        .map(|(uuid, _, _)| uuid)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_fts_query, paginate_search_matches};
+
+    #[test]
+    fn paginate_search_matches_applies_offset_after_ranking() {
+        let matched = vec![
+            ("page-3".to_string(), None, 0),
+            ("page-1".to_string(), None, 0),
+            ("page-2".to_string(), None, 0),
+        ];
+
+        let first_page = paginate_search_matches(matched.clone(), None, 2, 0);
+        let second_page = paginate_search_matches(matched, None, 2, 2);
+
+        assert_eq!(first_page, vec!["page-1", "page-2"]);
+        assert_eq!(second_page, vec!["page-3"]);
+    }
+
+    #[test]
+    fn build_fts_query_uses_prefix_terms_and_drops_punctuation() {
+        assert_eq!(
+            build_fts_query("hello world!"),
+            Some("hello* AND world*".to_string())
+        );
+        assert_eq!(build_fts_query("! ?"), None);
+    }
 }
 
 #[tauri::command]

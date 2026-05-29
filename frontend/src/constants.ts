@@ -1,5 +1,5 @@
 export const LAYOUT = {
-  WINDOW_HEIGHT: 298, // keep sync with backend (constants.rs)
+  WINDOW_HEIGHT: 330, // keep sync with backend (constants.rs)
   CONTROL_BAR_HEIGHT: 64,
   CARD_WIDTH: 210,
   CARD_GAP: 24,
@@ -15,3 +15,17 @@ export const TOTAL_COLUMN_WIDTH = LAYOUT.CARD_WIDTH + LAYOUT.CARD_GAP;
 export const PREVIEW_CHAR_LIMIT = 300;
 export const PAGE_SIZE = 20;
 export const MAX_CLIPS_IN_STATE = 500;
+
+/** Debounce durations (ms) */
+export const DEBOUNCE = {
+  SEARCH: 100, // main search input → backend query
+  DASH_SEARCH: 200, // dashboard history search
+  FOLDER_REFRESH: 500, // folder/count reload after rapid copies
+} as const;
+
+/** UI timing (ms) */
+export const TIMING = {
+  COPY_FLASH: 700, // copy-feedback highlight on card
+  SEARCH_FOCUS: 50, // delay before focusing search input after toggle
+  DELETE_TOAST: 4000, // duration of delete-confirm toast
+} as const;

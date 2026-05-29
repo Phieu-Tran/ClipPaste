@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
+import { cmd } from '../commands';
 
 interface UseDragDropOpts {
   handleMoveClip: (clipId: string, folderId: string | null) => Promise<void>;
@@ -32,7 +32,7 @@ export function useDragDrop(opts: UseDragDropOpts) {
 
   const handleNativeDragStart = useCallback((_e: React.DragEvent, clip: AppClipboardItem) => {
     isDraggingExternalRef.current = true;
-    invoke('set_dragging', { dragging: true }).catch(console.error);
+    cmd.setDragging(true).catch(console.error);
     setDraggingClipId(clip.id);
     dragStateRef.current.isDragging = true;
     dragStateRef.current.clipId = clip.id;
@@ -44,15 +44,13 @@ export function useDragDrop(opts: UseDragDropOpts) {
       clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET';
 
     if (droppedOnFolder) {
-      // Dropped on a folder tab — move clip
       handleMoveClip(clipId!, targetFolderId);
     } else if (clipId) {
-      // Dropped externally (another app) — hide window
-      invoke('hide_window').catch(console.error);
+      cmd.hideWindow().catch(console.error);
     }
 
     isDraggingExternalRef.current = false;
-    invoke('set_dragging', { dragging: false }).catch(console.error);
+    cmd.setDragging(false).catch(console.error);
     setDraggingClipId(null);
     setDragTargetFolderId(null);
     dragStateRef.current = {

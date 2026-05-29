@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
 import { toast } from 'sonner';
+import { cmd } from '../commands';
+import { TIMING } from '../constants';
 
 interface UseBatchActionsOpts {
   selectedClipIds: Set<string>;
@@ -38,7 +39,7 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
         label: 'Delete',
         onClick: async () => {
           try {
-            const count = await invoke<number>('bulk_delete_clips', { ids });
+            const count = await cmd.bulkDeleteClips(ids);
             setClips((prev) => prev.filter((c) => !selectedClipIds.has(c.id)));
             setSelectedClipIds(new Set());
             setSelectedClipId(null);
@@ -52,7 +53,7 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
         },
       },
       cancel: { label: 'Cancel', onClick: () => {} },
-      duration: 4000,
+      duration: TIMING.DELETE_TOAST,
     });
   }, [
     selectedClipIds,
@@ -68,7 +69,7 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
       if (selectedClipIds.size === 0) return;
       const ids = Array.from(selectedClipIds);
       try {
-        await invoke('bulk_move_clips', { ids, folderId });
+        await cmd.bulkMoveClips(ids, folderId);
         if (selectedFolder && folderId !== selectedFolder) {
           setClips((prev) => prev.filter((c) => !selectedClipIds.has(c.id)));
         } else {
@@ -107,9 +108,8 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
       toast.error('No text clips selected');
       return;
     }
-    const combined = textsInOrder.join('\n');
     try {
-      await invoke('paste_text', { content: combined });
+      await cmd.pasteText(textsInOrder.join('\n'));
       setSelectedClipIds(new Set());
       setSelectedClipId(null);
     } catch (error) {
@@ -130,7 +130,7 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
       if (selectedClipIds.size === 0) return;
       const ids = Array.from(selectedClipIds);
       try {
-        const count = await invoke<number>('bulk_set_pin', { ids, pinned });
+        const count = await cmd.bulkSetPin(ids, pinned);
         setClips((prev) =>
           prev.map((clip) => (selectedClipIds.has(clip.id) ? { ...clip, is_pinned: pinned } : clip))
         );

@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { cmd } from './commands';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { ClipboardItem as AppClipboardItem } from './types';
 import { ClipList } from './components/ClipList';
 import { ControlBar } from './components/ControlBar';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderModal } from './components/FolderModal';
+import { BatchActionBar } from './components/BatchActionBar';
 import { EditClipModal } from './components/EditClipModal';
 import { NoteModal } from './components/NoteModal';
 import { useKeyboard } from './hooks/useKeyboard';
@@ -23,8 +24,7 @@ import { useSearch } from './hooks/useSearch';
 import { useMultiSelect } from './hooks/useMultiSelect';
 import { useScratchpad } from './hooks/useScratchpad';
 import { Toaster, toast } from 'sonner';
-import { Clipboard, FolderInput, Pin, PinOff, Trash2, X } from 'lucide-react';
-import { LAYOUT } from './constants';
+import { LAYOUT, TIMING } from './constants';
 
 function App() {
   const [clips, setClips] = useState<AppClipboardItem[]>([]);
@@ -47,15 +47,22 @@ function App() {
   // Note modal state
   const [noteModalClipId, setNoteModalClipId] = useState<string | null>(null);
   const [noteModalInitial, setNoteModalInitial] = useState('');
+  const [copiedClipId, setCopiedClipId] = useState<string | null>(null);
+  const copiedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Incognito mode
   const [isIncognito, setIsIncognito] = useState(false);
   useEffect(() => {
-    invoke<boolean>('get_incognito_status').then(setIsIncognito).catch(console.error);
+    cmd.getIncognitoStatus().then(setIsIncognito).catch(console.error);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (copiedFlashTimerRef.current) clearTimeout(copiedFlashTimerRef.current);
+    };
   }, []);
   const toggleIncognito = useCallback(async () => {
     try {
-      const newVal = await invoke<boolean>('toggle_incognito');
+      const newVal = await cmd.toggleIncognito();
       setIsIncognito(newVal);
       toast.success(newVal ? 'Incognito mode ON — clipboard not recorded' : 'Incognito mode OFF');
     } catch (e) {
@@ -183,6 +190,15 @@ function App() {
 
   // --- Effects ---
 
+  // Clear multi-select when user starts a search to avoid pasting invisible clips
+  useEffect(() => {
+    if (searchInput.trim()) {
+      setSelectedClipIds(new Set());
+      setSelectedClipId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
   useEffect(() => {
     loadFolders();
     if (searchQuery.trim()) {
@@ -202,7 +218,7 @@ function App() {
     const existingWin = await WebviewWindow.getByLabel('settings');
     if (existingWin) {
       try {
-        await invoke('focus_window', { label: 'settings' });
+        await cmd.focusWindow('settings');
       } catch (e) {
         console.error('Failed to focus settings window:', e);
         await existingWin.unminimize();
@@ -254,7 +270,7 @@ function App() {
       setShowSearch(true);
       setTimeout(() => {
         searchInputRef.current?.focus();
-      }, 50);
+      }, TIMING.SEARCH_FOCUS);
     },
     onDelete: () => {
       if (editingClip) return;
@@ -342,7 +358,7 @@ function App() {
       closeFolderModal();
     } else if (folderModalMode === 'rename' && editingFolderId) {
       try {
-        await invoke('rename_folder', { id: editingFolderId, name, color, icon });
+        await cmd.renameFolder(editingFolderId, name, color, icon);
         await loadFolders();
         toast.success(`Renamed to "${name}"`);
         closeFolderModal();
@@ -369,6 +385,17 @@ function App() {
     filteredPreviewClips: filteredPreviewClips,
     filteredClips,
   });
+
+  const handleCopyWithFeedback = useCallback(
+    async (clipId: string) => {
+      const copied = await handleCopy(clipId);
+      if (!copied) return;
+      setCopiedClipId(clipId);
+      if (copiedFlashTimerRef.current) clearTimeout(copiedFlashTimerRef.current);
+      copiedFlashTimerRef.current = setTimeout(() => setCopiedClipId(null), TIMING.COPY_FLASH);
+    },
+    [handleCopy]
+  );
 
   // --- Render ---
   return (
@@ -531,7 +558,7 @@ function App() {
               selectedClipIds={selectedClipIds}
               onSelectClip={handleSelectClip}
               onPaste={handlePaste}
-              onCopy={handleCopy}
+              onCopy={handleCopyWithFeedback}
               onPin={handleTogglePin}
               showPin={!!(isPreviewing ? previewFolder : selectedFolder)}
               onLoadMore={isPreviewing ? () => {} : loadMore}
@@ -543,84 +570,29 @@ function App() {
               folderMap={folderMap}
               selectedFolder={selectedFolder}
               searchQuery={searchQuery}
+              onClearSearch={() => handleSearch('')}
+              onShowAll={() => setSelectedFolder(null)}
+              onOpenSettings={openSettings}
+              copiedClipId={copiedClipId}
             />
           </main>
 
-          {/* Batch action bar — floating overlay */}
+          {/* Batch action bar — extracted component */}
           {isMultiSelect && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 pointer-events-none absolute bottom-5 left-0 right-0 z-40 flex justify-center duration-200">
-              <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border/60 bg-background/95 px-3 py-2 shadow-xl backdrop-blur-md">
-                <span className="min-w-[82px] text-xs font-semibold text-primary">
-                  {selectedClipIds.size} selected
-                </span>
-                <div className="h-3.5 w-px bg-border/50" />
-                <button
-                  onClick={handleBulkPaste}
-                  className="flex items-center gap-1.5 rounded-md bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
-                >
-                  <Clipboard size={13} />
-                  Paste
-                </button>
-                <button
-                  onClick={() => handleBulkSetPin(true)}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <Pin size={13} />
-                  Pin
-                </button>
-                <button
-                  onClick={() => handleBulkSetPin(false)}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <PinOff size={13} />
-                  Unpin
-                </button>
-                <button
-                  onClick={handleBulkDelete}
-                  className="flex items-center gap-1.5 rounded-md bg-destructive/15 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
-                >
-                  <Trash2 size={13} />
-                  Delete
-                </button>
-                {folders.length > 0 && (
-                  <label className="flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-2.5 py-1.5 text-xs text-foreground">
-                    <FolderInput size={13} className="text-muted-foreground" />
-                    <select
-                      defaultValue=""
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '__none__') handleBulkMove(null);
-                        else if (val) handleBulkMove(val);
-                        e.target.value = '';
-                      }}
-                      className="bg-transparent text-xs text-foreground outline-none"
-                      style={{ colorScheme: effectiveTheme === 'dark' ? 'dark' : 'light' }}
-                    >
-                      <option value="" disabled>
-                        Move
-                      </option>
-                      <option value="__none__">All</option>
-                      {folders.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <div className="h-3.5 w-px bg-border/50" />
-                <button
-                  onClick={() => {
-                    setSelectedClipIds(new Set());
-                    setSelectedClipId(null);
-                  }}
-                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <X size={13} />
-                  Cancel
-                </button>
-              </div>
-            </div>
+            <BatchActionBar
+              selectedClipIds={selectedClipIds}
+              folders={folders}
+              selectedFolder={selectedFolder}
+              onPaste={handleBulkPaste}
+              onPin={() => handleBulkSetPin(true)}
+              onUnpin={() => handleBulkSetPin(false)}
+              onDelete={handleBulkDelete}
+              onMove={handleBulkMove}
+              onCancel={() => {
+                setSelectedClipIds(new Set());
+                setSelectedClipId(null);
+              }}
+            />
           )}
 
           <FolderModal

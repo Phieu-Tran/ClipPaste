@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 import { LAYOUT, TOTAL_COLUMN_WIDTH } from '../constants';
+import { FolderOpen, SearchX, Settings } from 'lucide-react';
 
 interface ClipListProps {
   clips: ClipboardItem[];
@@ -26,6 +27,10 @@ interface ClipListProps {
   folderMap?: Record<string, string>;
   selectedFolder?: string | null;
   searchQuery?: string;
+  onClearSearch?: () => void;
+  onShowAll?: () => void;
+  onOpenSettings?: () => void;
+  copiedClipId?: string | null;
 }
 
 export function ClipList({
@@ -48,6 +53,10 @@ export function ClipList({
   folderMap,
   selectedFolder,
   searchQuery,
+  onClearSearch,
+  onShowAll,
+  onOpenSettings,
+  copiedClipId,
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [staggerKey, setStaggerKey] = useState(0);
@@ -122,7 +131,29 @@ export function ClipList({
   useEffect(() => {
     if (!selectedClipId) return;
     const index = clips.findIndex((c) => c.id === selectedClipId);
-    if (index >= 0) {
+    const container = containerRef.current;
+    if (index < 0 || !container) return;
+
+    const itemStart = LAYOUT.SIDE_PADDING + index * TOTAL_COLUMN_WIDTH;
+    const itemEnd = itemStart + TOTAL_COLUMN_WIDTH;
+    const viewportStart = container.scrollLeft;
+    const viewportEnd = viewportStart + container.clientWidth;
+    const edgeComfort = Math.min(TOTAL_COLUMN_WIDTH * 0.55, container.clientWidth * 0.22);
+
+    let targetLeft: number | null = null;
+    if (itemStart < viewportStart + edgeComfort) {
+      targetLeft = itemStart - LAYOUT.SIDE_PADDING;
+    } else if (itemEnd > viewportEnd - edgeComfort) {
+      targetLeft = itemEnd - container.clientWidth + LAYOUT.SIDE_PADDING;
+    }
+
+    if (targetLeft !== null) {
+      const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+      container.scrollTo({
+        left: Math.max(0, Math.min(targetLeft, maxScroll)),
+        behavior: 'smooth',
+      });
+    } else {
       virtualizer.scrollToIndex(index, { align: 'auto', behavior: 'smooth' });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,6 +213,26 @@ export function ClipList({
             <p className="max-w-xs text-sm text-gray-500">
               No clips found matching your search. Try different keywords or use fewer words.
             </p>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                onClick={onClearSearch}
+                className="btn btn-secondary text-xs"
+                disabled={!onClearSearch}
+              >
+                <SearchX size={14} className="mr-1.5" />
+                Clear Search
+              </button>
+              {selectedFolder && (
+                <button
+                  onClick={onShowAll}
+                  className="btn btn-secondary text-xs"
+                  disabled={!onShowAll}
+                >
+                  <FolderOpen size={14} className="mr-1.5" />
+                  Show All
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <>
@@ -189,6 +240,12 @@ export function ClipList({
             <p className="max-w-xs text-sm text-gray-500">
               Copy something to your clipboard and it will appear here.
             </p>
+            {onOpenSettings && (
+              <button onClick={onOpenSettings} className="btn btn-secondary mt-4 text-xs">
+                <Settings size={14} className="mr-1.5" />
+                Settings
+              </button>
+            )}
             <div className="mt-4 flex flex-col gap-1.5 text-xs text-gray-500/70">
               <span>
                 <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd>{' '}
@@ -219,7 +276,10 @@ export function ClipList({
       role="listbox"
       aria-label="Clipboard history"
       aria-orientation="horizontal"
-      className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? 'opacity-80' : ''}`}
+      className={clsx(
+        'no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden transition-opacity duration-150',
+        isPreviewing && 'opacity-90'
+      )}
       onScroll={handleScroll}
       onWheel={handleWheel}
       style={{
@@ -230,7 +290,8 @@ export function ClipList({
     >
       {/* Virtual spacer — the full scrollable width */}
       <div
-        className="relative h-full"
+        key={staggerKey}
+        className={clsx('relative h-full', isPreviewing && 'animate-preview-refresh')}
         style={{
           width: virtualizer.getTotalSize() + LAYOUT.SIDE_PADDING * 2,
           minWidth: '100%',
@@ -281,6 +342,7 @@ export function ClipList({
                 onNativeDragStart={stableOnDragStart}
                 onContextMenu={(e: React.MouseEvent) => stableOnContextMenu(e, clip.id)}
                 searchQuery={searchQuery}
+                isCopied={copiedClipId === clip.id}
               />
             </div>
           );

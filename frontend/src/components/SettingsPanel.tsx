@@ -1,4 +1,4 @@
-import { Settings, FolderItem } from '../types';
+import { Settings, FolderItem, DashClip } from '../types';
 import {
   X,
   Settings as SettingsIcon,
@@ -36,6 +36,7 @@ interface SettingsPanelProps {
 
 type Tab = 'dashboard' | 'general' | 'folders' | 'hotkeys' | 'sync';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
 
 interface DashboardStats {
   total: number;
@@ -71,6 +72,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [importRestartRequired, setImportRestartRequired] = useState(false);
+  const [dataAction, setDataAction] = useState<DataAction>(null);
   const [_historySize, setHistorySize] = useState<number>(0);
   const [isRecordingMode, setIsRecordingMode] = useState(false);
 
@@ -89,18 +91,10 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   const [dashDate, setDashDate] = useState(toDateStr(new Date()));
   const [dashSearch, setDashSearch] = useState('');
   const [dashSourceApp, setDashSourceApp] = useState<string | null>(null);
-  const [dashClips, setDashClips] = useState<
-    {
-      id: string;
-      clip_type: string;
-      content: string;
-      preview: string;
-      created_at: string;
-      source_app: string | null;
-      subtype: string | null;
-    }[]
-  >([]);
+  const [dashClips, setDashClips] = useState<DashClip[]>([]);
   const [dashClipsLoading, setDashClipsLoading] = useState(false);
+  const [dashClipsHasMore, setDashClipsHasMore] = useState(false);
+  const [dashClipsOffset, setDashClipsOffset] = useState(0);
 
   // Debounced dashboard search
   const dashSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -208,10 +202,12 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     }
   };
 
-  const refreshDashboardStats = async () => {
+  const refreshDashboardStats = async (forceRefresh = false) => {
     try {
       setDashStatsError('');
-      const stats = await invoke<DashboardStats>('get_dashboard_stats');
+      const stats = await invoke<DashboardStats>('get_dashboard_stats', {
+        forceRefresh,
+      });
       setDashStats(stats);
     } catch (error) {
       console.error('Failed to load dashboard stats:', error);
@@ -236,11 +232,17 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     if (dashSearchTimerRef.current) clearTimeout(dashSearchTimerRef.current);
     dashSearchTimerRef.current = setTimeout(() => {
       setDebouncedDashSearch(dashSearch);
+      setDashClipsOffset(0);
     }, 200);
     return () => {
       if (dashSearchTimerRef.current) clearTimeout(dashSearchTimerRef.current);
     };
   }, [dashSearch]);
+
+  // Reset offset when date/filter changes
+  useEffect(() => {
+    setDashClipsOffset(0);
+  }, [dashDate, dashSourceApp]);
 
   // Load clips for selected date
   useEffect(() => {
@@ -248,11 +250,27 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setDashClipsLoading(true);
     const search = debouncedDashSearch.trim() || undefined;
     const sourceApp = dashSourceApp || undefined;
-    invoke<typeof dashClips>('get_clips_by_date', { date: dashDate, search, sourceApp })
-      .then(setDashClips)
+    invoke<DashClip[]>('get_clips_by_date', {
+      date: dashDate,
+      search,
+      sourceApp,
+      offset: dashClipsOffset,
+    })
+      .then((data) => {
+        if (dashClipsOffset === 0) {
+          setDashClips(data);
+        } else {
+          setDashClips((prev) => [...prev, ...data]);
+        }
+        setDashClipsHasMore(data.length === 100);
+      })
       .catch(console.error)
       .finally(() => setDashClipsLoading(false));
-  }, [dashDate, debouncedDashSearch, dashSourceApp, activeTab]);
+  }, [dashDate, debouncedDashSearch, dashSourceApp, dashClipsOffset, activeTab]);
+
+  const handleLoadMoreDashClips = () => {
+    setDashClipsOffset((prev) => prev + 100);
+  };
 
   // Format shortcut array into Tauri-compatible string
   const formatHotkey = (keys: string[]): string => {
@@ -340,6 +358,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   };
 
   const handleSelectDataDirectory = async () => {
+    if (dataAction) return;
+    setDataAction('directory');
+    const loadingToast = toast.loading('Preparing data directory...');
     try {
       const selectedPath = await invoke<string>('pick_folder');
       if (selectedPath) {
@@ -355,6 +376,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     } catch (e) {
       console.error('Failed to select data directory:', e);
       toast.error(`Failed to select folder: ${e}`);
+    } finally {
+      toast.dismiss(loadingToast);
+      setDataAction(null);
     }
   };
 
@@ -366,16 +390,20 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       confirmText: 'Clear History',
       variant: 'danger',
       action: async () => {
+        if (dataAction) return;
+        setDataAction('clear');
         try {
           await invoke('clear_all_clips');
           // Refresh the history size after clearing
           const newSize = await invoke<number>('get_clipboard_history_size');
           setHistorySize(newSize);
-          await refreshDashboardStats();
+          await refreshDashboardStats(true);
           toast.success('Clipboard history cleared successfully.');
         } catch (error) {
           console.error('Failed to clear history:', error);
           toast.error(`Failed to clear history: ${error}`);
+        } finally {
+          setDataAction(null);
         }
       },
     });
@@ -390,21 +418,28 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       variant: 'warning',
       details: ['Pinned clips and clips inside folders are preserved.'],
       action: async () => {
+        if (dataAction) return;
+        setDataAction('duplicates');
         try {
           const count = await invoke<number>('remove_duplicate_clips');
           toast.success(`Removed ${count} duplicate clips`);
           const newSize = await invoke<number>('get_clipboard_history_size');
           setHistorySize(newSize);
-          await refreshDashboardStats();
+          await refreshDashboardStats(true);
         } catch (error) {
           console.error(error);
           toast.error(`Failed to remove duplicates: ${error}`);
+        } finally {
+          setDataAction(null);
         }
       },
     });
   };
 
   const handleExportBackup = async () => {
+    if (dataAction) return;
+    setDataAction('export');
+    const loadingToast = toast.loading('Exporting backup...');
     try {
       const path = await invoke<string>('export_data');
       toast.success(`Exported to ${path}`);
@@ -412,6 +447,25 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       if (String(error) !== 'Export cancelled') {
         toast.error(`Export failed: ${error}`);
       }
+    } finally {
+      toast.dismiss(loadingToast);
+      setDataAction(null);
+    }
+  };
+
+  const handleCheckDbIntegrity = async () => {
+    const loadingToast = toast.loading('Checking database integrity...');
+    try {
+      const result = await invoke<string>('check_db_integrity');
+      if (result === 'ok') {
+        toast.success('Database integrity: OK');
+      } else {
+        toast.error(`Database integrity issue: ${result}`);
+      }
+    } catch (error) {
+      toast.error(`Integrity check failed: ${error}`);
+    } finally {
+      toast.dismiss(loadingToast);
     }
   };
 
@@ -427,6 +481,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         'Restart ClipPaste after import so every window reads the imported data.',
       ],
       action: async () => {
+        if (dataAction) return;
+        setDataAction('import');
+        const loadingToast = toast.loading('Importing backup...');
         try {
           await invoke('import_data');
           setImportRestartRequired(true);
@@ -441,6 +498,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
           if (String(error) !== 'Import cancelled') {
             toast.error(`Import failed: ${error}`);
           }
+        } finally {
+          toast.dismiss(loadingToast);
+          setDataAction(null);
         }
       },
     });
@@ -608,10 +668,13 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   setDashSourceApp={setDashSourceApp}
                   dashClips={dashClips}
                   dashClipsLoading={dashClipsLoading}
+                  dashClipsHasMore={dashClipsHasMore}
+                  onLoadMoreDashClips={handleLoadMoreDashClips}
                   onOpenStorageSettings={() => setActiveTab('general')}
                   onExportBackup={handleExportBackup}
                   onRemoveDuplicates={handleRemoveDuplicates}
-                  onRefreshStats={refreshDashboardStats}
+                  onRefreshStats={() => refreshDashboardStats(true)}
+                  onCheckDbIntegrity={handleCheckDbIntegrity}
                 />
               )}
 
@@ -641,6 +704,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   handleRemoveDuplicates={handleRemoveDuplicates}
                   handleExportBackup={handleExportBackup}
                   handleImportBackup={handleImportBackup}
+                  dataAction={dataAction}
                   updateProgress={updateProgress}
                   handleCheckUpdate={handleCheckUpdate}
                   appVersion={appVersion}

@@ -19,6 +19,8 @@ import {
   Braces,
   Code2,
   StickyNote,
+  Network,
+  ListFilter,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
@@ -183,6 +185,7 @@ const CLIP_FILTERS: { key: string; label: string; Icon: LucideIcon }[] = [
   { key: 'color', label: 'Color', Icon: Palette },
   { key: 'path', label: 'Path', Icon: FolderOpen },
   { key: 'phone', label: 'Phone', Icon: Phone },
+  { key: 'ip', label: 'IP', Icon: Network },
   { key: 'json', label: 'JSON', Icon: Braces },
   { key: 'code', label: 'Code', Icon: Code2 },
 ];
@@ -245,6 +248,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 ) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
   // Simulated folder drag state
   const [folderDragId, setFolderDragId] = useState<string | null>(null);
@@ -335,6 +340,17 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     };
   }, []); // Subscribe once — dynamic values accessed via refs
 
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [filterMenuOpen]);
+
   // Scroll selected folder tab into view when selection changes
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -413,14 +429,19 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     },
     [theme]
   );
+  const activeFilter = useMemo(
+    () => CLIP_FILTERS.find((filter) => filter.key === clipFilter),
+    [clipFilter]
+  );
+  const hasSearchQuery = searchQuery.trim().length > 0;
 
   return (
-    <div className="drag-area flex min-h-[52px] items-center gap-4 border-b border-border/50 bg-gradient-to-r from-background/95 via-background/90 to-background/95 px-6 py-2 backdrop-blur-sm">
+    <div className="drag-area flex min-h-[52px] items-center gap-3 border-b border-border/50 bg-gradient-to-r from-background/95 via-background/90 to-background/95 px-6 py-2 backdrop-blur-sm">
       {/* Search Toggle / Input */}
       <div
         className={clsx(
           'no-drag flex items-center transition-all duration-300',
-          showSearch ? 'w-[300px]' : 'w-10'
+          showSearch ? 'w-[280px]' : 'w-10'
         )}
       >
         {showSearch ? (
@@ -452,31 +473,82 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         )}
       </div>
 
-      {/* Clip Filters — compact inline */}
+      {/* Clip Filters */}
       {showSearch && (
         <div
-          className="no-drag flex items-center gap-px"
+          ref={filterMenuRef}
+          className="no-drag relative"
           role="toolbar"
           aria-label="Filter clips"
           style={{ WebkitAppRegion: 'no-drag' } as any}
         >
-          {CLIP_FILTERS.map(({ key, label, Icon }) => (
-            <button
-              key={key}
-              onClick={() => onClipFilterChange?.(clipFilter === key ? null : key)}
-              title={label}
-              aria-label={`Filter by ${label}`}
-              aria-pressed={clipFilter === key}
-              className={clsx(
-                'rounded p-1 transition-all duration-150',
-                clipFilter === key
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground/50 hover:bg-accent hover:text-foreground'
+          <button
+            onClick={() => setFilterMenuOpen((open) => !open)}
+            className={clsx(
+              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors',
+              activeFilter
+                ? 'border-primary/30 bg-primary/15 text-primary hover:bg-primary/25'
+                : 'border-border/60 bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
+            )}
+            aria-expanded={filterMenuOpen}
+          >
+            <ListFilter size={14} />
+            <span className="max-w-[72px] truncate">{activeFilter?.label ?? 'Type'}</span>
+          </button>
+          {filterMenuOpen && (
+            <div className="absolute left-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+              <div className="grid grid-cols-2 gap-1 p-1.5">
+                {CLIP_FILTERS.map(({ key, label, Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      onClipFilterChange?.(clipFilter === key ? null : key);
+                      setFilterMenuOpen(false);
+                    }}
+                    title={label}
+                    aria-label={`Filter by ${label}`}
+                    aria-pressed={clipFilter === key}
+                    className={clsx(
+                      'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                      clipFilter === key
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    )}
+                  >
+                    <Icon size={13} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </div>
+              {activeFilter && (
+                <button
+                  onClick={() => {
+                    onClipFilterChange?.(null);
+                    setFilterMenuOpen(false);
+                  }}
+                  className="flex w-full items-center justify-center border-t border-border px-2 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  Clear filter
+                </button>
               )}
-            >
-              <Icon size={12} />
-            </button>
-          ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showSearch && hasSearchQuery && (
+        <div
+          className="no-drag flex max-w-[180px] items-center gap-1 overflow-hidden"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
+          <button
+            onClick={() => onSearchChange('')}
+            title="Clear search text"
+            className="flex min-w-0 items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <span className="truncate">"{searchQuery.trim()}"</span>
+            <X size={11} className="shrink-0" />
+          </button>
         </div>
       )}
 
@@ -485,7 +557,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         ref={scrollContainerRef}
         role="tablist"
         aria-label="Clip folders"
-        className="no-scrollbar mask-gradient-right flex flex-1 items-center gap-2 overflow-x-auto p-1"
+        className="no-scrollbar mask-gradient-right flex min-w-0 flex-1 items-center gap-2 overflow-x-auto p-1"
         style={{ WebkitAppRegion: 'no-drag' } as any}
         onWheel={(e) => {
           if (scrollContainerRef.current) {

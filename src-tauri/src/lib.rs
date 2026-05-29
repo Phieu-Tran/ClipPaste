@@ -563,6 +563,7 @@ pub fn run_app() {
             commands::get_dashboard_stats,
             commands::get_clips_by_date,
             commands::get_clip_dates,
+            commands::check_db_integrity,
             commands::toggle_incognito,
             commands::get_incognito_status,
             commands::get_initial_state,

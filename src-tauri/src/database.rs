@@ -675,6 +675,21 @@ impl Database {
             self.set_schema_version(13).await;
         }
 
+        if version < 14 {
+            match self.setup_search_fts().await {
+                Ok(_) => {
+                    self.set_schema_version(14).await;
+                    log::info!("DB: Applied migration v14 (FTS search index)");
+                }
+                Err(e) => {
+                    log::warn!(
+                        "DB: FTS search index unavailable, cache search will be used: {}",
+                        e
+                    );
+                }
+            }
+        }
+
         // === Migrate image blobs to disk ===
         // Images previously stored as BLOBs in content column are now stored as files.
         // content column will hold just the filename (e.g. "abc123.png").
@@ -702,6 +717,49 @@ impl Database {
                 upgraded
             );
         }
+
+        Ok(())
+    }
+
+    async fn setup_search_fts(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS clips_fts USING fts5(uuid UNINDEXED, text_preview, note)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("DELETE FROM clips_fts")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO clips_fts(rowid, uuid, text_preview, note)
+             SELECT id, uuid, COALESCE(text_preview, ''), COALESCE(note, '') FROM clips",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE TRIGGER IF NOT EXISTS clips_fts_ai AFTER INSERT ON clips BEGIN
+                INSERT INTO clips_fts(rowid, uuid, text_preview, note)
+                VALUES (new.id, new.uuid, COALESCE(new.text_preview, ''), COALESCE(new.note, ''));
+             END",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE TRIGGER IF NOT EXISTS clips_fts_ad AFTER DELETE ON clips BEGIN
+                DELETE FROM clips_fts WHERE rowid = old.id;
+             END",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE TRIGGER IF NOT EXISTS clips_fts_au AFTER UPDATE OF uuid, text_preview, note ON clips BEGIN
+                DELETE FROM clips_fts WHERE rowid = old.id;
+                INSERT INTO clips_fts(rowid, uuid, text_preview, note)
+                VALUES (new.id, new.uuid, COALESCE(new.text_preview, ''), COALESCE(new.note, ''));
+             END",
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }

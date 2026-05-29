@@ -92,36 +92,33 @@ pub async fn delete_folder(
     db: tauri::State<'_, Arc<Database>>,
     window: tauri::WebviewWindow,
 ) -> Result<(), String> {
+    let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
+    delete_folder_records(&db, folder_id).await?;
+
+    let _ = window.emit("clipboard-change", ());
+    Ok(())
+}
+
+pub(crate) async fn delete_folder_records(
+    db: &Database,
+    folder_id: i64,
+) -> Result<Option<String>, String> {
     let pool = &db.pool;
 
-    let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
-
-    // Collect clip UUIDs + image filenames before transaction (for tombstones + filesystem cleanup)
-    let clip_uuids: Vec<(String,)> = sqlx::query_as("SELECT uuid FROM clips WHERE folder_id = ?")
-        .bind(folder_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    let image_clips: Vec<(Vec<u8>,)> =
-        sqlx::query_as("SELECT content FROM clips WHERE folder_id = ? AND clip_type = 'image'")
-            .bind(folder_id)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-    // Get folder UUID for tombstone
     let folder_uuid: Option<String> = sqlx::query_scalar("SELECT uuid FROM folders WHERE id = ?")
         .bind(folder_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Atomic: delete clips + folder in a single transaction
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    sqlx::query("DELETE FROM clips WHERE folder_id = ?")
-        .bind(folder_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    sqlx::query(
+        "UPDATE clips SET folder_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE folder_id = ?",
+    )
+    .bind(folder_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM folders WHERE id = ?")
         .bind(folder_id)
         .execute(&mut *tx)
@@ -129,30 +126,15 @@ pub async fn delete_folder(
         .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    // Record tombstones for sync propagation
-    for (uuid,) in &clip_uuids {
-        crate::sync::record_tombstone(&db, uuid, "clip").await.ok();
-    }
-    if let Some(ref fuuid) = folder_uuid {
-        crate::sync::record_tombstone(&db, fuuid, "folder")
+    if let Some(ref folder_uuid) = folder_uuid {
+        crate::sync::record_tombstone(db, folder_uuid, "folder")
             .await
             .ok();
     }
 
-    // Clean up image files after successful DB transaction
-    for (content,) in &image_clips {
-        let filename = String::from_utf8_lossy(content).into_owned();
-        let image_path = db.images_dir.join(&filename);
-        if image_path.exists() {
-            let _ = std::fs::remove_file(&image_path);
-        }
-    }
-
-    // Rebuild search cache (deleted folder clips must be removed)
     crate::clipboard::load_search_cache(pool).await;
 
-    let _ = window.emit("clipboard-change", ());
-    Ok(())
+    Ok(folder_uuid)
 }
 
 #[tauri::command]
@@ -242,4 +224,87 @@ pub async fn reorder_folders(
     }
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::delete_folder_records;
+    use crate::clipboard::{add_to_search_cache, SEARCH_CACHE};
+    use crate::database::Database;
+
+    async fn setup_test_db() -> Database {
+        let temp_dir =
+            std::env::temp_dir().join(format!("clippaste_folder_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let db_path = temp_dir.join("test.db");
+        let db = Database::new(db_path.to_str().unwrap(), &temp_dir).await;
+        db.migrate().await.expect("Migration should succeed");
+        db
+    }
+
+    #[tokio::test]
+    async fn delete_folder_moves_clips_to_all_and_keeps_clip_history() {
+        let db = setup_test_db().await;
+        sqlx::query(
+            "INSERT INTO folders (uuid, name, updated_at) VALUES ('folder-delete-test', 'Work', CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let folder_id: i64 =
+            sqlx::query_scalar("SELECT id FROM folders WHERE uuid = 'folder-delete-test'")
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+
+        sqlx::query(
+            "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, is_pinned, created_at, last_accessed)
+             VALUES ('clip-kept-after-folder-delete', 'text', 'hello', 'hello', 'hash-folder-delete', ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(folder_id)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        add_to_search_cache("clip-kept-after-folder-delete", "hello", Some(folder_id));
+
+        let deleted_uuid = delete_folder_records(&db, folder_id).await.unwrap();
+        assert_eq!(deleted_uuid, Some("folder-delete-test".to_string()));
+
+        let folder_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM folders WHERE id = ?")
+            .bind(folder_id)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(folder_count, 0);
+
+        let clip_folder: Option<i64> = sqlx::query_scalar(
+            "SELECT folder_id FROM clips WHERE uuid = 'clip-kept-after-folder-delete'",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(clip_folder, None);
+
+        let folder_tombstones: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sync_tombstones WHERE uuid = 'folder-delete-test' AND entity_type = 'folder'",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(folder_tombstones, 1);
+
+        let clip_tombstones: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sync_tombstones WHERE uuid = 'clip-kept-after-folder-delete'",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(clip_tombstones, 0);
+
+        let cache = SEARCH_CACHE.read();
+        let entry = cache
+            .get("clip-kept-after-folder-delete")
+            .expect("clip should remain searchable");
+        assert_eq!(entry.1, None);
+    }
 }

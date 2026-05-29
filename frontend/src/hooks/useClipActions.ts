@@ -1,9 +1,9 @@
 import { useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
-import { PAGE_SIZE, MAX_CLIPS_IN_STATE } from '../constants';
+import { PAGE_SIZE, MAX_CLIPS_IN_STATE, TIMING } from '../constants';
 import { cacheIcons, stripIcons } from '../iconCache';
 import { toast } from 'sonner';
+import { cmd } from '../commands';
 
 interface UseClipActionsOpts {
   clips: AppClipboardItem[];
@@ -52,14 +52,14 @@ export function useClipActions(opts: UseClipActionsOpts) {
         let data: AppClipboardItem[];
 
         if (searchOverride.trim()) {
-          data = await invoke<AppClipboardItem[]>('search_clips', {
+          data = await cmd.searchClips({
             query: searchOverride,
             filterId: folderId,
             limit: PAGE_SIZE,
             offset: currentOffset,
           });
         } else {
-          data = await invoke<AppClipboardItem[]>('get_clips', {
+          data = await cmd.getClips({
             filterId: folderId,
             limit: PAGE_SIZE,
             offset: currentOffset,
@@ -100,7 +100,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
     if (isDeletingRef.current) return;
     isDeletingRef.current = true;
     try {
-      await invoke('delete_clip', { id: clipId });
+      await cmd.deleteClip(clipId);
       setClips((prev) => prev.filter((c) => c.id !== clipId));
       setSelectedClipId(null);
       loadFolders();
@@ -125,14 +125,14 @@ export function useClipActions(opts: UseClipActionsOpts) {
         label: 'Cancel',
         onClick: () => {},
       },
-      duration: 4000,
+      duration: TIMING.DELETE_TOAST,
     });
   };
 
   const handlePaste = async (clipId: string) => {
     try {
       // Backend handles both text and image clipboard writes + auto-paste
-      await invoke('paste_clip', { id: clipId });
+      await cmd.pasteClip(clipId);
     } catch (error) {
       console.error('Failed to paste clip:', error);
       toast.error('Failed to paste clip');
@@ -142,17 +142,19 @@ export function useClipActions(opts: UseClipActionsOpts) {
   const handleCopy = async (clipId: string) => {
     try {
       // Backend handles both text and image clipboard writes
-      await invoke('copy_clip', { id: clipId });
+      await cmd.copyClip(clipId);
       toast.success('Copied to clipboard');
+      return true;
     } catch (error) {
       console.error('Failed to copy clip:', error);
       toast.error('Failed to copy');
+      return false;
     }
   };
 
   const handleTogglePin = async (clipId: string) => {
     try {
-      const isPinned = await invoke<boolean>('toggle_pin', { id: clipId });
+      const isPinned = await cmd.togglePin(clipId);
       setClips((prev) => prev.map((c) => (c.id === clipId ? { ...c, is_pinned: isPinned } : c)));
       toast.success(isPinned ? 'Pinned' : 'Unpinned');
       // Reload to re-sort pinned items to top
@@ -177,7 +179,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
     async (editedText: string) => {
       setEditingClip(null);
       try {
-        await invoke('paste_text', { content: editedText });
+        await cmd.pasteText(editedText);
       } catch (error) {
         console.error('Failed to paste edited text:', error);
         toast.error('Failed to paste');
@@ -190,7 +192,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
     const clip = clipsRef.current.find((c) => c.id === clipId);
     if (!clip || clip.clip_type === 'image') return;
     try {
-      await invoke('paste_text', { content: clip.content });
+      await cmd.pasteText(clip.content);
     } catch (error) {
       console.error('Failed to paste as plain text:', error);
       toast.error('Failed to paste');
@@ -210,7 +212,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
     async (clipId: string, note: string | null) => {
       setNoteModalClipId(null);
       try {
-        await invoke('update_note', { id: clipId, note });
+        await cmd.updateNote(clipId, note);
         setClips((prev) => prev.map((c) => (c.id === clipId ? { ...c, note } : c)));
         toast.success(note ? 'Note saved' : 'Note removed');
       } catch (error) {

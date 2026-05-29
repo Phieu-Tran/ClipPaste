@@ -2,13 +2,19 @@ use super::helpers::clip_to_item_async;
 use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
 use crate::utils;
+use once_cell::sync::Lazy;
 use std::fs;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 const DATA_DB_FILE: &str = "clipboard.db";
+const DASHBOARD_STATS_CACHE_TTL: Duration = Duration::from_secs(5);
+
+static DASHBOARD_STATS_CACHE: Lazy<parking_lot::Mutex<Option<(Instant, serde_json::Value)>>> =
+    Lazy::new(|| parking_lot::Mutex::new(None));
 
 #[tauri::command]
 pub fn get_data_directory() -> Result<String, String> {
@@ -713,10 +719,6 @@ pub async fn import_data(
 
     log::info!("Imported backup from zip");
 
-    // Rebuild in-memory caches from the imported DB
-    crate::clipboard::load_search_cache(&db.pool).await;
-    crate::clipboard::load_settings_cache(&db.pool).await;
-
     // Notify frontend to restart
     let _ = app.emit(
         "data-directory-changed",
@@ -731,8 +733,17 @@ pub async fn import_data(
 
 #[tauri::command]
 pub async fn get_dashboard_stats(
+    force_refresh: Option<bool>,
     db: tauri::State<'_, Arc<Database>>,
 ) -> Result<serde_json::Value, String> {
+    if !force_refresh.unwrap_or(false) {
+        if let Some((created_at, cached)) = DASHBOARD_STATS_CACHE.lock().as_ref() {
+            if created_at.elapsed() < DASHBOARD_STATS_CACHE_TTL {
+                return Ok(cached.clone());
+            }
+        }
+    }
+
     let pool = &db.pool;
 
     // Consolidate count queries into 1.
@@ -807,7 +818,7 @@ pub async fn get_dashboard_stats(
 
     let old_images_14d = db.preview_old_image_cleanup(14).await;
 
-    Ok(serde_json::json!({
+    let stats = serde_json::json!({
         "total": total,
         "today": today,
         "images": images,
@@ -829,7 +840,11 @@ pub async fn get_dashboard_stats(
         "db_size": db_size,
         "images_size": images_size,
         "old_images_14d": old_images_14d,
-    }))
+    });
+
+    *DASHBOARD_STATS_CACHE.lock() = Some((Instant::now(), stats.clone()));
+
+    Ok(stats)
 }
 
 #[tauri::command]
@@ -837,9 +852,12 @@ pub async fn get_clips_by_date(
     date: String,
     search: Option<String>,
     source_app: Option<String>,
+    offset: Option<u32>,
     db: tauri::State<'_, Arc<Database>>,
 ) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
+    const PAGE: u32 = 100;
+    let offset = offset.unwrap_or(0);
 
     let has_search = search.as_ref().is_some_and(|s| !s.is_empty());
     let has_app = source_app.as_ref().is_some_and(|s| !s.is_empty());
@@ -859,7 +877,7 @@ pub async fn get_clips_by_date(
     if has_app {
         sql.push_str(" AND source_app = ?");
     }
-    sql.push_str(" ORDER BY created_at DESC LIMIT 100");
+    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
 
     let mut query = sqlx::query_as::<_, Clip>(&sql).bind(&date);
     if has_search {
@@ -868,6 +886,7 @@ pub async fn get_clips_by_date(
     if has_app {
         query = query.bind(source_app.as_ref().unwrap());
     }
+    query = query.bind(PAGE).bind(offset);
 
     let clips: Vec<Clip> = query.fetch_all(pool).await.map_err(|e| e.to_string())?;
 
@@ -877,6 +896,17 @@ pub async fn get_clips_by_date(
     }
 
     Ok(items)
+}
+
+/// Run SQLite integrity check and return "ok" or the first error found.
+#[tauri::command]
+pub async fn check_db_integrity(
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<String, String> {
+    let result: Result<String, _> = sqlx::query_scalar("PRAGMA integrity_check(1)")
+        .fetch_one(&db.pool)
+        .await;
+    result.map_err(|e| e.to_string())
 }
 
 /// Get list of dates that have clips (for calendar highlighting)

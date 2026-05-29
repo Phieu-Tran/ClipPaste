@@ -9,6 +9,7 @@ import {
   ImageOff,
   HardDrive,
   Database,
+  RefreshCw,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -56,6 +57,7 @@ interface GeneralTabProps {
   handleRemoveDuplicates: () => Promise<void>;
   handleExportBackup: () => Promise<void>;
   handleImportBackup: () => Promise<void>;
+  dataAction: 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
   // Update
   updateProgress: { percent: number; downloaded: number; total: number } | null;
   handleCheckUpdate: () => void;
@@ -115,10 +117,13 @@ export function GeneralTab({
   handleRemoveDuplicates,
   handleExportBackup,
   handleImportBackup,
+  dataAction,
 }: GeneralTabProps) {
   const [cleanupPreview, setCleanupPreview] = useState<ImageCleanupPreview | null>(null);
   const [cleanupPreviewLoading, setCleanupPreviewLoading] = useState(false);
   const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [reclassifyRunning, setReclassifyRunning] = useState(false);
+  const [reclassifyStage, setReclassifyStage] = useState<'subtypes' | 'sensitive' | null>(null);
 
   const handleAddIgnoredApp = async () => {
     if (!newIgnoredApp.trim()) return;
@@ -173,6 +178,27 @@ export function GeneralTab({
       setNewIgnoredApp(filename);
     } catch (e) {
       console.log('File picker cancelled or failed', e);
+    }
+  };
+
+  const handleReclassifyClips = async () => {
+    if (reclassifyRunning) return;
+    setReclassifyRunning(true);
+    try {
+      setReclassifyStage('subtypes');
+      const subtypeUpdated = await invoke<number>('rescan_subtypes');
+      setReclassifyStage('sensitive');
+      const sensitiveUpdated = await invoke<number>('rescan_sensitive');
+      await refreshDashboardStats();
+      toast.success(
+        `Reclassified ${subtypeUpdated.toLocaleString()} clips; updated ${sensitiveUpdated.toLocaleString()} sensitive flags`
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error(`Failed to reclassify clips: ${error}`);
+    } finally {
+      setReclassifyStage(null);
+      setReclassifyRunning(false);
     }
   };
 
@@ -489,11 +515,12 @@ export function GeneralTab({
             />
             <button
               onClick={handleSelectDataDirectory}
+              disabled={!!dataAction}
               className="btn btn-secondary px-4"
               title="Choose folder"
             >
               <FolderOpen size={16} className="mr-2" />
-              Choose Folder
+              {dataAction === 'directory' ? 'Preparing...' : 'Choose Folder'}
             </button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -692,22 +719,48 @@ export function GeneralTab({
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={confirmClearHistory}
+            disabled={!!dataAction || reclassifyRunning}
             className="btn border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20"
           >
             <Trash2 size={16} className="mr-2" />
-            Clear History
+            {dataAction === 'clear' ? 'Clearing...' : 'Clear History'}
           </button>
 
-          <button onClick={handleRemoveDuplicates} className="btn btn-secondary text-xs">
-            Remove Duplicates
+          <button
+            onClick={handleRemoveDuplicates}
+            disabled={!!dataAction || reclassifyRunning}
+            className="btn btn-secondary text-xs disabled:opacity-50"
+          >
+            {dataAction === 'duplicates' ? 'Removing...' : 'Remove Duplicates'}
           </button>
 
-          <button onClick={handleExportBackup} className="btn btn-secondary text-xs">
-            Export Backup
+          <button
+            onClick={handleExportBackup}
+            disabled={!!dataAction || reclassifyRunning}
+            className="btn btn-secondary text-xs disabled:opacity-50"
+          >
+            {dataAction === 'export' ? 'Exporting...' : 'Export Backup'}
           </button>
 
-          <button onClick={handleImportBackup} className="btn btn-secondary text-xs">
-            Import Backup
+          <button
+            onClick={handleImportBackup}
+            disabled={!!dataAction || reclassifyRunning}
+            className="btn btn-secondary text-xs disabled:opacity-50"
+          >
+            {dataAction === 'import' ? 'Importing...' : 'Import Backup'}
+          </button>
+
+          <button
+            onClick={handleReclassifyClips}
+            disabled={!!dataAction || reclassifyRunning}
+            className="btn btn-secondary text-xs disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={`mr-2 ${reclassifyRunning ? 'animate-spin' : ''}`} />
+            {reclassifyStage === 'subtypes'
+              ? 'Scanning Types...'
+              : reclassifyStage === 'sensitive'
+                ? 'Scanning Sensitive...'
+                : 'Reclassify Clips'}
           </button>
         </div>
       </section>

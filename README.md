@@ -62,7 +62,8 @@
 | 🗂️ | **Folder Protection** | Folder items survive bulk clear operations |
 | ✅ | **Bulk Actions** | Select many clips, then paste, pin/unpin, move, or delete from one action bar |
 | 🔢 | **Paste Count** | Track how many times each clip is pasted |
-| 🔥 | **Frequently Pasted** | Smart folder showing clips pasted 5+ times |
+| 🔥 | **Frequently Pasted** | Virtual folder showing clips pasted 5+ times |
+| 🧠 | **Smart Ranking** | Virtual folder ranking clips by recency-weighted paste count (7-day halflife) |
 
 ### Dashboard & History
 
@@ -223,8 +224,8 @@ graph TB
         end
 
         clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect,<br/>sensitive detect, incognito mode</small>"]
-        database["database.rs<br/><small>SQLite pool, migrations v1-v13</small>"]
-        caches["In-Memory Caches<br/><small>SEARCH_CACHE (HashMap 50K cap)<br/>SETTINGS_CACHE · ICON_CACHE (LRU 100)</small>"]
+        database["database.rs<br/><small>SQLite pool, migrations v1-v14</small>"]
+        caches["Search<br/><small>FTS5 (primary) → SEARCH_CACHE fallback<br/>SETTINGS_CACHE · ICON_CACHE (LRU 100)</small>"]
 
         subgraph Sync["sync/"]
             oauth["oauth.rs<br/><small>Google OAuth2 loopback</small>"]
@@ -240,7 +241,7 @@ graph TB
     end
 
     subgraph Cloud["Google Drive (appDataFolder)"]
-        driveFiles["clip_*.enc / folder_*.enc<br/><small>encrypted sync data</small>"]
+        driveFiles["sync_state.json / op_{device}_{ts}.json<br/><small>plaintext JSON (hidden app folder)</small>"]
     end
 
     Components -- "invoke()" --> Commands
@@ -349,8 +350,8 @@ sequenceDiagram
 |:---------|:-------|
 | **SQLite WAL mode + tuned PRAGMAs** | Concurrent reads/writes, 8MB cache, 64MB mmap, 5s busy_timeout |
 | **Images on disk** | DB stays small (~2MB), images in separate files |
-| **In-memory search cache** | HashMap capped at 50K entries, instant multi-word + fuzzy search (<1ms) |
-| **Relevance sorting** | Exact phrase > all words > note match > fuzzy; folder as tiebreaker |
+| **FTS5 full-text search** | SQLite FTS5 (migration v14) is the primary search path; in-memory HashMap cache (50K cap) is the fallback when FTS5 is unavailable |
+| **Relevance sorting** | FTS5 BM25 ranking; cache path: exact phrase > all words > note match > fuzzy; folder as tiebreaker |
 | **Sensitive content detection** | Regex-based (no AI), auto-blur on card, is_sensitive column in DB |
 | **Asset protocol for images** | `asset://` URL instead of base64 — 75% less IPC payload |
 | **Shift+Insert** for paste | Works in terminals (PowerShell, WSL) where Ctrl+V doesn't |
@@ -428,7 +429,7 @@ ClipPaste can sync your clipboard history across devices using Google Drive.
 Device A                     Google Drive (hidden app folder)           Device B
 ┌──────────┐    delta       ┌──────────────────────────────┐   delta   ┌──────────┐
 │ SQLite   │───────────────►│  sync_state.json (full)      │──────────►│ SQLite   │
-│ + images │                │  delta_{device}.json (small)  │           │ + images │
+│ + images │                │  op_{device}_{ts}.json (ops) │           │ + images │
 └──────────┘◄───────────────│  img_{hash}.png              │◄──────────└──────────┘
                             └──────────────────────────────┘
 ```
@@ -437,7 +438,7 @@ Device A                     Google Drive (hidden app folder)           Device B
 - **Delta sync** — only uploads changes, not the entire history every time
 - **Last-writer-wins** conflict resolution by `updated_at` timestamp
 - Deletions propagate via **tombstones** (auto-cleaned after 30 days)
-- Auto-compact every 50 deltas into a fresh full state
+- Auto-compact when >30 op files accumulate or total op size exceeds 2 MB
 - Images over 10MB are skipped; image sync can be disabled entirely
 
 ### Step 1: Create Google Cloud Credentials

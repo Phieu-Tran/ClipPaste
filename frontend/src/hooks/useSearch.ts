@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardItem as AppClipboardItem } from '../types';
+import { DEBOUNCE } from '../constants';
 
 const RE_URL = /^https?:\/\/\S+$/i;
 const RE_FILE_PATH = /^[a-zA-Z]:\\/;
@@ -28,7 +29,7 @@ export function useSearch(opts: UseSearchOptions) {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       searchTimerRef.current = setTimeout(() => {
         setSearchQuery(query);
-      }, 100);
+      }, DEBOUNCE.SEARCH);
     },
     [setPreviewFolder]
   );
