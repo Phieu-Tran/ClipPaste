@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.10.13] - 2026-05-29
 
 ### Added
 - **Type filter**: filter the clip list by content type — Text, Image, URL, Email, Color, Path, Phone, IP, JSON, Code — from a pill toolbar next to the search box. Shows a live result count, works inside folders and the "All" view, and combines with text search. Backed by a dedicated indexed `get_clips_by_type_filter` command plus type-aware FTS/LIKE search paths.
