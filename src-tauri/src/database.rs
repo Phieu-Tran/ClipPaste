@@ -258,9 +258,10 @@ impl Database {
         }
         src_pool.close().await;
 
+        let repaired_opts = sqlx::sqlite::SqliteConnectOptions::new().filename(&repaired_path);
         let repaired_pool = match sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
-            .connect(&format!("sqlite:{}", repaired_path))
+            .connect_with(repaired_opts)
             .await
         {
             Ok(p) => p,
@@ -305,6 +306,8 @@ impl Database {
             log::error!("DB repair: cannot replace DB: {}", e);
             // Restore backup
             let _ = std::fs::rename(&backup_path, db_path);
+            backup_related_db_file(&format!("{}-wal", backup_path), &format!("{}-wal", db_path));
+            backup_related_db_file(&format!("{}-shm", backup_path), &format!("{}-shm", db_path));
             return false;
         }
 

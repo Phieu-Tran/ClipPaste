@@ -10,39 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend:
-    name: Frontend (format, build, tests)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 9
-
-      - name: Install Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Prettier check
-        run: pnpm format:check
-
-      - name: Type-check & build
-        run: pnpm build
-
-      - name: Unit tests (vitest)
-        working-directory: tests
-        run: |
-          pnpm install
-          pnpm test
-
-  backend:
-    name: Backend (clippy, tests)
+  check:
+    name: Build & lint
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +31,16 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -78,10 +57,17 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Prettier check
+        run: pnpm format:check
+
+      # Produces ../dist, which tauri's generate_context! embeds at compile time.
+      # Clippy/build below fail without it.
+      - name: Type-check & build frontend
+        run: pnpm build
+
       - name: Clippy (deny warnings)
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
-
-      - name: Tests
-        working-directory: src-tauri
-        run: cargo test

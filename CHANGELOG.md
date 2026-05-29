@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Safer database auto-repair**: corrupt-DB recovery now uses `VACUUM INTO` to produce a full copy (real rows, not just schema) and only swaps it in after the repaired file passes `PRAGMA integrity_check`; the original DB plus its WAL/SHM are preserved as a timestamped backup. Previously the rebuild copied schema only and could lose data.
 
 ### Internal
-- **CI on every PR / push to `main`**: new `.github/workflows/ci.yml` runs Prettier check, frontend build, vitest unit tests, and `cargo clippy -D warnings` + `cargo test` on both Windows and Linux — catching compile/lint/test regressions before a release tag is cut.
-- Added Windows/POSIX dev scripts under `scripts/` (`kill-dev`, `tauri`, `test`).
+- **CI on every PR / push to `main`**: new `.github/workflows/ci.yml` runs Prettier check, frontend build, and `cargo clippy -D warnings` on both Windows and Linux — catching cross-platform compile/lint regressions before a release tag is cut. (The local-only test suites stay out of CI, matching `.gitignore`.)
+- **Cross-platform lint cleanup**: cfg-gated the Windows-only `base64` import in `clipboard.rs` and `Manager` import in `data.rs`, and consumed `db`/`auto_paste` on non-Windows in `scratchpad_paste` — so `clippy -D warnings` is clean on Linux too, not just Windows.
+- Added Windows dev scripts under `scripts/` (`kill-dev`, `tauri`).
 
 ---
 

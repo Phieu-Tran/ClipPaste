@@ -8,7 +8,10 @@ use std::io::{Read as IoRead, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
+// `Manager` is only needed for `get_webview_window` in the Windows-only folder picker.
+#[cfg(target_os = "windows")]
+use tauri::Manager;
 
 const DATA_DB_FILE: &str = "clipboard.db";
 const DASHBOARD_STATS_CACHE_TTL: Duration = Duration::from_secs(5);
@@ -528,10 +531,10 @@ pub async fn export_data(
 }
 
 async fn verify_imported_db(path: &Path) -> Result<(), String> {
-    let path_str = path.to_string_lossy().to_string();
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(path);
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
-        .connect(&format!("sqlite:{}", path_str))
+        .connect_with(options)
         .await
         .map_err(|e| format!("Imported DB cannot be opened: {}", e))?;
 

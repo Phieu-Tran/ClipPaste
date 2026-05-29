@@ -1,6 +1,8 @@
 use tauri::{AppHandle, Emitter, Listener};
 // Import functions directly from the crate root
 use crate::database::Database;
+// Only used by the Windows-only source-app icon encoder (cfg-gated below).
+#[cfg(target_os = "windows")]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;

@@ -227,7 +227,10 @@ pub async fn scratchpad_paste(
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     }
     #[cfg(not(target_os = "windows"))]
-    let _ = auto_paste;
+    {
+        let _ = auto_paste;
+        let _ = &db;
+    }
 
     Ok(())
 }
