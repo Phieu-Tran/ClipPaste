@@ -41,10 +41,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned to match the local dev toolchain so "CI green" == scripts/test.ps1
+      # green. Newer stable Rust adds clippy lints (e.g. collapsible_match in
+      # 1.96) that would fail here but not locally. Bump this when bumping local.
+      - name: Install Rust 1.93.1
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: "1.93.1"
           components: clippy
 
       - name: Cache Rust dependencies
