@@ -20,28 +20,8 @@ import {
   Network,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { enqueue } from '../imageQueue';
+import { loadClipImageDataUrl, readCachedImageDataUrl } from '../imageQueue';
 import { getIcon } from '../iconCache';
-import { cmd } from '../commands';
-
-const IMAGE_DATA_URL_CACHE_LIMIT = 160;
-const imageDataUrlCache = new Map<string, string>();
-
-function readCachedImage(clipId: string): string {
-  const cached = imageDataUrlCache.get(clipId);
-  if (!cached) return '';
-  imageDataUrlCache.delete(clipId);
-  imageDataUrlCache.set(clipId, cached);
-  return cached;
-}
-
-function cacheImage(clipId: string, src: string) {
-  imageDataUrlCache.set(clipId, src);
-  if (imageDataUrlCache.size > IMAGE_DATA_URL_CACHE_LIMIT) {
-    const firstKey = imageDataUrlCache.keys().next().value;
-    if (firstKey) imageDataUrlCache.delete(firstKey);
-  }
-}
 
 /** Loads images through the backend so custom data directories stay supported. */
 function ImageWithFallback({
@@ -55,7 +35,7 @@ function ImageWithFallback({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [imgSrc, setImgSrc] = useState(() => readCachedImage(clipId));
+  const [imgSrc, setImgSrc] = useState(() => readCachedImageDataUrl(clipId, true));
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -84,7 +64,7 @@ function ImageWithFallback({
   }, []);
 
   useEffect(() => {
-    const cached = readCachedImage(clipId);
+    const cached = readCachedImageDataUrl(clipId, true);
     setImgSrc(cached);
     setFailed(false);
     setIsVisible(Boolean(cached));
@@ -96,9 +76,8 @@ function ImageWithFallback({
     let cancelled = false;
     setFailed(false);
 
-    enqueue(() => cmd.getClipImageDataUrl(clipId, true))
+    loadClipImageDataUrl(clipId, true)
       .then((src) => {
-        cacheImage(clipId, src);
         if (!cancelled) setImgSrc(src);
       })
       .catch(() => {

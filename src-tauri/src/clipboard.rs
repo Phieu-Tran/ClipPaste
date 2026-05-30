@@ -89,8 +89,13 @@ pub static ICON_CACHE: Lazy<parking_lot::Mutex<lru::LruCache<String, Option<Stri
     });
 
 /// App icon lookup: app_name → base64 icon. New clips use this instead of per-clip source_icon.
-pub static APP_ICONS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, String>>> =
-    Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
+const APP_ICONS_CACHE_MAX: usize = 256;
+pub static APP_ICONS_CACHE: Lazy<parking_lot::Mutex<lru::LruCache<String, String>>> =
+    Lazy::new(|| {
+        parking_lot::Mutex::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(APP_ICONS_CACHE_MAX).unwrap(),
+        ))
+    });
 
 /// Incognito mode: when true, clipboard changes are not captured
 pub static IS_INCOGNITO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -245,29 +250,33 @@ pub fn get_cached_setting(key: &str) -> Option<String> {
 
 /// Load all app icons into memory for instant lookup
 pub async fn load_app_icons_cache(pool: &sqlx::SqlitePool) {
-    let rows: Vec<(String, String)> = sqlx::query_as("SELECT app_name, icon FROM app_icons")
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT app_name, icon FROM app_icons ORDER BY rowid DESC LIMIT ?")
+            .bind(APP_ICONS_CACHE_MAX as i64)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
     let count = rows.len();
-    let mut cache = APP_ICONS_CACHE.write();
+    let mut cache = APP_ICONS_CACHE.lock();
     cache.clear();
-    for (name, icon) in rows {
-        cache.insert(name, icon);
+    // Rows come newest-first (rowid DESC); insert oldest-first so the newest
+    // icons end up most-recently-used and are evicted last.
+    for (name, icon) in rows.into_iter().rev() {
+        cache.put(name, icon);
     }
     log::info!("APP_ICONS_CACHE: Loaded {} app icons into memory", count);
 }
 
 /// Get an app icon from the in-memory cache
 pub fn get_app_icon(app_name: &str) -> Option<String> {
-    APP_ICONS_CACHE.read().get(app_name).cloned()
+    APP_ICONS_CACHE.lock().get(app_name).cloned()
 }
 
 /// Save app icon to DB + cache (deduplicated per app_name)
 async fn save_app_icon(pool: &sqlx::SqlitePool, app_name: &str, icon: &str) {
     APP_ICONS_CACHE
-        .write()
-        .insert(app_name.to_string(), icon.to_string());
+        .lock()
+        .put(app_name.to_string(), icon.to_string());
     sqlx::query("INSERT OR REPLACE INTO app_icons (app_name, icon) VALUES (?, ?)")
         .bind(app_name)
         .bind(icon)

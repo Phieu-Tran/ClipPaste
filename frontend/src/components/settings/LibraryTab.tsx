@@ -34,6 +34,7 @@ import {
 import { clsx } from 'clsx';
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
+import { evictClipImageDataUrl, loadClipImageDataUrl } from '../../imageQueue';
 import { ClipboardItem, DashboardStats, FolderItem } from '../../types';
 
 const PAGE_SIZE = 80;
@@ -163,8 +164,7 @@ function LibraryThumb({
 
     let cancelled = false;
     setSrc('');
-    cmd
-      .getClipImageDataUrl(clip.id, true)
+    loadClipImageDataUrl(clip.id, true)
       .then((dataUrl) => {
         if (!cancelled) setSrc(dataUrl);
       })
@@ -258,8 +258,7 @@ function ImagePreviewModal({
     let cancelled = false;
     setSrc('');
     fitImage();
-    cmd
-      .getClipImageDataUrl(clip.id, false)
+    loadClipImageDataUrl(clip.id, false)
       .then((dataUrl) => {
         if (!cancelled) setSrc(dataUrl);
       })
@@ -687,6 +686,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
       action: async () => {
         try {
           const count = await cmd.bulkDeleteClips(ids);
+          ids.forEach(evictClipImageDataUrl);
           toast.success(`Deleted ${count} clips`);
           await reload();
         } catch (e) {

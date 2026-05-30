@@ -26,6 +26,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { useShortcutRecorder } from 'use-shortcut-recorder';
 import { clsx } from 'clsx';
 import { cmd } from '../commands';
+import { clearImageDataUrlCache } from '../imageQueue';
 
 // Tabs are lazy-loaded so each becomes its own chunk, fetched only when opened.
 const DashboardTab = lazy(() =>
@@ -398,6 +399,7 @@ export function SettingsPanel({
         setDataAction('clear');
         try {
           await cmd.clearAllClips();
+          clearImageDataUrlCache();
           // Refresh the history size after clearing
           const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
@@ -426,6 +428,7 @@ export function SettingsPanel({
         setDataAction('duplicates');
         try {
           const count = await cmd.removeDuplicateClips();
+          clearImageDataUrlCache();
           toast.success(`Removed ${count} duplicate clips`);
           const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
@@ -490,6 +493,7 @@ export function SettingsPanel({
         const loadingToast = toast.loading('Importing backup...');
         try {
           await cmd.importData();
+          clearImageDataUrlCache();
           setImportRestartRequired(true);
           toast.success('Backup imported. Restart to apply.', {
             duration: 10000,

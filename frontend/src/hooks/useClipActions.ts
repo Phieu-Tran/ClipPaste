@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { ClipboardItem as AppClipboardItem } from '../types';
 import { PAGE_SIZE, MAX_CLIPS_IN_STATE, TIMING } from '../constants';
 import { cacheIcons, stripIcons } from '../iconCache';
+import { evictClipImageDataUrl } from '../imageQueue';
 import { toast } from 'sonner';
 import { cmd } from '../commands';
 
@@ -117,6 +118,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
     isDeletingRef.current = true;
     try {
       await cmd.deleteClip(clipId);
+      evictClipImageDataUrl(clipId);
       setClips((prev) => prev.filter((c) => c.id !== clipId));
       setSelectedClipId(null);
       loadFolders();

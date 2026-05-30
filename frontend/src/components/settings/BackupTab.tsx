@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
+import { clearImageDataUrlCache } from '../../imageQueue';
 import { DashboardStats, ImageCleanupPreview, Settings } from '../../types';
 
 type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
@@ -123,6 +124,7 @@ export function BackupTab({
         setCleanupRunning(true);
         try {
           const deleted = await cmd.cleanupOldImageClips(days);
+          clearImageDataUrlCache();
           const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
           setCleanupPreview(null);

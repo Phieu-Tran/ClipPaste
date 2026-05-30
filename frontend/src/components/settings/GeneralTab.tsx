@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
+import { clearImageDataUrlCache } from '../../imageQueue';
 
 interface GeneralTabProps {
   settings: Settings;
@@ -212,6 +213,7 @@ export function GeneralTab({
         try {
           setCleanupRunning(true);
           const deleted = await cmd.cleanupOldImageClips(days);
+          clearImageDataUrlCache();
           toast.success(
             deleted === 1 ? 'Deleted 1 old image clip' : `Deleted ${deleted} old image clips`
           );

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
-import { cmd } from '../../commands';
+import { loadClipImageDataUrl } from '../../imageQueue';
 import { DashboardStats, DashClip } from '../../types';
 
 interface DashboardTabProps {
@@ -74,8 +74,7 @@ function DashboardImageThumb({ clipId }: { clipId: string }) {
     let cancelled = false;
     setSrc('');
 
-    cmd
-      .getClipImageDataUrl(clipId, true)
+    loadClipImageDataUrl(clipId, true)
       .then((dataUrl) => {
         if (!cancelled) setSrc(dataUrl);
       })

@@ -26,6 +26,7 @@ import {
 import { clsx } from 'clsx';
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
+import { evictClipImageDataUrl } from '../../imageQueue';
 import { COLOR_OPTIONS, FOLDER_ICON_MAP, FOLDER_ICON_OPTIONS } from '../FolderModal';
 
 interface FoldersTabProps {
@@ -394,6 +395,7 @@ export function FoldersTab({
   const handleDeleteClip = async (clipUuid: string, folderId: string) => {
     try {
       await cmd.deleteClip(clipUuid);
+      evictClipImageDataUrl(clipUuid);
       setSelectedClipIds((prev) => {
         const next = new Set(prev);
         next.delete(clipUuid);
@@ -412,6 +414,7 @@ export function FoldersTab({
     const ids = Array.from(selectedClipIds);
     try {
       const count = await cmd.bulkDeleteClips(ids);
+      ids.forEach(evictClipImageDataUrl);
       setSelectedClipIds(new Set());
       await refreshSelectedFolder();
       toast.success(`Deleted ${count} clip${count === 1 ? '' : 's'}`);

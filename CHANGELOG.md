@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Clip list edge fade**: the horizontal list now fades its left/right edge whenever more clips are scrolled off-screen, hinting there's more to scroll (the scrollbar is hidden).
 
 ### Internal
+- **Bounded image/icon caches (lower RAM)**: all image data URLs now share one bounded cache (~24 MB / 180 entries, only the 6 most-recent full-size images, with in-flight request de-duplication so concurrent components share one IPC call), consumed by ClipCard, LibraryTab, and DashboardTab. The cache is evicted on delete / bulk-delete / clear-history / import / remove-duplicates / old-image cleanup. The frontend icon cache is capped (96 entries / ~4 MB) and the backend app-icon cache is now an LRU (256) instead of an unbounded map. (Full-size eviction targets only full-size entries so it never wipes thumbnails.)
 - New backend commands: `get_library_clips`, `save_clip_image_as`, `move_folder_clips`, `merge_folder`.
 - **Code-split Settings**: the Settings and Scratchpad windows, plus each Settings tab, are now lazy-loaded chunks. The main window's JS chunk dropped from ~480 kB to ~345 kB (clearing the >500 kB Vite warning) and opens faster.
 - **`Cargo.lock` is now committed** for reproducible release builds (the release workflow previously resolved fresh dependency versions on every run).
