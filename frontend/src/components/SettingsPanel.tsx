@@ -7,6 +7,7 @@ import {
   Folder as FolderIcon,
   ClipboardList,
   BarChart3,
+  Archive,
   Keyboard,
   Cloud,
   CheckCircle2,
@@ -32,6 +33,7 @@ import { FoldersTab } from './settings/FoldersTab';
 import { HotkeysTab } from './settings/HotkeysTab';
 import { SyncTab } from './settings/SyncTab';
 import { LibraryTab } from './settings/LibraryTab';
+import { BackupTab } from './settings/BackupTab';
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -40,7 +42,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type Tab = 'dashboard' | 'library' | 'general' | 'folders' | 'hotkeys' | 'sync';
+type Tab = 'dashboard' | 'library' | 'general' | 'folders' | 'backup' | 'hotkeys' | 'sync';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
 
@@ -624,6 +626,18 @@ export function SettingsPanel({
                 Folders
               </button>
               <button
+                onClick={() => setActiveTab('backup')}
+                className={clsx(
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  activeTab === 'backup'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )}
+              >
+                <Archive size={16} />
+                Backup
+              </button>
+              <button
                 onClick={() => setActiveTab('hotkeys')}
                 className={clsx(
                   'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -655,7 +669,9 @@ export function SettingsPanel({
             <div
               className={clsx(
                 'mx-auto space-y-8',
-                activeTab === 'library' || activeTab === 'folders' ? 'max-w-6xl' : 'max-w-2xl'
+                activeTab === 'library' || activeTab === 'folders' || activeTab === 'backup'
+                  ? 'max-w-6xl'
+                  : 'max-w-2xl'
               )}
             >
               {importRestartRequired && (
@@ -752,6 +768,25 @@ export function SettingsPanel({
                   renameValue={renameValue}
                   setRenameValue={setRenameValue}
                   loadFolders={loadFolders}
+                  requestConfirm={requestConfirm}
+                />
+              )}
+
+              {activeTab === 'backup' && (
+                <BackupTab
+                  settings={settings}
+                  dashStats={dashStats}
+                  dataDirectory={dataDirectory}
+                  dataAction={dataAction}
+                  handleSelectDataDirectory={handleSelectDataDirectory}
+                  handleExportBackup={handleExportBackup}
+                  handleImportBackup={handleImportBackup}
+                  handleRemoveDuplicates={handleRemoveDuplicates}
+                  confirmClearHistory={confirmClearHistory}
+                  handleCheckDbIntegrity={handleCheckDbIntegrity}
+                  refreshDashboardStats={refreshDashboardStats}
+                  setHistorySize={setHistorySize}
+                  requestConfirm={requestConfirm}
                 />
               )}
 

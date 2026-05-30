@@ -39,6 +39,17 @@ export const cmd = {
     offset: number;
   }) => invoke<ClipboardItem[]>('get_clips_by_type_filter', args),
 
+  getLibraryClips: (args: {
+    query?: string | null;
+    folderId?: string | null;
+    typeFilter?: string | null;
+    pinFilter?: string | null;
+    dateFilter?: string | null;
+    sort?: string | null;
+    limit: number;
+    offset: number;
+  }) => invoke<ClipboardItem[]>('get_library_clips', args),
+
   getInitialState: () =>
     invoke<{ clips: ClipboardItem[]; folders: FolderItem[]; total_count: number }>(
       'get_initial_state'
@@ -58,6 +69,8 @@ export const cmd = {
 
   getClipImageDataUrl: (id: string, thumbnail?: boolean) =>
     invoke<string>('get_clip_image_data_url', { id, thumbnail: thumbnail ?? false }),
+
+  saveClipImageAs: (id: string) => invoke<string>('save_clip_image_as', { id }),
 
   bulkDeleteClips: (ids: string[]) => invoke<number>('bulk_delete_clips', { ids }),
 
@@ -86,6 +99,12 @@ export const cmd = {
 
   moveToFolder: (clipId: string, folderId: string | null) =>
     invoke<void>('move_to_folder', { clipId, folderId }),
+
+  moveFolderClips: (sourceFolderId: string, targetFolderId: string | null) =>
+    invoke<number>('move_folder_clips', { sourceFolderId, targetFolderId }),
+
+  mergeFolder: (sourceFolderId: string, targetFolderId: string) =>
+    invoke<number>('merge_folder', { sourceFolderId, targetFolderId }),
 
   reorderFolders: (folderIds: string[]) => invoke<void>('reorder_folders', { folderIds }),
 

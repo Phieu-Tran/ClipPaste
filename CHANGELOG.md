@@ -9,11 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Image viewer**: full-size image preview now supports wheel zoom, click-drag panning while zoomed, Fit / 100% buttons, Copy, Save as…, and left/right navigation between images.
+- **Clips & Images — filter & sort**: filter by kind / pinned / date, sort by newest / oldest / largest / most used / smart, plus dedicated Smart and Frequent virtual folders.
+- **Settings → Backup tab**: export / import a backup, choose the data folder, view storage stats with a large-size warning, run a DB integrity check, remove duplicates, clean up old images, and clear history.
+- **Folders settings — management**: drag-to-reorder folders, "Move all" clips to another folder, and "Merge folder" (with a confirm step); deleting a folder also confirms first.
+
 ### Changed
 - **Consistent confirm dialogs**: deletions in the Clips & Images tab and the "delete folder" action in the main window's context menu now use the styled `ConfirmDialog` instead of the native `window.confirm()` popup.
 - **Virtualized Clips & Images**: the clip list and the image grid (row-virtualized) now use `@tanstack/react-virtual`, so the tab stays smooth when many pages of items are loaded.
 
 ### Internal
+- New backend commands: `get_library_clips`, `save_clip_image_as`, `move_folder_clips`, `merge_folder`.
 - **Single IPC boundary**: remaining raw `invoke()` calls (ScratchpadWindow, ClipCard, useFolderPreview, useWindowLifecycle) now go through the typed `cmd.*` wrapper — raw `invoke` lives only in `commands.ts`.
 - **Frontend compile smoke test**: `frontend/src/smoke/settingsSmoke.tsx` renders `SettingsPanel` and `LibraryTab` so `tsc` catches basic prop/render breakage at build time.
 

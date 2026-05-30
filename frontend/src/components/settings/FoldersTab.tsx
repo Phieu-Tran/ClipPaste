@@ -7,6 +7,8 @@ import {
   File as FileIcon,
   FileText,
   Folder as FolderIcon,
+  GitMerge,
+  GripVertical,
   Image as ImageIcon,
   Inbox,
   Link2,
@@ -35,6 +37,15 @@ interface FoldersTabProps {
   renameValue: string;
   setRenameValue: (v: string) => void;
   loadFolders: () => Promise<void>;
+  requestConfirm: (options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    details?: string[];
+    action: () => Promise<void>;
+  }) => void;
 }
 
 function formatRelativeTime(iso: string): string {
@@ -97,6 +108,7 @@ export function FoldersTab({
   renameValue,
   setRenameValue,
   loadFolders,
+  requestConfirm,
 }: FoldersTabProps) {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [clipsByFolder, setClipsByFolder] = useState<Record<string, ClipboardItem[]>>({});
@@ -107,6 +119,9 @@ export function FoldersTab({
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [editingFolderColor, setEditingFolderColor] = useState<string | null>(null);
   const [editingFolderIcon, setEditingFolderIcon] = useState<string | null>(null);
+  const [dragFolderId, setDragFolderId] = useState<string | null>(null);
+  const [dropFolderId, setDropFolderId] = useState<string | null>(null);
+  const [folderTransferTargetId, setFolderTransferTargetId] = useState<string>('none');
   const movePopoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -133,6 +148,10 @@ export function FoldersTab({
   }, [customFolders, folderSearch]);
   const selectedFolder = useMemo(
     () => customFolders.find((folder) => folder.id === selectedFolderId) ?? null,
+    [customFolders, selectedFolderId]
+  );
+  const folderTransferTargets = useMemo(
+    () => customFolders.filter((folder) => folder.id !== selectedFolderId),
     [customFolders, selectedFolderId]
   );
   const selectedFolderClips = selectedFolderId ? clipsByFolder[selectedFolderId] : undefined;
@@ -173,6 +192,7 @@ export function FoldersTab({
     setSelectedClipIds(new Set());
     setMoveTargetClipId(null);
     setMoveSearch('');
+    setFolderTransferTargetId('none');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolderId]);
 
@@ -189,19 +209,111 @@ export function FoldersTab({
   };
 
   const handleDeleteFolder = async (id: string) => {
+    const folder = customFolders.find((item) => item.id === id);
+    requestConfirm({
+      title: 'Delete folder',
+      message: `Delete "${folder?.name ?? 'this folder'}"? Clips inside will be moved to All.`,
+      confirmText: 'Delete',
+      variant: 'danger',
+      details:
+        folder && folder.item_count > 0
+          ? [`${folder.item_count.toLocaleString()} clips will leave this folder.`]
+          : undefined,
+      action: async () => {
+        try {
+          await cmd.deleteFolder(id);
+          if (selectedFolderId === id) setSelectedFolderId(null);
+          setClipsByFolder((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          await loadFolders();
+          toast.success('Folder deleted');
+        } catch (e) {
+          toast.error(`Failed to delete folder: ${e}`);
+        }
+      },
+    });
+  };
+
+  const handleReorderFolders = async (sourceId: string, targetId: string) => {
+    if (sourceId === targetId || folderSearch.trim()) return;
+    const ids = customFolders.map((folder) => folder.id);
+    const fromIndex = ids.indexOf(sourceId);
+    const toIndex = ids.indexOf(targetId);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const reordered = [...ids];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
     try {
-      await cmd.deleteFolder(id);
-      if (selectedFolderId === id) setSelectedFolderId(null);
+      await cmd.reorderFolders(reordered);
+      await loadFolders();
+      toast.success('Folders reordered');
+    } catch (e) {
+      toast.error(`Failed to reorder folders: ${e}`);
+    } finally {
+      setDragFolderId(null);
+      setDropFolderId(null);
+    }
+  };
+
+  const handleMoveEntireFolder = async () => {
+    if (!selectedFolder || folderTransferTargetId === 'none') return;
+    const target = customFolders.find((folder) => folder.id === folderTransferTargetId);
+    if (!target) return;
+
+    try {
+      const moved = await cmd.moveFolderClips(selectedFolder.id, target.id);
       setClipsByFolder((prev) => {
         const next = { ...prev };
-        delete next[id];
+        delete next[selectedFolder.id];
+        delete next[target.id];
         return next;
       });
       await loadFolders();
-      toast.success('Folder deleted');
+      await loadClipsForFolder(selectedFolder.id);
+      toast.success(`Moved ${moved.toLocaleString()} clips to ${target.name}`);
     } catch (e) {
-      toast.error(`Failed to delete folder: ${e}`);
+      toast.error(`Failed: ${e}`);
     }
+  };
+
+  const handleMergeFolder = async () => {
+    if (!selectedFolder || folderTransferTargetId === 'none') return;
+    const target = customFolders.find((folder) => folder.id === folderTransferTargetId);
+    if (!target) return;
+
+    requestConfirm({
+      title: 'Merge folders',
+      message: `Move all clips from "${selectedFolder.name}" into "${target.name}" and delete the empty source folder?`,
+      confirmText: 'Merge',
+      variant: 'warning',
+      details: [
+        `${selectedFolder.item_count.toLocaleString()} clips will move.`,
+        'The source folder name, icon, and color will be removed.',
+      ],
+      action: async () => {
+        try {
+          const moved = await cmd.mergeFolder(selectedFolder.id, target.id);
+          setSelectedFolderId(target.id);
+          setFolderTransferTargetId('none');
+          setClipsByFolder((prev) => {
+            const next = { ...prev };
+            delete next[selectedFolder.id];
+            delete next[target.id];
+            return next;
+          });
+          await loadFolders();
+          await loadClipsForFolder(target.id);
+          toast.success(`Merged ${moved.toLocaleString()} clips into ${target.name}`);
+        } catch (e) {
+          toast.error(`Failed: ${e}`);
+        }
+      },
+    });
   };
 
   const startRenameFolder = (folder: FolderItem) => {
@@ -496,9 +608,40 @@ export function FoldersTab({
                   return (
                     <div
                       key={folder.id}
-                      className={`rounded-md border transition-colors ${
-                        isSelected ? 'border-primary/40 bg-primary/10' : 'border-transparent'
-                      }`}
+                      draggable={!isEditing && !folderSearch.trim()}
+                      onDragStart={(event) => {
+                        if (isEditing || folderSearch.trim()) {
+                          event.preventDefault();
+                          return;
+                        }
+                        setDragFolderId(folder.id);
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(event) => {
+                        if (!dragFolderId || dragFolderId === folder.id || folderSearch.trim()) {
+                          return;
+                        }
+                        event.preventDefault();
+                        setDropFolderId(folder.id);
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDragLeave={() => {
+                        if (dropFolderId === folder.id) setDropFolderId(null);
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (dragFolderId) handleReorderFolders(dragFolderId, folder.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragFolderId(null);
+                        setDropFolderId(null);
+                      }}
+                      className={clsx(
+                        'rounded-md border transition-colors',
+                        isSelected ? 'border-primary/40 bg-primary/10' : 'border-transparent',
+                        dragFolderId === folder.id && 'opacity-45',
+                        dropFolderId === folder.id && 'border-primary/60 bg-primary/15'
+                      )}
                     >
                       {isEditing ? (
                         <div className="space-y-2 p-2">
@@ -605,6 +748,13 @@ export function FoldersTab({
                           onClick={() => setSelectedFolderId(folder.id)}
                           className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-accent/40"
                         >
+                          <GripVertical
+                            size={13}
+                            className={clsx(
+                              'shrink-0 text-muted-foreground/60',
+                              folderSearch.trim() && 'opacity-30'
+                            )}
+                          />
                           <FolderGlyph folder={folder} />
                           <FolderColorDot color={folder.color} />
                           <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -665,6 +815,46 @@ export function FoldersTab({
               </div>
             )}
           </div>
+
+          {selectedFolder && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-background/30 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                <ArrowRightLeft size={13} />
+                <span className="truncate">Folder transfer</span>
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <select
+                  value={folderTransferTargetId}
+                  onChange={(event) => setFolderTransferTargetId(event.target.value)}
+                  disabled={folderTransferTargets.length === 0}
+                  className="h-7 min-w-[160px] rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none disabled:opacity-50"
+                >
+                  <option value="none">Target folder</option>
+                  {folderTransferTargets.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleMoveEntireFolder}
+                  disabled={folderTransferTargetId === 'none'}
+                  className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                >
+                  <ArrowRightLeft size={12} />
+                  Move all
+                </button>
+                <button
+                  onClick={handleMergeFolder}
+                  disabled={folderTransferTargetId === 'none'}
+                  className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                >
+                  <GitMerge size={12} />
+                  Merge
+                </button>
+              </div>
+            </div>
+          )}
 
           {selectedFolder && (
             <div

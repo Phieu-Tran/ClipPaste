@@ -329,6 +329,142 @@ pub async fn get_clips_by_type_filter(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn get_library_clips(
+    query: Option<String>,
+    folder_id: Option<String>,
+    type_filter: Option<String>,
+    pin_filter: Option<String>,
+    date_filter: Option<String>,
+    sort: Option<String>,
+    limit: i64,
+    offset: i64,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<ClipboardItem>, String> {
+    let pool = &db.pool;
+    let query = query.unwrap_or_default().trim().to_lowercase();
+    let type_filter = type_filter
+        .as_deref()
+        .filter(|value| !value.is_empty() && *value != "all");
+    let folder_filter = match folder_id.as_deref().filter(|value| !value.is_empty()) {
+        Some("__smart__") | Some("__frequent__") => None,
+        Some(id) => Some(id.parse::<i64>().map_err(|_| "Invalid folder ID")?),
+        None => None,
+    };
+
+    let mut sql = String::from(
+        "SELECT id, uuid, clip_type,
+                CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
+                text_preview, content_hash,
+                folder_id, is_deleted, source_app, source_icon, metadata,
+                created_at, last_accessed, last_pasted_at, is_pinned,
+                subtype, note, paste_count, is_sensitive, updated_at
+         FROM clips WHERE 1=1",
+    );
+
+    let subtype_bind = append_type_filter_sql(&mut sql, "", type_filter)?;
+
+    match folder_id.as_deref() {
+        Some("__smart__") => sql.push_str(" AND paste_count >= 1"),
+        Some("__frequent__") => sql.push_str(" AND paste_count >= 5"),
+        _ => {}
+    }
+
+    if folder_filter.is_some() {
+        sql.push_str(" AND folder_id = ?");
+    }
+
+    match pin_filter.as_deref().unwrap_or("all") {
+        "pinned" => sql.push_str(" AND is_pinned = 1"),
+        "unpinned" => sql.push_str(" AND is_pinned = 0"),
+        "all" => {}
+        _ => return Err("Invalid pin filter".to_string()),
+    }
+
+    match date_filter.as_deref().unwrap_or("all") {
+        "today" => sql.push_str(" AND date(created_at, 'localtime') = date('now', 'localtime')"),
+        "7d" => {
+            sql.push_str(" AND datetime(created_at) >= datetime('now', 'localtime', '-7 days')");
+        }
+        "30d" => {
+            sql.push_str(" AND datetime(created_at) >= datetime('now', 'localtime', '-30 days')");
+        }
+        "all" => {}
+        _ => return Err("Invalid date filter".to_string()),
+    }
+
+    let query_words: Vec<&str> = query.split_whitespace().collect();
+    if !query_words.is_empty() {
+        sql.push_str(" AND (");
+        for idx in 0..query_words.len() {
+            if idx > 0 {
+                sql.push_str(" AND ");
+            }
+            sql.push_str(
+                "(LOWER(COALESCE(text_preview, '')) LIKE ?
+                  OR LOWER(COALESCE(note, '')) LIKE ?
+                  OR LOWER(COALESCE(source_app, '')) LIKE ?)",
+            );
+        }
+        sql.push(')');
+    }
+
+    let order_by = match sort.as_deref().unwrap_or("newest") {
+        "oldest" => "created_at ASC",
+        "largest" => {
+            "CASE
+               WHEN clip_type = 'image' AND json_valid(COALESCE(metadata, '')) THEN
+                 COALESCE(CAST(json_extract(metadata, '$.width') AS INTEGER), 0) *
+                 COALESCE(CAST(json_extract(metadata, '$.height') AS INTEGER), 0)
+               ELSE LENGTH(content)
+             END DESC,
+             created_at DESC"
+        }
+        "most_used" => {
+            "paste_count DESC, COALESCE(last_pasted_at, created_at) DESC, created_at DESC"
+        }
+        "smart" => {
+            "is_pinned DESC,
+             (CAST(paste_count AS REAL) /
+               (1.0 + (julianday('now') - julianday(COALESCE(last_pasted_at, created_at))) / 7.0)
+             ) DESC,
+             created_at DESC"
+        }
+        "newest" => "is_pinned DESC, created_at DESC",
+        _ => return Err("Invalid sort".to_string()),
+    };
+    sql.push_str(" ORDER BY ");
+    sql.push_str(order_by);
+    sql.push_str(" LIMIT ? OFFSET ?");
+
+    let mut db_query = sqlx::query_as::<_, Clip>(&sql);
+    if let Some(subtype) = subtype_bind {
+        db_query = db_query.bind(subtype);
+    }
+    if let Some(fid) = folder_filter {
+        db_query = db_query.bind(fid);
+    }
+    for word in &query_words {
+        let like = format!("%{}%", word);
+        db_query = db_query.bind(like.clone()).bind(like.clone()).bind(like);
+    }
+
+    let clips = db_query
+        .bind(limit.max(0))
+        .bind(offset.max(0))
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::with_capacity(clips.len());
+    for clip in &clips {
+        items.push(clip_to_item_async(clip, &db.images_dir, false).await);
+    }
+
+    Ok(items)
+}
+
+#[tauri::command]
 pub async fn get_clip(
     id: String,
     db: tauri::State<'_, Arc<Database>>,
@@ -425,6 +561,112 @@ pub async fn get_clip_image_data_url(
     }
 
     Err("Image file not found".to_string())
+}
+
+#[tauri::command]
+pub async fn save_clip_image_as(
+    id: String,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<String, String> {
+    let row: Option<(String, Vec<u8>)> =
+        sqlx::query_as("SELECT clip_type, content FROM clips WHERE uuid = ?")
+            .bind(&id)
+            .fetch_optional(&db.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let Some((clip_type, content)) = row else {
+        return Err("Clip not found".to_string());
+    };
+    if clip_type != "image" {
+        return Err("Clip is not an image".to_string());
+    }
+
+    let filename = String::from_utf8_lossy(&content).into_owned();
+    if !is_safe_image_filename(&filename) {
+        return Err("Invalid image filename".to_string());
+    }
+    let source_path = db.images_dir.join(&filename);
+    if !source_path.exists() {
+        return Err("Image file not found".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let save_path = {
+        let default_name = filename.replace('\'', "''");
+        let ps_script = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; \
+             $f = New-Object System.Windows.Forms.SaveFileDialog; \
+             $f.Filter = 'PNG Image (*.png)|*.png|All files (*.*)|*.*'; \
+             $f.FileName = '{}'; \
+             if ($f.ShowDialog() -eq 'OK') {{ $f.FileName }} else {{ '' }}",
+            default_name
+        );
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-STA", "-Command", &ps_script])
+                .output()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Err("Save cancelled".to_string());
+        }
+        path
+    };
+    #[cfg(target_os = "macos")]
+    let save_path = {
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("osascript")
+                .args([
+                    "-e",
+                    &format!(
+                        r#"POSIX path of (choose file name with prompt "Save image" default name "{}")"#,
+                        filename
+                    ),
+                ])
+                .output()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Err("Save cancelled".to_string());
+        }
+        path
+    };
+    #[cfg(target_os = "linux")]
+    let save_path = {
+        let default_name = filename.clone();
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("zenity")
+                .args([
+                    "--file-selection",
+                    "--save",
+                    &format!("--filename={}", default_name),
+                ])
+                .output()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Err("Save cancelled".to_string());
+        }
+        path
+    };
+
+    if save_path.contains("..") || save_path.chars().any(|ch| ch.is_control()) {
+        return Err("Invalid save path".to_string());
+    }
+
+    std::fs::copy(&source_path, &save_path).map_err(|e| format!("Failed to save image: {}", e))?;
+
+    Ok(save_path)
 }
 
 fn is_safe_image_filename(filename: &str) -> bool {

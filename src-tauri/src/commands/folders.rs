@@ -207,6 +207,102 @@ pub async fn move_to_folder(
 }
 
 #[tauri::command]
+pub async fn move_folder_clips(
+    source_folder_id: String,
+    target_folder_id: Option<String>,
+    db: tauri::State<'_, Arc<Database>>,
+    window: tauri::WebviewWindow,
+) -> Result<i64, String> {
+    let source_id: i64 = source_folder_id
+        .parse()
+        .map_err(|_| "Invalid source folder ID")?;
+    let target_id = match target_folder_id {
+        Some(id) => Some(id.parse::<i64>().map_err(|_| "Invalid target folder ID")?),
+        None => None,
+    };
+    if Some(source_id) == target_id {
+        return Err("Source and target folders must be different".to_string());
+    }
+
+    let result = sqlx::query(
+        "UPDATE clips SET folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_id = ?",
+    )
+    .bind(target_id)
+    .bind(source_id)
+    .execute(&db.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    crate::clipboard::load_search_cache(&db.pool).await;
+    let _ = window.emit("clipboard-change", ());
+
+    Ok(result.rows_affected() as i64)
+}
+
+#[tauri::command]
+pub async fn merge_folder(
+    source_folder_id: String,
+    target_folder_id: String,
+    db: tauri::State<'_, Arc<Database>>,
+    window: tauri::WebviewWindow,
+) -> Result<i64, String> {
+    let source_id: i64 = source_folder_id
+        .parse()
+        .map_err(|_| "Invalid source folder ID")?;
+    let target_id: i64 = target_folder_id
+        .parse()
+        .map_err(|_| "Invalid target folder ID")?;
+    if source_id == target_id {
+        return Err("Source and target folders must be different".to_string());
+    }
+
+    let source_uuid: Option<String> = sqlx::query_scalar("SELECT uuid FROM folders WHERE id = ?")
+        .bind(source_id)
+        .fetch_optional(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    if source_uuid.is_none() {
+        return Err("Source folder not found".to_string());
+    }
+
+    let target_exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM folders WHERE id = ?")
+        .bind(target_id)
+        .fetch_optional(&db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    if target_exists.is_none() {
+        return Err("Target folder not found".to_string());
+    }
+
+    let mut tx = db.pool.begin().await.map_err(|e| e.to_string())?;
+    let moved = sqlx::query(
+        "UPDATE clips SET folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_id = ?",
+    )
+    .bind(target_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .rows_affected() as i64;
+    sqlx::query("DELETE FROM folders WHERE id = ?")
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    if let Some(uuid) = source_uuid {
+        crate::sync::record_tombstone(&db, &uuid, "folder")
+            .await
+            .ok();
+    }
+    crate::clipboard::load_search_cache(&db.pool).await;
+    let _ = window.emit("clipboard-change", ());
+
+    Ok(moved)
+}
+
+#[tauri::command]
 pub async fn reorder_folders(
     folder_ids: Vec<String>,
     db: tauri::State<'_, Arc<Database>>,

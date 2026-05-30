@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } f
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowRightLeft,
+  ChevronLeft,
+  ChevronRight,
   Check,
   ClipboardList,
   Code,
   Copy,
   Database,
+  Download,
   File as FileIcon,
   FileText,
   Folder as FolderIcon,
@@ -14,7 +17,9 @@ import {
   Image as ImageIcon,
   Inbox,
   Link2,
+  ListFilter,
   Loader2,
+  Maximize2,
   Pin,
   PinOff,
   RefreshCw,
@@ -23,6 +28,8 @@ import {
   Trash2,
   Type,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { toast } from 'sonner';
@@ -36,6 +43,42 @@ const IMAGE_ROW_HEIGHT = 184;
 const CLIP_ROW_HEIGHT = 68;
 
 type LibraryMode = 'clips' | 'images';
+type LibraryTypeFilter = 'all' | 'text' | 'url' | 'code' | 'json' | 'file' | 'html' | 'rtf';
+type LibraryPinFilter = 'all' | 'pinned' | 'unpinned';
+type LibraryDateFilter = 'all' | 'today' | '7d' | '30d';
+type LibrarySort = 'newest' | 'oldest' | 'largest' | 'most_used' | 'smart';
+
+const TYPE_FILTER_OPTIONS: { value: LibraryTypeFilter; label: string }[] = [
+  { value: 'all', label: 'All kinds' },
+  { value: 'text', label: 'Text' },
+  { value: 'url', label: 'Links' },
+  { value: 'code', label: 'Code' },
+  { value: 'json', label: 'JSON' },
+  { value: 'file', label: 'Files' },
+  { value: 'html', label: 'HTML' },
+  { value: 'rtf', label: 'RTF' },
+];
+
+const PIN_FILTER_OPTIONS: { value: LibraryPinFilter; label: string }[] = [
+  { value: 'all', label: 'All pins' },
+  { value: 'pinned', label: 'Pinned' },
+  { value: 'unpinned', label: 'Unpinned' },
+];
+
+const DATE_FILTER_OPTIONS: { value: LibraryDateFilter; label: string }[] = [
+  { value: 'all', label: 'Any date' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+];
+
+const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'largest', label: 'Largest' },
+  { value: 'most_used', label: 'Most used' },
+  { value: 'smart', label: 'Smart' },
+];
 
 interface ConfirmOptions {
   title: string;
@@ -165,12 +208,56 @@ function LibraryThumb({
   );
 }
 
-function ImagePreviewModal({ clip, onClose }: { clip: ClipboardItem; onClose: () => void }) {
+function ImagePreviewModal({
+  clip,
+  imageClips,
+  onSelectClip,
+  onClose,
+}: {
+  clip: ClipboardItem;
+  imageClips: ClipboardItem[];
+  onSelectClip: (clip: ClipboardItem) => void;
+  onClose: () => void;
+}) {
   const [src, setSrc] = useState('');
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, panX: 0, panY: 0 });
+
+  const activeIndex = imageClips.findIndex((item) => item.id === clip.id);
+  const canGoPrev = activeIndex > 0;
+  const canGoNext = activeIndex >= 0 && activeIndex < imageClips.length - 1;
+
+  const setClampedZoom = (next: number) => {
+    const value = Math.min(6, Math.max(0.25, Number(next.toFixed(2))));
+    setZoom(value);
+    if (value <= 1) setPan({ x: 0, y: 0 });
+  };
+
+  const fitImage = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const showActualSize = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const goToImage = useCallback(
+    (direction: -1 | 1) => {
+      const nextIndex = activeIndex + direction;
+      const nextClip = imageClips[nextIndex];
+      if (nextClip) onSelectClip(nextClip);
+    },
+    [activeIndex, imageClips, onSelectClip]
+  );
 
   useEffect(() => {
     let cancelled = false;
     setSrc('');
+    fitImage();
     cmd
       .getClipImageDataUrl(clip.id, false)
       .then((dataUrl) => {
@@ -184,22 +271,105 @@ function ImagePreviewModal({ clip, onClose }: { clip: ClipboardItem; onClose: ()
     };
   }, [clip.id]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key === 'ArrowLeft') goToImage(-1);
+      if (event.key === 'ArrowRight') goToImage(1);
+      if ((event.ctrlKey || event.metaKey) && event.key === '0') fitImage();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [goToImage, onClose]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (event: MouseEvent) => {
+      setPan({
+        x: dragRef.current.panX + event.clientX - dragRef.current.startX,
+        y: dragRef.current.panY + event.clientY - dragRef.current.startY,
+      });
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging]);
+
+  const handleSaveImage = async () => {
+    try {
+      const path = await cmd.saveClipImageAs(clip.id);
+      toast.success(`Saved to ${path}`);
+    } catch (e) {
+      if (String(e) !== 'Save cancelled') {
+        toast.error(`Failed to save: ${e}`);
+      }
+    }
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-8 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-full max-w-full flex-col overflow-hidden rounded-lg border border-white/10 bg-background shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <div className="flex h-[min(92vh,900px)] w-[min(96vw,1280px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-background shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">{clip.source_app ?? 'Image clip'}</div>
             <div className="text-xs text-muted-foreground">
               {clipKindLabel(clip)} - {formatRelativeTime(clip.created_at)}
+              {activeIndex >= 0 && imageClips.length > 1
+                ? ` - ${activeIndex + 1}/${imageClips.length}`
+                : ''}
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={() => goToImage(-1)}
+              disabled={!canGoPrev}
+              className="icon-button disabled:opacity-40"
+              title="Previous image"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              onClick={() => goToImage(1)}
+              disabled={!canGoNext}
+              className="icon-button disabled:opacity-40"
+              title="Next image"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <span className="mx-1 h-5 w-px bg-border" />
+            <button
+              onClick={() => setClampedZoom(zoom - 0.25)}
+              className="icon-button"
+              title="Zoom out"
+            >
+              <ZoomOut size={15} />
+            </button>
+            <span className="min-w-[46px] text-center text-xs tabular-nums text-muted-foreground">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setClampedZoom(zoom + 0.25)}
+              className="icon-button"
+              title="Zoom in"
+            >
+              <ZoomIn size={15} />
+            </button>
+            <button onClick={fitImage} className="icon-button" title="Fit">
+              <Maximize2 size={15} />
+            </button>
+            <button onClick={showActualSize} className="icon-button" title="100%">
+              <span className="text-[11px] font-semibold">1:1</span>
+            </button>
+            <span className="mx-1 h-5 w-px bg-border" />
             <button
               onClick={() => {
                 cmd
@@ -212,17 +382,55 @@ function ImagePreviewModal({ clip, onClose }: { clip: ClipboardItem; onClose: ()
             >
               <Copy size={15} />
             </button>
+            <button onClick={handleSaveImage} className="icon-button" title="Save as">
+              <Download size={15} />
+            </button>
             <button onClick={onClose} className="icon-button" title="Close">
               <X size={16} />
             </button>
           </div>
         </div>
-        <div className="flex min-h-[260px] min-w-[360px] items-center justify-center bg-black/30 p-3">
+        <div
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/35"
+          onWheel={(event) => {
+            if (!src) return;
+            event.preventDefault();
+            setClampedZoom(zoom + (event.deltaY < 0 ? 0.15 : -0.15));
+          }}
+          onMouseDown={(event) => {
+            if (zoom <= 1 || !src) return;
+            event.preventDefault();
+            dragRef.current = {
+              startX: event.clientX,
+              startY: event.clientY,
+              panX: pan.x,
+              panY: pan.y,
+            };
+            setDragging(true);
+          }}
+          onDoubleClick={() => (zoom === 1 ? setClampedZoom(2) : fitImage())}
+        >
           {src ? (
-            <img src={src} alt="" className="max-h-[72vh] max-w-[78vw] object-contain" />
+            <img
+              src={src}
+              alt=""
+              draggable={false}
+              className={clsx(
+                'max-h-full max-w-full select-none object-contain transition-transform duration-75',
+                zoom > 1 ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'
+              )}
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: 'center center',
+              }}
+            />
           ) : (
             <Loader2 size={22} className="animate-spin text-muted-foreground" />
           )}
+        </div>
+        <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate">{clip.preview || 'Image clip'}</span>
+          <span className="shrink-0 tabular-nums">{clip.created_at}</span>
         </div>
       </div>
     </div>
@@ -266,6 +474,10 @@ function StatTile({
 export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTabProps) {
   const [mode, setMode] = useState<LibraryMode>('clips');
   const [folderId, setFolderId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<LibraryTypeFilter>('all');
+  const [pinFilter, setPinFilter] = useState<LibraryPinFilter>('all');
+  const [dateFilter, setDateFilter] = useState<LibraryDateFilter>('all');
+  const [sortOrder, setSortOrder] = useState<LibrarySort>('newest');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [clips, setClips] = useState<ClipboardItem[]>([]);
@@ -287,6 +499,9 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
     [folders]
   );
   const selectedCount = selectedIds.size;
+  const hasActiveFilters =
+    typeFilter !== 'all' || pinFilter !== 'all' || dateFilter !== 'all' || sortOrder !== 'newest';
+  const imageClips = useMemo(() => clips.filter((clip) => clip.clip_type === 'image'), [clips]);
   const imageGridColumns = useMemo(() => {
     const availableWidth = Math.max(IMAGE_CARD_MIN_WIDTH, imageGridWidth - 24);
     return Math.max(
@@ -315,6 +530,12 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
     return () => clearTimeout(timer);
   }, [query]);
 
+  useEffect(() => {
+    if (mode === 'images') {
+      setTypeFilter('all');
+    }
+  }, [mode]);
+
   const loadStats = useCallback(async (forceRefresh = false) => {
     try {
       const nextStats = await cmd.getDashboardStats({ forceRefresh });
@@ -329,27 +550,16 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
       const loadSeq = ++loadSeqRef.current;
       setLoading(true);
       try {
-        const data = debouncedQuery
-          ? await cmd.searchClips({
-              query: debouncedQuery,
-              filterId: folderId,
-              typeFilter: mode === 'images' ? 'image' : null,
-              limit: PAGE_SIZE,
-              offset: nextOffset,
-            })
-          : mode === 'images'
-            ? await cmd.getClipsByTypeFilter({
-                typeFilter: 'image',
-                folderId,
-                limit: PAGE_SIZE,
-                offset: nextOffset,
-              })
-            : await cmd.getClips({
-                filterId: folderId,
-                limit: PAGE_SIZE,
-                offset: nextOffset,
-                previewOnly: true,
-              });
+        const data = await cmd.getLibraryClips({
+          query: debouncedQuery || null,
+          folderId,
+          typeFilter: mode === 'images' ? 'image' : typeFilter,
+          pinFilter,
+          dateFilter,
+          sort: sortOrder,
+          limit: PAGE_SIZE,
+          offset: nextOffset,
+        });
 
         if (loadSeq !== loadSeqRef.current) return;
         setClips((prev) => (append ? [...prev, ...data] : data));
@@ -361,7 +571,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
         if (loadSeq === loadSeqRef.current) setLoading(false);
       }
     },
-    [debouncedQuery, folderId, mode]
+    [dateFilter, debouncedQuery, folderId, mode, pinFilter, sortOrder, typeFilter]
   );
 
   const reload = useCallback(async () => {
@@ -395,7 +605,12 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
   }, [mode]);
 
   useEffect(() => {
-    if (folderId && !folders.some((folder) => folder.id === folderId)) {
+    if (
+      folderId &&
+      folderId !== '__smart__' &&
+      folderId !== '__frequent__' &&
+      !folders.some((folder) => folder.id === folderId)
+    ) {
       setFolderId(null);
     }
   }, [folderId, folders]);
@@ -503,14 +718,28 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
   };
 
   const allVisibleSelected = clips.length > 0 && clips.every((clip) => selectedIds.has(clip.id));
-  const activeFolderName = folderId ? (folderById.get(folderId)?.name ?? 'Folder') : 'All folders';
+  const activeFolderName =
+    folderId === '__smart__'
+      ? 'Smart'
+      : folderId === '__frequent__'
+        ? 'Frequent'
+        : folderId
+          ? (folderById.get(folderId)?.name ?? 'Folder')
+          : 'All folders';
   const modeLabel = mode === 'images' ? 'Images' : 'Clips';
   const loadedLabel =
     selectedCount > 0 ? `${selectedCount} selected` : `${clips.length} ${modeLabel.toLowerCase()}`;
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-3">
-      {previewClip && <ImagePreviewModal clip={previewClip} onClose={() => setPreviewClip(null)} />}
+      {previewClip && (
+        <ImagePreviewModal
+          clip={previewClip}
+          imageClips={imageClips}
+          onSelectClip={setPreviewClip}
+          onClose={() => setPreviewClip(null)}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
@@ -596,18 +825,88 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
 
           <select
             value={folderId ?? 'all'}
-            onChange={(event) =>
-              setFolderId(event.target.value === 'all' ? null : event.target.value)
-            }
+            onChange={(event) => {
+              const nextFolderId = event.target.value === 'all' ? null : event.target.value;
+              setFolderId(nextFolderId);
+              if (nextFolderId === '__smart__') setSortOrder('smart');
+              if (nextFolderId === '__frequent__') setSortOrder('most_used');
+            }}
             className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
           >
             <option value="all">All folders</option>
+            <option value="__smart__">Smart</option>
+            <option value="__frequent__">Frequent</option>
             {customFolders.map((folder) => (
               <option key={folder.id} value={folder.id}>
                 {folder.name}
               </option>
             ))}
           </select>
+
+          {mode === 'clips' && (
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value as LibraryTypeFilter)}
+              className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+            >
+              {TYPE_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={pinFilter}
+            onChange={(event) => setPinFilter(event.target.value as LibraryPinFilter)}
+            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+          >
+            {PIN_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={dateFilter}
+            onChange={(event) => setDateFilter(event.target.value as LibraryDateFilter)}
+            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+          >
+            {DATE_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={sortOrder}
+            onChange={(event) => setSortOrder(event.target.value as LibrarySort)}
+            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setTypeFilter('all');
+                setPinFilter('all');
+                setDateFilter('all');
+                setSortOrder('newest');
+              }}
+              className="icon-button"
+              title="Clear filters"
+            >
+              <ListFilter size={15} />
+            </button>
+          )}
 
           <button onClick={reload} className="icon-button" title="Refresh">
             <RefreshCw size={15} className={loading ? 'animate-spin' : undefined} />
@@ -624,6 +923,26 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           {debouncedQuery && (
             <span className="min-w-0 truncate rounded-md border border-border bg-background/50 px-2 py-1">
               Search: {debouncedQuery}
+            </span>
+          )}
+          {mode === 'clips' && typeFilter !== 'all' && (
+            <span className="rounded-md border border-border bg-background/50 px-2 py-1">
+              {TYPE_FILTER_OPTIONS.find((option) => option.value === typeFilter)?.label}
+            </span>
+          )}
+          {pinFilter !== 'all' && (
+            <span className="rounded-md border border-border bg-background/50 px-2 py-1">
+              {PIN_FILTER_OPTIONS.find((option) => option.value === pinFilter)?.label}
+            </span>
+          )}
+          {dateFilter !== 'all' && (
+            <span className="rounded-md border border-border bg-background/50 px-2 py-1">
+              {DATE_FILTER_OPTIONS.find((option) => option.value === dateFilter)?.label}
+            </span>
+          )}
+          {sortOrder !== 'newest' && (
+            <span className="rounded-md border border-border bg-background/50 px-2 py-1">
+              Sort: {SORT_OPTIONS.find((option) => option.value === sortOrder)?.label}
             </span>
           )}
         </div>
