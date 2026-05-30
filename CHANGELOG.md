@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.10.14] - 2026-05-30
 
 ### Added
 - **Settings → Clips & Images tab** (new library manager): browse and manage all clips and images in one place. Filter by Clips / Images, search, filter by folder, and multi-select to Pin / Unpin / Move / Delete; per-item Copy / Pin / Delete. Images render as a thumbnail grid, clips as a scannable list; large image preview shows a blurred backdrop, metadata, and a copy button. Quick stats header: total clips, images, pinned, and storage size.
