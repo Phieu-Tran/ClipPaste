@@ -1,7 +1,7 @@
 /**
  * Simple concurrency-limited queue for image fallback loading.
  * Prevents UI stutter when many images fail to load via asset protocol
- * simultaneously and all trigger invoke('get_clip') at once.
+ * simultaneously and all request image data at once.
  */
 
 type Task<T> = () => Promise<T>;

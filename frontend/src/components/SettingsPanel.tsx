@@ -702,7 +702,11 @@ export function SettingsPanel({
               )}
 
               {activeTab === 'library' && (
-                <LibraryTab folders={folders} onDataChanged={handleLibraryDataChanged} />
+                <LibraryTab
+                  folders={folders}
+                  onDataChanged={handleLibraryDataChanged}
+                  requestConfirm={requestConfirm}
+                />
               )}
 
               {activeTab === 'general' && (

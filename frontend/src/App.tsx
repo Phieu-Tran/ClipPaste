@@ -10,6 +10,7 @@ import { FolderModal } from './components/FolderModal';
 import { BatchActionBar } from './components/BatchActionBar';
 import { EditClipModal } from './components/EditClipModal';
 import { NoteModal } from './components/NoteModal';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { useKeyboard } from './hooks/useKeyboard';
 import { useTheme } from './hooks/useTheme';
 import { useClipActions } from './hooks/useClipActions';
@@ -47,6 +48,10 @@ function App() {
   // Note modal state
   const [noteModalClipId, setNoteModalClipId] = useState<string | null>(null);
   const [noteModalInitial, setNoteModalInitial] = useState('');
+  const [folderDeleteConfirm, setFolderDeleteConfirm] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [copiedClipId, setCopiedClipId] = useState<string | null>(null);
   const copiedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -498,13 +503,10 @@ function App() {
                             label: 'Delete',
                             danger: true,
                             onClick: () => {
-                              if (
-                                window.confirm(
-                                  `Delete folder "${ctxFolder?.name}"? Clips inside will be moved to All.`
-                                )
-                              ) {
-                                handleDeleteFolder(contextMenu.itemId);
-                              }
+                              setFolderDeleteConfirm({
+                                id: contextMenu.itemId,
+                                name: ctxFolder?.name ?? 'folder',
+                              });
                             },
                           },
                         ]
@@ -512,6 +514,20 @@ function App() {
                 />
               );
             })()}
+
+          <ConfirmDialog
+            isOpen={!!folderDeleteConfirm}
+            title="Delete folder"
+            message={`Delete folder "${folderDeleteConfirm?.name ?? 'folder'}"? Clips inside will be moved to All.`}
+            confirmText="Delete"
+            variant="danger"
+            onConfirm={() => {
+              const target = folderDeleteConfirm;
+              setFolderDeleteConfirm(null);
+              if (target) handleDeleteFolder(target.id);
+            }}
+            onCancel={() => setFolderDeleteConfirm(null)}
+          />
 
           <EditClipModal
             clip={editingClip}

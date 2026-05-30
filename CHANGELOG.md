@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Consistent confirm dialogs**: deletions in the Clips & Images tab and the "delete folder" action in the main window's context menu now use the styled `ConfirmDialog` instead of the native `window.confirm()` popup.
+- **Virtualized Clips & Images**: the clip list and the image grid (row-virtualized) now use `@tanstack/react-virtual`, so the tab stays smooth when many pages of items are loaded.
+
+### Internal
+- **Single IPC boundary**: remaining raw `invoke()` calls (ScratchpadWindow, ClipCard, useFolderPreview, useWindowLifecycle) now go through the typed `cmd.*` wrapper — raw `invoke` lives only in `commands.ts`.
+- **Frontend compile smoke test**: `frontend/src/smoke/settingsSmoke.tsx` renders `SettingsPanel` and `LibraryTab` so `tsc` catches basic prop/render breakage at build time.
+
+---
+
 ## [1.10.14] - 2026-05-30
 
 ### Added

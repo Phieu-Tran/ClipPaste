@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowRightLeft,
   Check,
@@ -29,12 +30,27 @@ import { cmd } from '../../commands';
 import { ClipboardItem, DashboardStats, FolderItem } from '../../types';
 
 const PAGE_SIZE = 80;
+const IMAGE_CARD_MIN_WIDTH = 158;
+const IMAGE_GRID_GAP = 12;
+const IMAGE_ROW_HEIGHT = 184;
+const CLIP_ROW_HEIGHT = 68;
 
 type LibraryMode = 'clips' | 'images';
+
+interface ConfirmOptions {
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: 'danger' | 'warning' | 'info';
+  details?: string[];
+  action: () => Promise<void>;
+}
 
 interface LibraryTabProps {
   folders: FolderItem[];
   onDataChanged: () => Promise<void>;
+  requestConfirm: (options: ConfirmOptions) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -247,7 +263,7 @@ function StatTile({
   );
 }
 
-export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
+export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTabProps) {
   const [mode, setMode] = useState<LibraryMode>('clips');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -260,6 +276,10 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
   const [moveFolderId, setMoveFolderId] = useState<string>('none');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [previewClip, setPreviewClip] = useState<ClipboardItem | null>(null);
+  const loadSeqRef = useRef(0);
+  const imageScrollRef = useRef<HTMLDivElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const [imageGridWidth, setImageGridWidth] = useState(0);
 
   const customFolders = useMemo(() => folders.filter((folder) => !folder.is_system), [folders]);
   const folderById = useMemo(
@@ -267,6 +287,26 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
     [folders]
   );
   const selectedCount = selectedIds.size;
+  const imageGridColumns = useMemo(() => {
+    const availableWidth = Math.max(IMAGE_CARD_MIN_WIDTH, imageGridWidth - 24);
+    return Math.max(
+      1,
+      Math.floor((availableWidth + IMAGE_GRID_GAP) / (IMAGE_CARD_MIN_WIDTH + IMAGE_GRID_GAP))
+    );
+  }, [imageGridWidth]);
+  const imageRowCount = Math.ceil(clips.length / imageGridColumns);
+  const imageVirtualizer = useVirtualizer({
+    count: imageRowCount,
+    getScrollElement: () => imageScrollRef.current,
+    estimateSize: () => IMAGE_ROW_HEIGHT,
+    overscan: 3,
+  });
+  const listVirtualizer = useVirtualizer({
+    count: clips.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => CLIP_ROW_HEIGHT,
+    overscan: 10,
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -286,6 +326,7 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
 
   const loadPage = useCallback(
     async (nextOffset: number, append: boolean) => {
+      const loadSeq = ++loadSeqRef.current;
       setLoading(true);
       try {
         const data = debouncedQuery
@@ -310,12 +351,14 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
                 previewOnly: true,
               });
 
+        if (loadSeq !== loadSeqRef.current) return;
         setClips((prev) => (append ? [...prev, ...data] : data));
         setHasMore(data.length === PAGE_SIZE);
       } catch (e) {
+        if (loadSeq !== loadSeqRef.current) return;
         toast.error(`Failed to load clips: ${e}`);
       } finally {
-        setLoading(false);
+        if (loadSeq === loadSeqRef.current) setLoading(false);
       }
     },
     [debouncedQuery, folderId, mode]
@@ -336,6 +379,26 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  useEffect(() => {
+    if (mode !== 'images') return;
+    const node = imageScrollRef.current;
+    if (!node) return;
+
+    const updateWidth = () => setImageGridWidth(node.clientWidth);
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [mode]);
+
+  useEffect(() => {
+    if (folderId && !folders.some((folder) => folder.id === folderId)) {
+      setFolderId(null);
+    }
+  }, [folderId, folders]);
 
   const toggleSelection = (id: string) => {
     setSelectedIds((prev) => {
@@ -363,6 +426,7 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
   };
 
   const handleLoadMore = async () => {
+    if (loading) return;
     const nextOffset = offset + PAGE_SIZE;
     setOffset(nextOffset);
     await loadPage(nextOffset, true);
@@ -393,15 +457,28 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
 
   const handleDelete = async (ids: string[]) => {
     if (ids.length === 0) return;
-    const confirmed = confirm(`Delete ${ids.length} clip${ids.length === 1 ? '' : 's'}?`);
-    if (!confirmed) return;
-    try {
-      const count = await cmd.bulkDeleteClips(ids);
-      toast.success(`Deleted ${count} clips`);
-      await reload();
-    } catch (e) {
-      toast.error(`Failed: ${e}`);
-    }
+    requestConfirm({
+      title: ids.length === 1 ? 'Delete clip' : 'Delete clips',
+      message:
+        ids.length === 1
+          ? 'Delete this clip from local history? Image files attached to this clip will also be removed.'
+          : `Delete ${ids.length} clips from local history? Image files attached to these clips will also be removed.`,
+      confirmText: 'Delete',
+      variant: 'danger',
+      details:
+        ids.length > 1
+          ? [`${ids.length} selected clips`, 'Pinned clips are included in this action.']
+          : undefined,
+      action: async () => {
+        try {
+          const count = await cmd.bulkDeleteClips(ids);
+          toast.success(`Deleted ${count} clips`);
+          await reload();
+        } catch (e) {
+          toast.error(`Failed: ${e}`);
+        }
+      },
+    });
   };
 
   const handleCopy = async (clip: ClipboardItem) => {
@@ -633,91 +710,111 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
               <span>No {mode === 'images' ? 'images' : 'clips'}</span>
             </div>
           ) : mode === 'images' ? (
-            <div className="max-h-[560px] overflow-y-auto p-3">
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-3">
-                {clips.map((clip) => {
-                  const checked = selectedIds.has(clip.id);
-                  const folderName = clip.folder_id
-                    ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
-                    : 'No folder';
+            <div ref={imageScrollRef} className="max-h-[560px] overflow-y-auto p-3">
+              <div className="relative" style={{ height: `${imageVirtualizer.getTotalSize()}px` }}>
+                {imageVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const start = virtualRow.index * imageGridColumns;
+                  const rowClips = clips.slice(start, start + imageGridColumns);
 
                   return (
-                    <article
-                      key={clip.id}
-                      className={clsx(
-                        'group relative overflow-hidden rounded-lg border bg-background/45 transition-colors',
-                        checked
-                          ? 'border-primary/60 bg-primary/[0.06]'
-                          : 'border-border hover:border-cyan-400/40 hover:bg-accent/20'
-                      )}
+                    <div
+                      key={virtualRow.key}
+                      ref={imageVirtualizer.measureElement}
+                      data-index={virtualRow.index}
+                      className="absolute left-0 top-0 grid w-full gap-3"
+                      style={{
+                        gridTemplateColumns: `repeat(${imageGridColumns}, minmax(0, 1fr))`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
                     >
-                      <button
-                        onClick={() => toggleSelection(clip.id)}
-                        className={clsx(
-                          'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border shadow-sm',
-                          checked
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-white/30 bg-background/80 text-transparent hover:text-foreground'
-                        )}
-                        title="Select image"
-                      >
-                        <Check size={12} />
-                      </button>
+                      {rowClips.map((clip) => {
+                        const checked = selectedIds.has(clip.id);
+                        const folderName = clip.folder_id
+                          ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
+                          : 'No folder';
 
-                      <div className="relative bg-black/20">
-                        <LibraryThumb
-                          clip={clip}
-                          onOpen={setPreviewClip}
-                          className="h-28 w-full rounded-none border-0"
-                          iconSize={22}
-                        />
-                        <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                          <button
-                            onClick={() => handleTogglePin(clip)}
-                            className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
-                            title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                        return (
+                          <article
+                            key={clip.id}
+                            className={clsx(
+                              'group relative overflow-hidden rounded-lg border bg-background/45 transition-colors',
+                              checked
+                                ? 'border-primary/60 bg-primary/[0.06]'
+                                : 'border-border hover:border-cyan-400/40 hover:bg-accent/20'
+                            )}
                           >
-                            {clip.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
-                          </button>
-                          <button
-                            onClick={() => handleCopy(clip)}
-                            className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
-                            title="Copy"
-                          >
-                            <Copy size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete([clip.id])}
-                            className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-destructive"
-                            title="Delete"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
+                            <button
+                              onClick={() => toggleSelection(clip.id)}
+                              className={clsx(
+                                'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border shadow-sm',
+                                checked
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-white/30 bg-background/80 text-transparent hover:text-foreground'
+                              )}
+                              title="Select image"
+                            >
+                              <Check size={12} />
+                            </button>
 
-                      <div className="space-y-1 p-2">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <span className="truncate text-xs font-medium text-foreground/90">
-                            {clip.source_app ?? 'Image clip'}
-                          </span>
-                          {clip.is_pinned && <Pin size={10} className="shrink-0 text-amber-400" />}
-                          {clip.is_sensitive && (
-                            <ShieldAlert size={10} className="shrink-0 text-rose-400" />
-                          )}
-                        </div>
-                        <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                          <span className="truncate">{clipKindLabel(clip)}</span>
-                          <span className="shrink-0 tabular-nums">
-                            {formatRelativeTime(clip.created_at)}
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-                          <FolderIcon size={11} className="shrink-0" />
-                          <span className="truncate">{folderName}</span>
-                        </div>
-                      </div>
-                    </article>
+                            <div className="relative bg-black/20">
+                              <LibraryThumb
+                                clip={clip}
+                                onOpen={setPreviewClip}
+                                className="h-28 w-full rounded-none border-0"
+                                iconSize={22}
+                              />
+                              <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                                <button
+                                  onClick={() => handleTogglePin(clip)}
+                                  className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
+                                  title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                                >
+                                  {clip.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                                </button>
+                                <button
+                                  onClick={() => handleCopy(clip)}
+                                  className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
+                                  title="Copy"
+                                >
+                                  <Copy size={12} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete([clip.id])}
+                                  className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-destructive"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1 p-2">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate text-xs font-medium text-foreground/90">
+                                  {clip.source_app ?? 'Image clip'}
+                                </span>
+                                {clip.is_pinned && (
+                                  <Pin size={10} className="shrink-0 text-amber-400" />
+                                )}
+                                {clip.is_sensitive && (
+                                  <ShieldAlert size={10} className="shrink-0 text-rose-400" />
+                                )}
+                              </div>
+                              <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                                <span className="truncate">{clipKindLabel(clip)}</span>
+                                <span className="shrink-0 tabular-nums">
+                                  {formatRelativeTime(clip.created_at)}
+                                </span>
+                              </div>
+                              <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+                                <FolderIcon size={11} className="shrink-0" />
+                                <span className="truncate">{folderName}</span>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
                   );
                 })}
               </div>
@@ -737,7 +834,7 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
               </div>
             </div>
           ) : (
-            <div className="max-h-[560px] overflow-y-auto">
+            <div>
               <div className="grid grid-cols-[24px_60px_minmax(0,1fr)_120px_116px_104px] gap-3 border-b border-border bg-background/30 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
                 <span />
                 <span>Type</span>
@@ -746,97 +843,106 @@ export function LibraryTab({ folders, onDataChanged }: LibraryTabProps) {
                 <span>Folder</span>
                 <span className="text-right">Actions</span>
               </div>
-              <ul className="divide-y divide-border/50">
-                {clips.map((clip) => {
-                  const checked = selectedIds.has(clip.id);
-                  const folderName = clip.folder_id
-                    ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
-                    : 'No folder';
-                  const preview =
-                    clip.clip_type === 'image' ? 'Image clip' : clip.preview?.trim() || '(empty)';
+              <div ref={listScrollRef} className="max-h-[560px] overflow-y-auto">
+                <ul className="relative" style={{ height: `${listVirtualizer.getTotalSize()}px` }}>
+                  {listVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const clip = clips[virtualRow.index];
+                    if (!clip) return null;
+                    const checked = selectedIds.has(clip.id);
+                    const folderName = clip.folder_id
+                      ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
+                      : 'No folder';
+                    const preview =
+                      clip.clip_type === 'image' ? 'Image clip' : clip.preview?.trim() || '(empty)';
 
-                  return (
-                    <li
-                      key={clip.id}
-                      className={clsx(
-                        'group grid grid-cols-[24px_60px_minmax(0,1fr)_120px_116px_104px] items-center gap-3 border-l-2 border-transparent px-3 py-2.5 transition-colors hover:bg-accent/30',
-                        checked && 'border-l-primary bg-primary/[0.07]'
-                      )}
-                    >
-                      <button
-                        onClick={() => toggleSelection(clip.id)}
+                    return (
+                      <li
+                        key={clip.id}
+                        ref={listVirtualizer.measureElement}
+                        data-index={virtualRow.index}
                         className={clsx(
-                          'flex h-4 w-4 items-center justify-center rounded border',
-                          checked
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border text-transparent hover:border-primary/60'
+                          'group absolute left-0 top-0 grid w-full grid-cols-[24px_60px_minmax(0,1fr)_120px_116px_104px] items-center gap-3 border-b border-l-2 border-border/50 border-l-transparent px-3 py-2.5 transition-colors hover:bg-accent/30',
+                          checked && 'border-l-primary bg-primary/[0.07]'
                         )}
-                        title="Select clip"
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
                       >
-                        <Check size={11} />
-                      </button>
-
-                      <LibraryThumb
-                        clip={clip}
-                        onOpen={setPreviewClip}
-                        className="h-12 w-14 rounded-md"
-                      />
-
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <ClipTypeIcon type={clip.clip_type} subtype={clip.subtype} />
-                          <div className="truncate text-sm text-foreground/90">{preview}</div>
-                          {clip.is_pinned && <Pin size={11} className="shrink-0 text-amber-400" />}
-                          {clip.is_sensitive && (
-                            <ShieldAlert size={11} className="shrink-0 text-rose-400" />
+                        <button
+                          onClick={() => toggleSelection(clip.id)}
+                          className={clsx(
+                            'flex h-4 w-4 items-center justify-center rounded border',
+                            checked
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border text-transparent hover:border-primary/60'
                           )}
-                        </div>
-                        <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                          <span className="truncate">{clip.source_app ?? 'Unknown app'}</span>
-                          {clip.note && <span className="truncate italic">{clip.note}</span>}
-                        </div>
-                      </div>
-
-                      <div className="min-w-0 text-xs text-muted-foreground">
-                        <div className="truncate">{clipKindLabel(clip)}</div>
-                        <div className="truncate text-[10px]">
-                          {formatRelativeTime(clip.created_at)}
-                        </div>
-                      </div>
-
-                      <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                        <FolderIcon size={12} className="shrink-0" />
-                        <span className="truncate">{folderName}</span>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-0.5 opacity-40 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                        <button
-                          onClick={() => handleTogglePin(clip)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                          title="Select clip"
                         >
-                          {clip.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                          <Check size={11} />
                         </button>
-                        <button
-                          onClick={() => handleCopy(clip)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Copy"
-                        >
-                          <Copy size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete([clip.id])}
-                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          title="Delete"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="flex items-center justify-center p-3">
+
+                        <LibraryThumb
+                          clip={clip}
+                          onOpen={setPreviewClip}
+                          className="h-12 w-14 rounded-md"
+                        />
+
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <ClipTypeIcon type={clip.clip_type} subtype={clip.subtype} />
+                            <div className="truncate text-sm text-foreground/90">{preview}</div>
+                            {clip.is_pinned && (
+                              <Pin size={11} className="shrink-0 text-amber-400" />
+                            )}
+                            {clip.is_sensitive && (
+                              <ShieldAlert size={11} className="shrink-0 text-rose-400" />
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                            <span className="truncate">{clip.source_app ?? 'Unknown app'}</span>
+                            {clip.note && <span className="truncate italic">{clip.note}</span>}
+                          </div>
+                        </div>
+
+                        <div className="min-w-0 text-xs text-muted-foreground">
+                          <div className="truncate">{clipKindLabel(clip)}</div>
+                          <div className="truncate text-[10px]">
+                            {formatRelativeTime(clip.created_at)}
+                          </div>
+                        </div>
+
+                        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                          <FolderIcon size={12} className="shrink-0" />
+                          <span className="truncate">{folderName}</span>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-0.5 opacity-40 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          <button
+                            onClick={() => handleTogglePin(clip)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                          >
+                            {clip.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                          </button>
+                          <button
+                            onClick={() => handleCopy(clip)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="Copy"
+                          >
+                            <Copy size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete([clip.id])}
+                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <div className="flex items-center justify-center border-t border-border p-3">
                 {hasMore ? (
                   <button
                     onClick={handleLoadMore}

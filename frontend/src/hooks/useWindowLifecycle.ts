@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ClipboardItem as AppClipboardItem, Settings } from '../types';
 import { toast } from 'sonner';
+import { cmd } from '../commands';
 
 interface UseWindowLifecycleOptions {
   searchInputRef: React.RefObject<HTMLInputElement>;
@@ -39,7 +39,8 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
 
   // Load initial settings + listen for settings-changed
   useEffect(() => {
-    invoke<Settings>('get_settings')
+    cmd
+      .getSettings()
       .then((s) => {
         setTheme(s.theme);
       })
@@ -77,13 +78,8 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
         // Reload clips (respecting current search query if any)
         const currentSearch = searchInputRef.current?.value || '';
         if (!selectedFolderRef.current && !currentSearch) {
-          invoke<{ clips: AppClipboardItem[]; folders: any[]; total_count: number }>(
-            'get_initial_state',
-            {
-              filterId: null,
-              limit: 20,
-            }
-          )
+          cmd
+            .getInitialState()
             .then((state) => {
               setClips(state.clips);
               setHasMore(state.clips.length === 20);

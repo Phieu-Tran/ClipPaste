@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -22,6 +21,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Toaster, toast } from 'sonner';
+import { cmd } from '../commands';
 
 type SortMode = 'manual' | 'alpha' | 'recent';
 
@@ -220,7 +220,8 @@ export function ScratchpadWindow() {
   // Theme
   const [themeSetting, setThemeSetting] = useState('system');
   useEffect(() => {
-    invoke<Record<string, string>>('get_settings')
+    cmd
+      .getSettings()
       .then((s) => {
         if (s.theme) setThemeSetting(s.theme);
       })
@@ -231,7 +232,7 @@ export function ScratchpadWindow() {
   // Load
   const loadScratchpads = useCallback(async () => {
     try {
-      setScratchpads(await invoke<ScratchpadItem[]>('get_scratchpads'));
+      setScratchpads(await cmd.getScratchpads());
     } catch (e) {
       console.error('Failed to load scratchpads:', e);
     }
@@ -389,7 +390,7 @@ export function ScratchpadWindow() {
     cancelCollapse();
     // Snapshot whichever app the user is currently in BEFORE we grab focus — paste later
     // routes Shift+Insert back to that HWND. Fire-and-forget.
-    invoke('capture_prev_foreground').catch(() => {});
+    cmd.capturePrevForeground().catch(() => {});
     setMode('list');
   }, [mode, cancelCollapse]);
 
@@ -429,7 +430,7 @@ export function ScratchpadWindow() {
     const t = editTitle.trim(),
       c = editContent.trim();
     if (t || c) {
-      await invoke('update_scratchpad', {
+      await cmd.updateScratchpad({
         id: editingId,
         title: t,
         content: c,
@@ -439,7 +440,7 @@ export function ScratchpadWindow() {
         prev.map((s) => (s.id === editingId ? { ...s, title: t, content: c, color: editColor } : s))
       );
     } else {
-      await invoke('delete_scratchpad', { id: editingId });
+      await cmd.deleteScratchpad(editingId);
       setScratchpads((prev) => prev.filter((s) => s.id !== editingId));
     }
     setEditingId(null);
@@ -463,7 +464,7 @@ export function ScratchpadWindow() {
       // Backend awaits the full restore→paste chain inline — the invoke only
       // resolves AFTER Shift+Insert has been delivered to the target app, so
       // it's safe to start re-showing the collapsed tab below.
-      await invoke('scratchpad_paste', { text: pasteContent });
+      await cmd.scratchpadPaste(pasteContent);
     } catch {
       await navigator.clipboard.writeText(pasteContent);
     }
@@ -479,7 +480,7 @@ export function ScratchpadWindow() {
   // ── CRUD ──
   const handleAdd = useCallback(async () => {
     try {
-      const item = await invoke<ScratchpadItem>('create_scratchpad', { title: '', content: '' });
+      const item = await cmd.createScratchpad('', '');
       setScratchpads((prev) => [...prev, item]);
       setEditingId(item.id);
       setEditTitle('');
@@ -495,7 +496,7 @@ export function ScratchpadWindow() {
       const victim = scratchpads.find((s) => s.id === id);
       if (!victim) return;
       try {
-        await invoke('delete_scratchpad', { id });
+        await cmd.deleteScratchpad(id);
         setScratchpads((prev) => prev.filter((s) => s.id !== id));
         if (editingId === id) {
           setEditingId(null);
@@ -513,13 +514,10 @@ export function ScratchpadWindow() {
             label: 'Undo',
             onClick: async () => {
               try {
-                const restored = await invoke<ScratchpadItem>('create_scratchpad', {
-                  title: victim.title,
-                  content: victim.content,
-                });
+                const restored = await cmd.createScratchpad(victim.title, victim.content);
                 // Restore color in a second call (create_scratchpad doesn't take color).
                 if (victim.color) {
-                  await invoke('update_scratchpad', { id: restored.id, color: victim.color });
+                  await cmd.updateScratchpad({ id: restored.id, color: victim.color });
                   restored.color = victim.color;
                 }
                 setScratchpads((prev) => [...prev, restored]);
@@ -536,7 +534,7 @@ export function ScratchpadWindow() {
 
   const handleToggleNotePin = useCallback(async (id: string) => {
     try {
-      const newVal = await invoke<boolean>('toggle_scratchpad_pin', { id });
+      const newVal = await cmd.toggleScratchpadPin(id);
       setScratchpads((prev) => prev.map((s) => (s.id === id ? { ...s, is_pinned: newVal } : s)));
     } catch {}
   }, []);
@@ -560,7 +558,7 @@ export function ScratchpadWindow() {
         const lines = text.split('\n');
         const title = lines[0].slice(0, 80);
         const content = lines.length > 1 ? lines.slice(1).join('\n') : '';
-        const item = await invoke<ScratchpadItem>('create_scratchpad', { title, content });
+        const item = await cmd.createScratchpad(title, content);
         setScratchpads((prev) => [...prev, item]);
         setPinned(true);
       } catch {}
@@ -602,7 +600,7 @@ export function ScratchpadWindow() {
       r.splice(index, 0, m);
       const map = new Map(scratchpads.map((s) => [s.id, s]));
       setScratchpads(r.map((id) => map.get(id)!).filter(Boolean));
-      await invoke('reorder_scratchpads', { ids: r }).catch(() => {});
+      await cmd.reorderScratchpads(r).catch(() => {});
       dragItemRef.current = null;
       setDragOverIndex(null);
     },

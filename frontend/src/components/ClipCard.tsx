@@ -1,7 +1,6 @@
 import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
 import { useMemo, memo, useState, useRef, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
 import {
   Copy,
@@ -23,6 +22,7 @@ import {
 import { formatDistanceToNowStrict } from 'date-fns';
 import { enqueue } from '../imageQueue';
 import { getIcon } from '../iconCache';
+import { cmd } from '../commands';
 
 const IMAGE_DATA_URL_CACHE_LIMIT = 160;
 const imageDataUrlCache = new Map<string, string>();
@@ -96,12 +96,7 @@ function ImageWithFallback({
     let cancelled = false;
     setFailed(false);
 
-    enqueue(() =>
-      invoke<string>('get_clip_image_data_url', {
-        id: clipId,
-        thumbnail: true,
-      })
-    )
+    enqueue(() => cmd.getClipImageDataUrl(clipId, true))
       .then((src) => {
         cacheImage(clipId, src);
         if (!cancelled) setImgSrc(src);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem, FolderItem } from '../types';
 import { PAGE_SIZE } from '../constants';
+import { cmd } from '../commands';
 
 const MAX_PREVIEW_CACHE_SIZE = 20;
 
@@ -53,7 +53,7 @@ export function useFolderPreview(opts: UseFolderPreviewOpts) {
 
       setIsPreviewLoading(true);
       try {
-        const data = await invoke<AppClipboardItem[]>('get_clips', {
+        const data = await cmd.getClips({
           filterId: folderId,
           limit: PAGE_SIZE,
           offset: 0,
