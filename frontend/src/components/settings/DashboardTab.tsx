@@ -18,42 +18,8 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-
-interface DashboardStats {
-  total: number;
-  today: number;
-  images: number;
-  text: number;
-  folders: number;
-  pinned: number;
-  sensitive: number;
-  in_folders: number;
-  urls: number;
-  daily: { day: string; count: number }[];
-  top_apps: { app: string; count: number }[];
-  most_pasted: { id: string; preview: string; count: number }[];
-  db_size: number;
-  images_size: number;
-  old_images_14d: {
-    days: number;
-    count: number;
-    bytes: number;
-    protected_count: number;
-    oldest_created_at: string | null;
-    newest_created_at: string | null;
-  };
-}
-
-interface DashClip {
-  id: string;
-  clip_type: string;
-  content: string;
-  preview: string;
-  created_at: string;
-  source_app: string | null;
-  subtype: string | null;
-}
+import { cmd } from '../../commands';
+import { DashboardStats, DashClip } from '../../types';
 
 interface DashboardTabProps {
   dashStats: DashboardStats | null;
@@ -108,10 +74,8 @@ function DashboardImageThumb({ clipId }: { clipId: string }) {
     let cancelled = false;
     setSrc('');
 
-    invoke<string>('get_clip_image_data_url', {
-      id: clipId,
-      thumbnail: true,
-    })
+    cmd
+      .getClipImageDataUrl(clipId, true)
       .then((dataUrl) => {
         if (!cancelled) setSrc(dataUrl);
       })

@@ -9,10 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Settings → Clips & Images tab** (new library manager): browse and manage all clips and images in one place. Filter by Clips / Images, search, filter by folder, and multi-select to Pin / Unpin / Move / Delete; per-item Copy / Pin / Delete. Images render as a thumbnail grid, clips as a scannable list; large image preview shows a blurred backdrop, metadata, and a copy button. Quick stats header: total clips, images, pinned, and storage size.
+
 ### Changed
 - **Incognito mode is now always visible**: while clipboard recording is paused, the whole window shows an ambient pulsing red glow around its edge — no more forgetting it's on after the toast disappears.
 - **Type filter pills use a sliding highlight**: the active type filter is marked by a single highlight that smoothly slides between pills (segmented-control style) instead of swapping background colors instantly.
 - **Folder tabs react to drag**: dragging a clip over a folder tab now makes it scale up and pulse with a glowing ring, clearly signalling the drop target.
+- **Folders settings — richer editing**: inline-edit a folder's name, icon, and colour; the sidebar and header now show the folder icon + colour; bulk actions gained Pin / Unpin; pinned clips show a small pin badge so they're easy to spot.
+- **Settings window controls**: added a Maximize / Restore button, double-click the title bar to toggle maximize, and enforced a minimum window size.
+- **Search backend**: results are now paginated after ranking (not before), the in-memory search cache carries `created_at`, and overall result ordering is more stable.
+- **Typed Settings layer**: Settings-related commands and types are routed through the typed `cmd.*` wrapper, removing raw `invoke()` calls for compile-time safety.
 
 ---
 

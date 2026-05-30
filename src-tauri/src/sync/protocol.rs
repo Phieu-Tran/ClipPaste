@@ -829,7 +829,12 @@ pub(crate) async fn apply_delta(
                 .execute(&db.pool).await?;
             }
         }
-        crate::clipboard::add_to_search_cache(&clip.uuid, &clip.text_preview, folder_id);
+        crate::clipboard::add_to_search_cache_with_created_at(
+            &clip.uuid,
+            &clip.text_preview,
+            folder_id,
+            crate::clipboard::sync_timestamp(&clip.created_at),
+        );
         report.pulled_clips += 1;
     }
 
@@ -1014,7 +1019,7 @@ pub(crate) async fn apply_delta(
                         let mut cache = crate::clipboard::SEARCH_CACHE.write();
                         for uuid in &affected {
                             if let Some(entry) = cache.get_mut(uuid) {
-                                entry.1 = None;
+                                entry.folder_id = None;
                             }
                         }
                     }

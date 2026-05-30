@@ -132,7 +132,7 @@ export const FOLDER_ICON_MAP: Record<string, { Icon: LucideIcon; color: string }
     FOLDER_ICON_OPTIONS.map(({ key, Icon, color }) => [key, { Icon, color: color || '' }])
   );
 
-const COLOR_OPTIONS = [
+export const COLOR_OPTIONS = [
   { key: 'red', bg: 'bg-red-500' },
   { key: 'orange', bg: 'bg-orange-500' },
   { key: 'amber', bg: 'bg-amber-400' },

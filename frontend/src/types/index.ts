@@ -121,6 +121,12 @@ export interface SyncSettings {
   sync_images: boolean;
 }
 
+export interface PickedApp {
+  app_name: string | null;
+  exe_name: string | null;
+  full_path: string | null;
+}
+
 export type ClipType = 'text' | 'image' | 'html' | 'rtf' | 'file' | 'url';
 
 export const CLIP_TYPE_LABELS: Record<ClipType, string> = {

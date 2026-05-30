@@ -1,8 +1,11 @@
-import { Settings, FolderItem, DashClip } from '../types';
+import { Settings, FolderItem, DashClip, DashboardStats } from '../types';
 import {
   X,
+  Maximize2,
+  Minimize2,
   Settings as SettingsIcon,
   Folder as FolderIcon,
+  ClipboardList,
   BarChart3,
   Keyboard,
   Cloud,
@@ -12,7 +15,6 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../hooks/useTheme';
-import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -22,52 +24,36 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useShortcutRecorder } from 'use-shortcut-recorder';
 import { clsx } from 'clsx';
+import { cmd } from '../commands';
 
 import { DashboardTab } from './settings/DashboardTab';
 import { GeneralTab } from './settings/GeneralTab';
 import { FoldersTab } from './settings/FoldersTab';
 import { HotkeysTab } from './settings/HotkeysTab';
 import { SyncTab } from './settings/SyncTab';
+import { LibraryTab } from './settings/LibraryTab';
 
 interface SettingsPanelProps {
   settings: Settings;
+  isMaximized: boolean;
+  onToggleMaximize: () => void;
   onClose: () => void;
 }
 
-type Tab = 'dashboard' | 'general' | 'folders' | 'hotkeys' | 'sync';
+type Tab = 'dashboard' | 'library' | 'general' | 'folders' | 'hotkeys' | 'sync';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
-
-interface DashboardStats {
-  total: number;
-  today: number;
-  images: number;
-  text: number;
-  folders: number;
-  pinned: number;
-  sensitive: number;
-  in_folders: number;
-  urls: number;
-  daily: { day: string; count: number }[];
-  top_apps: { app: string; count: number }[];
-  most_pasted: { id: string; preview: string; count: number }[];
-  db_size: number;
-  images_size: number;
-  old_images_14d: {
-    days: number;
-    count: number;
-    bytes: number;
-    protected_count: number;
-    oldest_created_at: string | null;
-    newest_created_at: string | null;
-  };
-}
 
 function toDateStr(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
-export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPanelProps) {
+export function SettingsPanel({
+  settings: initialSettings,
+  isMaximized,
+  onToggleMaximize,
+  onClose,
+}: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -113,11 +99,11 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setSaveStatus('saving');
 
     try {
-      await invoke('save_settings', { settings: newSettings });
+      await cmd.saveSettings(newSettings);
       await emit('settings-changed', newSettings);
 
       if (updates.hotkey) {
-        await invoke('register_global_shortcut', { hotkey: updates.hotkey });
+        await cmd.registerGlobalShortcut(updates.hotkey);
       }
     } catch (error) {
       console.error(`Failed to save settings:`, error);
@@ -131,7 +117,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1800);
   };
 
-  const updateSetting = (key: keyof Settings, value: any) => {
+  const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     updateSettings({ [key]: value });
   };
 
@@ -195,7 +181,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
 
   const loadFolders = async () => {
     try {
-      const data = await invoke<FolderItem[]>('get_folders');
+      const data = await cmd.getFolders();
       setFolders(data);
     } catch (error) {
       console.error('Failed to load folders:', error);
@@ -205,9 +191,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   const refreshDashboardStats = async (forceRefresh = false) => {
     try {
       setDashStatsError('');
-      const stats = await invoke<DashboardStats>('get_dashboard_stats', {
-        forceRefresh,
-      });
+      const stats = await cmd.getDashboardStats({ forceRefresh });
       setDashStats(stats);
     } catch (error) {
       console.error('Failed to load dashboard stats:', error);
@@ -215,12 +199,16 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     }
   };
 
+  const handleLibraryDataChanged = async () => {
+    await Promise.all([loadFolders(), refreshDashboardStats(true)]);
+  };
+
   useEffect(() => {
-    invoke<number>('get_clipboard_history_size').then(setHistorySize).catch(console.error);
-    invoke<string[]>('get_ignored_apps').then(setIgnoredApps).catch(console.error);
+    cmd.getClipboardHistorySize().then(setHistorySize).catch(console.error);
+    cmd.getIgnoredApps().then(setIgnoredApps).catch(console.error);
     getVersion().then(setAppVersion).catch(console.error);
     loadFolders();
-    invoke<string>('get_data_directory').then(setDataDirectory).catch(console.error);
+    cmd.getDataDirectory().then(setDataDirectory).catch(console.error);
     refreshDashboardStats();
     return () => {
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
@@ -250,12 +238,13 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setDashClipsLoading(true);
     const search = debouncedDashSearch.trim() || undefined;
     const sourceApp = dashSourceApp || undefined;
-    invoke<DashClip[]>('get_clips_by_date', {
-      date: dashDate,
-      search,
-      sourceApp,
-      offset: dashClipsOffset,
-    })
+    cmd
+      .getClipsByDate({
+        date: dashDate,
+        search,
+        sourceApp,
+        offset: dashClipsOffset,
+      })
       .then((data) => {
         if (dashClipsOffset === 0) {
           setDashClips(data);
@@ -362,9 +351,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setDataAction('directory');
     const loadingToast = toast.loading('Preparing data directory...');
     try {
-      const selectedPath = await invoke<string>('pick_folder');
+      const selectedPath = await cmd.pickFolder();
       if (selectedPath) {
-        await invoke('set_data_directory', { newPath: selectedPath });
+        await cmd.setDataDirectory(selectedPath);
         setDataDirectory(selectedPath);
         toast.success(
           'Data directory changed. Please restart the application for changes to take effect.',
@@ -393,9 +382,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         if (dataAction) return;
         setDataAction('clear');
         try {
-          await invoke('clear_all_clips');
+          await cmd.clearAllClips();
           // Refresh the history size after clearing
-          const newSize = await invoke<number>('get_clipboard_history_size');
+          const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
           await refreshDashboardStats(true);
           toast.success('Clipboard history cleared successfully.');
@@ -421,9 +410,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         if (dataAction) return;
         setDataAction('duplicates');
         try {
-          const count = await invoke<number>('remove_duplicate_clips');
+          const count = await cmd.removeDuplicateClips();
           toast.success(`Removed ${count} duplicate clips`);
-          const newSize = await invoke<number>('get_clipboard_history_size');
+          const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
           await refreshDashboardStats(true);
         } catch (error) {
@@ -441,7 +430,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setDataAction('export');
     const loadingToast = toast.loading('Exporting backup...');
     try {
-      const path = await invoke<string>('export_data');
+      const path = await cmd.exportData();
       toast.success(`Exported to ${path}`);
     } catch (error) {
       if (String(error) !== 'Export cancelled') {
@@ -456,7 +445,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   const handleCheckDbIntegrity = async () => {
     const loadingToast = toast.loading('Checking database integrity...');
     try {
-      const result = await invoke<string>('check_db_integrity');
+      const result = await cmd.checkDbIntegrity();
       if (result === 'ok') {
         toast.success('Database integrity: OK');
       } else {
@@ -485,7 +474,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
         setDataAction('import');
         const loadingToast = toast.loading('Importing backup...');
         try {
-          await invoke('import_data');
+          await cmd.importData();
           setImportRestartRequired(true);
           toast.success('Backup imported. Restart to apply.', {
             duration: 10000,
@@ -552,14 +541,31 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       />
       <div className="flex h-full flex-col bg-background text-foreground">
         {/* Header */}
-        <div className="drag-area flex items-center justify-between border-b border-border p-4">
+        <div
+          className="drag-area flex items-center justify-between border-b border-border p-4"
+          onDoubleClick={onToggleMaximize}
+        >
           <h2 className="text-lg font-semibold">Settings</h2>
           <div
             className="no-drag flex items-center gap-2"
             style={{ WebkitAppRegion: 'no-drag' } as any}
+            onDoubleClick={(event) => event.stopPropagation()}
           >
             {renderSaveStatus()}
-            <button onClick={onClose} className="icon-button">
+            <button
+              onClick={onToggleMaximize}
+              className="icon-button"
+              title={isMaximized ? 'Restore' : 'Maximize'}
+              aria-label={isMaximized ? 'Restore settings window' : 'Maximize settings window'}
+            >
+              {isMaximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+            <button
+              onClick={onClose}
+              className="icon-button"
+              title="Close"
+              aria-label="Close settings"
+            >
               <X size={18} />
             </button>
           </div>
@@ -580,6 +586,18 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
               >
                 <BarChart3 size={16} />
                 Dashboard
+              </button>
+              <button
+                onClick={() => setActiveTab('library')}
+                className={clsx(
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  activeTab === 'library'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )}
+              >
+                <ClipboardList size={16} />
+                Clips & Images
               </button>
               <button
                 onClick={() => setActiveTab('general')}
@@ -634,7 +652,12 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto p-6">
-            <div className="mx-auto max-w-2xl space-y-8">
+            <div
+              className={clsx(
+                'mx-auto space-y-8',
+                activeTab === 'library' || activeTab === 'folders' ? 'max-w-6xl' : 'max-w-2xl'
+              )}
+            >
               {importRestartRequired && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
                   <div className="flex items-start justify-between gap-4">
@@ -676,6 +699,10 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   onRefreshStats={() => refreshDashboardStats(true)}
                   onCheckDbIntegrity={handleCheckDbIntegrity}
                 />
+              )}
+
+              {activeTab === 'library' && (
+                <LibraryTab folders={folders} onDataChanged={handleLibraryDataChanged} />
               )}
 
               {activeTab === 'general' && (

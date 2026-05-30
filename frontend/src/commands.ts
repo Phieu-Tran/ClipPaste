@@ -9,6 +9,7 @@ import type {
   ImageCleanupPreview,
   SyncStatus,
   SyncSettings,
+  PickedApp,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -138,7 +139,7 @@ export const cmd = {
 
   removeDuplicateClips: () => invoke<number>('remove_duplicate_clips'),
 
-  getDashboardStats: (args: { includeDailyChart?: boolean; includeTopApps?: boolean }) =>
+  getDashboardStats: (args: { forceRefresh?: boolean } = {}) =>
     invoke<DashboardStats>('get_dashboard_stats', args),
 
   getClipsByDate: (args: { date: string; search?: string; sourceApp?: string; offset?: number }) =>
@@ -155,10 +156,7 @@ export const cmd = {
 
   pickFolder: () => invoke<string>('pick_folder'),
 
-  pickForegroundApp: (delayMs: number) =>
-    invoke<{ name: string; path: string; display_name: string }>('pick_foreground_app', {
-      delayMs,
-    }),
+  pickForegroundApp: (delayMs: number) => invoke<PickedApp>('pick_foreground_app', { delayMs }),
 
   checkDbIntegrity: () => invoke<string>('check_db_integrity'),
 

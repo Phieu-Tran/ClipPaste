@@ -12,6 +12,8 @@ import {
   Link2,
   Loader2,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   RefreshCw,
   Search,
@@ -19,8 +21,10 @@ import {
   Type,
   X,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { clsx } from 'clsx';
 import { toast } from 'sonner';
+import { cmd } from '../../commands';
+import { COLOR_OPTIONS, FOLDER_ICON_MAP, FOLDER_ICON_OPTIONS } from '../FolderModal';
 
 interface FoldersTabProps {
   folders: FolderItem[];
@@ -63,6 +67,27 @@ function ClipTypeIcon({ type, className }: { type: string; className?: string })
   }
 }
 
+function FolderGlyph({ folder, size = 16 }: { folder: FolderItem; size?: number }) {
+  if (folder.icon && FOLDER_ICON_MAP[folder.icon]) {
+    const { Icon, color } = FOLDER_ICON_MAP[folder.icon];
+    return <Icon size={size} className={clsx('shrink-0', color || 'text-blue-400')} />;
+  }
+
+  return <FolderIcon size={size} className="shrink-0 text-blue-400" />;
+}
+
+function FolderColorDot({ color }: { color: string | null }) {
+  const option = COLOR_OPTIONS.find((item) => item.key === color);
+  return (
+    <span
+      className={clsx(
+        'h-2.5 w-2.5 shrink-0 rounded-full border border-white/20',
+        option?.bg ?? 'bg-muted'
+      )}
+    />
+  );
+}
+
 export function FoldersTab({
   folders,
   newFolderName,
@@ -80,6 +105,8 @@ export function FoldersTab({
   const [moveSearch, setMoveSearch] = useState('');
   const [folderSearch, setFolderSearch] = useState('');
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
+  const [editingFolderColor, setEditingFolderColor] = useState<string | null>(null);
+  const [editingFolderIcon, setEditingFolderIcon] = useState<string | null>(null);
   const movePopoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -115,7 +142,7 @@ export function FoldersTab({
   const loadClipsForFolder = useCallback(async (folderId: string) => {
     setLoadingId(folderId);
     try {
-      const clips = await invoke<ClipboardItem[]>('get_clips', {
+      const clips = await cmd.getClips({
         filterId: folderId,
         limit: 500,
         offset: 0,
@@ -152,7 +179,7 @@ export function FoldersTab({
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     try {
-      await invoke('create_folder', { name: newFolderName.trim(), icon: null, color: null });
+      await cmd.createFolder(newFolderName.trim(), null, null);
       setNewFolderName('');
       await loadFolders();
       toast.success('Folder created');
@@ -163,7 +190,7 @@ export function FoldersTab({
 
   const handleDeleteFolder = async (id: string) => {
     try {
-      await invoke('delete_folder', { id });
+      await cmd.deleteFolder(id);
       if (selectedFolderId === id) setSelectedFolderId(null);
       setClipsByFolder((prev) => {
         const next = { ...prev };
@@ -180,18 +207,31 @@ export function FoldersTab({
   const startRenameFolder = (folder: FolderItem) => {
     setEditingFolderId(folder.id);
     setRenameValue(folder.name);
+    setEditingFolderColor(folder.color ?? null);
+    setEditingFolderIcon(folder.icon ?? null);
+  };
+
+  const cancelRenameFolder = () => {
+    setEditingFolderId(null);
+    setRenameValue('');
+    setEditingFolderColor(null);
+    setEditingFolderIcon(null);
   };
 
   const saveRenameFolder = async () => {
     if (!editingFolderId || !renameValue.trim()) return;
     try {
-      await invoke('rename_folder', { id: editingFolderId, name: renameValue.trim() });
-      setEditingFolderId(null);
-      setRenameValue('');
+      await cmd.renameFolder(
+        editingFolderId,
+        renameValue.trim(),
+        editingFolderColor,
+        editingFolderIcon
+      );
+      cancelRenameFolder();
       await loadFolders();
-      toast.success('Folder renamed');
+      toast.success('Folder updated');
     } catch (e) {
-      toast.error(`Failed to rename folder: ${e}`);
+      toast.error(`Failed to update folder: ${e}`);
     }
   };
 
@@ -206,7 +246,7 @@ export function FoldersTab({
     toFolderId: string | null
   ) => {
     try {
-      await invoke('move_to_folder', { clipId: clipUuid, folderId: toFolderId });
+      await cmd.moveToFolder(clipUuid, toFolderId);
       setMoveTargetClipId(null);
       setMoveSearch('');
       await loadFolders();
@@ -224,7 +264,7 @@ export function FoldersTab({
     if (!selectedFolderId || selectedClipIds.size === 0) return;
     const ids = Array.from(selectedClipIds);
     try {
-      await invoke('bulk_move_clips', { ids, folderId: toFolderId });
+      await cmd.bulkMoveClips(ids, toFolderId);
       setMoveTargetClipId(null);
       setMoveSearch('');
       setSelectedClipIds(new Set());
@@ -241,7 +281,7 @@ export function FoldersTab({
 
   const handleDeleteClip = async (clipUuid: string, folderId: string) => {
     try {
-      await invoke('delete_clip', { id: clipUuid });
+      await cmd.deleteClip(clipUuid);
       setSelectedClipIds((prev) => {
         const next = new Set(prev);
         next.delete(clipUuid);
@@ -259,10 +299,23 @@ export function FoldersTab({
     if (selectedClipIds.size === 0) return;
     const ids = Array.from(selectedClipIds);
     try {
-      const count = await invoke<number>('bulk_delete_clips', { ids });
+      const count = await cmd.bulkDeleteClips(ids);
       setSelectedClipIds(new Set());
       await refreshSelectedFolder();
       toast.success(`Deleted ${count} clip${count === 1 ? '' : 's'}`);
+    } catch (e) {
+      toast.error(`Failed: ${e}`);
+    }
+  };
+
+  const handleBulkSetPin = async (pinned: boolean) => {
+    if (!selectedFolderId || selectedClipIds.size === 0) return;
+    const ids = Array.from(selectedClipIds);
+    try {
+      const count = await cmd.bulkSetPin(ids, pinned);
+      setSelectedClipIds(new Set());
+      await loadClipsForFolder(selectedFolderId);
+      toast.success(`${pinned ? 'Pinned' : 'Unpinned'} ${count} clip${count === 1 ? '' : 's'}`);
     } catch (e) {
       toast.error(`Failed: ${e}`);
     }
@@ -448,40 +501,112 @@ export function FoldersTab({
                       }`}
                     >
                       {isEditing ? (
-                        <div className="flex items-center gap-1.5 p-2">
-                          <FolderIcon size={15} className="shrink-0 text-blue-400" />
-                          <input
-                            type="text"
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveRenameFolder();
-                              if (e.key === 'Escape') setEditingFolderId(null);
-                            }}
-                          />
-                          <button
-                            onClick={saveRenameFolder}
-                            className="rounded p-1.5 text-primary hover:bg-primary/10"
-                            title="Save"
-                          >
-                            <Check size={13} />
-                          </button>
-                          <button
-                            onClick={() => setEditingFolderId(null)}
-                            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                            title="Cancel"
-                          >
-                            <X size={13} />
-                          </button>
+                        <div className="space-y-2 p-2">
+                          <div className="flex items-center gap-1.5">
+                            <FolderGlyph
+                              folder={{
+                                ...folder,
+                                color: editingFolderColor,
+                                icon: editingFolderIcon,
+                              }}
+                              size={15}
+                            />
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveRenameFolder();
+                                if (e.key === 'Escape') cancelRenameFolder();
+                              }}
+                            />
+                            <button
+                              onClick={saveRenameFolder}
+                              className="rounded p-1.5 text-primary hover:bg-primary/10"
+                              title="Save"
+                            >
+                              <Check size={13} />
+                            </button>
+                            <button
+                              onClick={cancelRenameFolder}
+                              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              title="Cancel"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1">
+                            <button
+                              onClick={() => setEditingFolderIcon(null)}
+                              title="No icon"
+                              className={clsx(
+                                'flex h-6 w-6 items-center justify-center rounded border text-[10px] font-semibold transition-colors',
+                                editingFolderIcon === null
+                                  ? 'border-primary bg-primary/15 text-primary'
+                                  : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
+                              )}
+                            >
+                              Aa
+                            </button>
+                            <div className="flex max-h-[74px] flex-1 flex-wrap gap-1 overflow-y-auto pr-0.5">
+                              {FOLDER_ICON_OPTIONS.map(({ key, Icon, color }) => (
+                                <button
+                                  key={key}
+                                  onClick={() => setEditingFolderIcon(key)}
+                                  title={key}
+                                  className={clsx(
+                                    'flex h-6 w-6 items-center justify-center rounded border transition-colors',
+                                    editingFolderIcon === key
+                                      ? 'border-primary bg-primary/15'
+                                      : 'border-transparent hover:bg-accent',
+                                    editingFolderIcon === key
+                                      ? color
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  )}
+                                >
+                                  <Icon size={13} />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setEditingFolderColor(null)}
+                              title="Auto color"
+                              className={clsx(
+                                'h-5 w-5 rounded-full border-2 bg-gradient-to-br from-gray-300 to-gray-500 transition-transform',
+                                editingFolderColor === null
+                                  ? 'scale-110 border-white'
+                                  : 'border-transparent'
+                              )}
+                            />
+                            {COLOR_OPTIONS.map(({ key, bg }) => (
+                              <button
+                                key={key}
+                                onClick={() => setEditingFolderColor(key)}
+                                title={key}
+                                className={clsx(
+                                  'h-5 w-5 rounded-full border-2 transition-transform',
+                                  bg,
+                                  editingFolderColor === key
+                                    ? 'scale-110 border-white'
+                                    : 'border-transparent'
+                                )}
+                              />
+                            ))}
+                          </div>
                         </div>
                       ) : (
                         <button
                           onClick={() => setSelectedFolderId(folder.id)}
                           className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-accent/40"
                         >
-                          <FolderIcon size={16} className="shrink-0 text-blue-400" />
+                          <FolderGlyph folder={folder} />
+                          <FolderColorDot color={folder.color} />
                           <span className="min-w-0 flex-1 truncate text-sm font-medium">
                             {folder.name}
                           </span>
@@ -502,7 +627,14 @@ export function FoldersTab({
           <div className="flex items-center justify-between gap-3 border-b border-border bg-card/50 px-3 py-2.5">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <FolderIcon size={16} className="shrink-0 text-blue-400" />
+                {selectedFolder ? (
+                  <>
+                    <FolderGlyph folder={selectedFolder} />
+                    <FolderColorDot color={selectedFolder.color} />
+                  </>
+                ) : (
+                  <FolderIcon size={16} className="shrink-0 text-blue-400" />
+                )}
                 <h4 className="truncate text-sm font-semibold">
                   {selectedFolder ? selectedFolder.name : 'No folder selected'}
                 </h4>
@@ -555,6 +687,20 @@ export function FoldersTab({
                   <span className="mr-1 text-xs font-medium text-primary">
                     {selectedClipCount} selected
                   </span>
+                  <button
+                    onClick={() => handleBulkSetPin(true)}
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <Pin size={12} />
+                    Pin
+                  </button>
+                  <button
+                    onClick={() => handleBulkSetPin(false)}
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <PinOff size={12} />
+                    Unpin
+                  </button>
                   <div className="relative">
                     <button
                       onClick={() => {
@@ -634,6 +780,9 @@ export function FoldersTab({
                       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                         {formatRelativeTime(clip.created_at)}
                       </span>
+                      {clip.is_pinned && (
+                        <Pin size={11} className="shrink-0 text-amber-400" aria-label="Pinned" />
+                      )}
                       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                         <button
                           onClick={(e) => {

@@ -472,10 +472,14 @@ pub async fn paste_clip(
             };
 
             // Track paste + bump to top of list (created_at = now moves it to position 1)
+            let pasted_at = chrono::Utc::now().timestamp();
             let _ = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
                 .bind(&uuid)
                 .execute(pool)
                 .await;
+            if let Some(entry) = crate::clipboard::SEARCH_CACHE.write().get_mut(&uuid) {
+                entry.created_at = pasted_at;
+            }
 
             if final_res.is_ok() {
                 let content = if clip.clip_type == "image" {
@@ -691,39 +695,44 @@ async fn search_clips_cache(
 
     // Search clips, match against preview AND note
     // When a folder is selected, restrict results to that folder
-    // Uses HashMap-based SEARCH_CACHE: uuid → (preview, folder_id, note)
+    // Uses HashMap-based SEARCH_CACHE: uuid → search metadata
     // match_tier: 0=exact phrase, 1=all words substring, 2=note match, 3=fuzzy subsequence, 4=approx (typo-tolerant)
-    let matched: Vec<(String, Option<i64>, u8)> = {
+    let matched: Vec<SearchMatch> = {
         let cache = crate::clipboard::SEARCH_CACHE.read();
         cache
             .iter()
-            .filter(|(_, (_, fid, _))| match folder_filter {
-                Some(target_fid) => *fid == Some(target_fid),
+            .filter(|(_, entry)| match folder_filter {
+                Some(target_fid) => entry.folder_id == Some(target_fid),
                 None => true,
             })
-            .filter_map(|(uuid, (preview, fid, note))| {
+            .filter_map(|(uuid, entry)| {
                 // Tier 0: exact phrase match
-                if preview.contains(query_lower) {
-                    return Some((uuid.clone(), *fid, 0u8));
+                if entry.preview.contains(query_lower) {
+                    return Some(SearchMatch::new(uuid, entry, 0, query_lower));
                 }
                 // Tier 1: all words present as substrings (AND match)
-                if query_words.iter().all(|word| preview.contains(word)) {
-                    return Some((uuid.clone(), *fid, 1u8));
+                if query_words.iter().all(|word| entry.preview.contains(word)) {
+                    return Some(SearchMatch::new(uuid, entry, 1, query_lower));
                 }
                 // Tier 2: match in note
-                if !note.is_empty() && query_words.iter().all(|word| note.contains(word)) {
-                    return Some((uuid.clone(), *fid, 2u8));
+                if !entry.note.is_empty()
+                    && query_words.iter().all(|word| entry.note.contains(word))
+                {
+                    return Some(SearchMatch::new(uuid, entry, 2, query_lower));
                 }
                 // Tier 3: fuzzy subsequence match (characters in order)
-                if query_words.iter().all(|word| fuzzy_contains(preview, word)) {
-                    return Some((uuid.clone(), *fid, 3u8));
+                if query_words
+                    .iter()
+                    .all(|word| fuzzy_contains(&entry.preview, word))
+                {
+                    return Some(SearchMatch::new(uuid, entry, 3, query_lower));
                 }
                 // Tier 4: approximate match (edit distance — tolerates typos)
                 if query_words
                     .iter()
-                    .all(|word| approx_word_match(preview, word))
+                    .all(|word| approx_word_match(&entry.preview, word))
                 {
-                    return Some((uuid.clone(), *fid, 4u8));
+                    return Some(SearchMatch::new(uuid, entry, 4, query_lower));
                 }
                 None
             })
@@ -752,50 +761,16 @@ async fn search_clips_cache(
         q.fetch_all(pool).await.map_err(|e| e.to_string())?
     };
 
-    // Sort by relevance FIRST, then folder as tiebreaker, then recency
-    clips.sort_by(|a, b| {
-        let a_preview = a.text_preview.to_lowercase();
-        let b_preview = b.text_preview.to_lowercase();
-
-        // 1. Relevance tier: exact phrase / starts_with > all words > rest
-        let relevance_tier = |preview: &str| -> u8 {
-            if preview.contains(query_lower) || preview.starts_with(query_lower) {
-                0
-            } else if query_words.iter().all(|w| preview.contains(w)) {
-                1
-            } else {
-                2
-            }
-        };
-        let a_rel = relevance_tier(&a_preview);
-        let b_rel = relevance_tier(&b_preview);
-
-        // 2. Within same relevance: starts_with bonus
-        let a_starts = a_preview.starts_with(query_lower);
-        let b_starts = b_preview.starts_with(query_lower);
-
-        // 3. Folder as tiebreaker (not primary)
-        let folder_rank = |clip: &Clip| -> u8 {
-            if let Some(target_fid) = folder_filter {
-                if clip.folder_id == Some(target_fid) {
-                    0
-                } else if clip.folder_id.is_some() {
-                    1
-                } else {
-                    2
-                }
-            } else if clip.folder_id.is_some() {
-                0
-            } else {
-                1
-            }
-        };
-
-        a_rel
-            .cmp(&b_rel) // relevance first
-            .then(b_starts.cmp(&a_starts)) // starts_with bonus
-            .then(folder_rank(a).cmp(&folder_rank(b))) // folder tiebreaker
-            .then(b.created_at.cmp(&a.created_at)) // newest first
+    let result_order: std::collections::HashMap<&str, usize> = matched
+        .iter()
+        .enumerate()
+        .map(|(idx, uuid)| (uuid.as_str(), idx))
+        .collect();
+    clips.sort_by_key(|clip| {
+        result_order
+            .get(clip.uuid.as_str())
+            .copied()
+            .unwrap_or(usize::MAX)
     });
 
     // Search results use text_preview instead of full content for speed.
@@ -962,6 +937,27 @@ fn build_fts_query(query: &str) -> Option<String> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct SearchMatch {
+    uuid: String,
+    folder_id: Option<i64>,
+    tier: u8,
+    starts_with: bool,
+    created_at: i64,
+}
+
+impl SearchMatch {
+    fn new(uuid: &str, entry: &crate::clipboard::SearchCacheEntry, tier: u8, query: &str) -> Self {
+        Self {
+            uuid: uuid.to_string(),
+            folder_id: entry.folder_id,
+            tier,
+            starts_with: entry.preview.starts_with(query),
+            created_at: entry.created_at,
+        }
+    }
+}
+
 fn search_folder_rank(fid: Option<i64>, folder_filter: Option<i64>) -> u8 {
     if let Some(target_fid) = folder_filter {
         if fid == Some(target_fid) {
@@ -979,7 +975,7 @@ fn search_folder_rank(fid: Option<i64>, folder_filter: Option<i64>) -> u8 {
 }
 
 fn paginate_search_matches(
-    mut matched: Vec<(String, Option<i64>, u8)>,
+    mut matched: Vec<SearchMatch>,
     folder_filter: Option<i64>,
     limit: i64,
     offset: i64,
@@ -989,28 +985,46 @@ fn paginate_search_matches(
         return Vec::new();
     }
 
-    matched.sort_by_key(|(uuid, fid, tier)| {
-        (*tier, search_folder_rank(*fid, folder_filter), uuid.clone())
+    matched.sort_by(|a, b| {
+        a.tier
+            .cmp(&b.tier)
+            .then_with(|| b.starts_with.cmp(&a.starts_with))
+            .then_with(|| {
+                search_folder_rank(a.folder_id, folder_filter)
+                    .cmp(&search_folder_rank(b.folder_id, folder_filter))
+            })
+            .then_with(|| b.created_at.cmp(&a.created_at))
+            .then_with(|| a.uuid.cmp(&b.uuid))
     });
 
     matched
         .into_iter()
         .skip(offset.max(0) as usize)
         .take(limit)
-        .map(|(uuid, _, _)| uuid)
+        .map(|matched| matched.uuid)
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_fts_query, paginate_search_matches};
+    use super::{build_fts_query, paginate_search_matches, SearchMatch};
+
+    fn search_match(uuid: &str, tier: u8, starts_with: bool, created_at: i64) -> SearchMatch {
+        SearchMatch {
+            uuid: uuid.to_string(),
+            folder_id: None,
+            tier,
+            starts_with,
+            created_at,
+        }
+    }
 
     #[test]
     fn paginate_search_matches_applies_offset_after_ranking() {
         let matched = vec![
-            ("page-3".to_string(), None, 0),
-            ("page-1".to_string(), None, 0),
-            ("page-2".to_string(), None, 0),
+            search_match("page-3", 0, false, 10),
+            search_match("page-1", 0, false, 30),
+            search_match("page-2", 0, false, 20),
         ];
 
         let first_page = paginate_search_matches(matched.clone(), None, 2, 0);
@@ -1018,6 +1032,24 @@ mod tests {
 
         assert_eq!(first_page, vec!["page-1", "page-2"]);
         assert_eq!(second_page, vec!["page-3"]);
+    }
+
+    #[test]
+    fn paginate_search_matches_uses_global_ranking_before_slicing() {
+        let matched = vec![
+            search_match("aaa-old", 0, false, 10),
+            search_match("zzz-new", 0, false, 30),
+            search_match("mmm-mid", 0, true, 20),
+        ];
+
+        assert_eq!(
+            paginate_search_matches(matched.clone(), None, 2, 0),
+            vec!["mmm-mid", "zzz-new"]
+        );
+        assert_eq!(
+            paginate_search_matches(matched, None, 2, 2),
+            vec!["aaa-old"]
+        );
     }
 
     #[test]
@@ -1191,7 +1223,7 @@ pub async fn bulk_move_clips(
         let mut cache = crate::clipboard::SEARCH_CACHE.write();
         for id in &ids {
             if let Some(entry) = cache.get_mut(id) {
-                entry.1 = folder_id_num;
+                entry.folder_id = folder_id_num;
             }
         }
     }

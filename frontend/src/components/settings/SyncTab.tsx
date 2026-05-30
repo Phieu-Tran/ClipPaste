@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import {
@@ -18,31 +17,8 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-
-interface SyncStatus {
-  state: 'disabled' | 'idle' | 'syncing' | 'error' | 'offline';
-  last_sync_at: string | null;
-  pending_changes: number;
-  error_message: string | null;
-  connected_email: string | null;
-  token_expires_at: number | null;
-  last_report: {
-    pushed_clips: number;
-    pushed_folders: number;
-    pulled_clips: number;
-    pulled_folders: number;
-    deleted: number;
-    skipped: boolean;
-    completed_at: string;
-    message: string;
-  } | null;
-}
-
-interface SyncSettings {
-  enabled: boolean;
-  interval_seconds: number;
-  sync_images: boolean;
-}
+import { cmd } from '../../commands';
+import { SyncSettings, SyncStatus } from '../../types';
 
 const INTERVAL_OPTIONS = [
   { value: 60, label: '1 minute' },
@@ -64,7 +40,7 @@ export function SyncTab() {
 
   const loadStatus = async () => {
     try {
-      const s = await invoke<SyncStatus>('get_sync_status');
+      const s = await cmd.getSyncStatus();
       setStatus(s);
     } catch (e) {
       console.error('Failed to load sync status:', e);
@@ -73,7 +49,7 @@ export function SyncTab() {
 
   const loadSettings = async () => {
     try {
-      const s = await invoke<SyncSettings>('get_sync_settings');
+      const s = await cmd.getSyncSettings();
       setSettings(s);
     } catch (e) {
       console.error('Failed to load sync settings:', e);
@@ -96,7 +72,7 @@ export function SyncTab() {
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      const email = await invoke<string>('gdrive_authorize');
+      const email = await cmd.gdriveAuthorize();
       toast.success(`Connected as ${email}`);
       await loadStatus();
     } catch (e) {
@@ -108,7 +84,7 @@ export function SyncTab() {
 
   const handleDisconnect = async () => {
     try {
-      await invoke('gdrive_disconnect');
+      await cmd.gdriveDisconnect();
       toast.success('Google Drive disconnected');
       await loadStatus();
     } catch (e) {
@@ -119,7 +95,7 @@ export function SyncTab() {
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      const msg = await invoke<string>('sync_now');
+      const msg = await cmd.syncNow();
       toast.success(msg);
       await loadStatus();
     } catch (e) {
@@ -133,7 +109,7 @@ export function SyncTab() {
     const newSettings = { ...settings, enabled };
     setSettings(newSettings);
     try {
-      await invoke('save_sync_settings', { settings: newSettings });
+      await cmd.saveSyncSettings(newSettings);
       toast.success(enabled ? 'Auto-sync enabled' : 'Auto-sync disabled');
       await loadStatus();
     } catch (e) {
@@ -146,7 +122,7 @@ export function SyncTab() {
     const newSettings = { ...settings, interval_seconds: interval };
     setSettings(newSettings);
     try {
-      await invoke('save_sync_settings', { settings: newSettings });
+      await cmd.saveSyncSettings(newSettings);
     } catch (e) {
       toast.error(`Failed to save settings: ${e}`);
       setSettings(settings);
@@ -157,7 +133,7 @@ export function SyncTab() {
     const newSettings = { ...settings, sync_images };
     setSettings(newSettings);
     try {
-      await invoke('save_sync_settings', { settings: newSettings });
+      await cmd.saveSyncSettings(newSettings);
       toast.success(sync_images ? 'Image sync enabled' : 'Image sync disabled');
     } catch (e) {
       toast.error(`Failed to save settings: ${e}`);

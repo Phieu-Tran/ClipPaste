@@ -1,4 +1,4 @@
-import { Settings } from '../../types';
+import { Settings, DashboardStats, ImageCleanupPreview } from '../../types';
 import { useState } from 'react';
 import {
   X,
@@ -11,18 +11,12 @@ import {
   Database,
   RefreshCw,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-
-interface PickedApp {
-  app_name: string | null;
-  exe_name: string | null;
-  full_path: string | null;
-}
+import { cmd } from '../../commands';
 
 interface GeneralTabProps {
   settings: Settings;
-  updateSetting: (key: keyof Settings, value: any) => void;
+  updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   handleThemeChange: (newTheme: string) => void;
   // Hotkey
   isRecordingMode: boolean;
@@ -69,22 +63,6 @@ const IMAGE_DELETE_DAY_OPTIONS = [7, 14, 30, 60, 90, 180, 365];
 const CLIP_DELETE_DAY_OPTIONS = [0, 7, 14, 30, 60, 90, 180, 365];
 const MAX_ITEM_OPTIONS = [0, 500, 1000, 2000, 5000, 10000];
 
-interface ImageCleanupPreview {
-  days: number;
-  count: number;
-  bytes: number;
-  protected_count: number;
-  oldest_created_at: string | null;
-  newest_created_at: string | null;
-}
-
-interface DashboardStats {
-  total: number;
-  images: number;
-  db_size: number;
-  images_size: number;
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -128,7 +106,7 @@ export function GeneralTab({
   const handleAddIgnoredApp = async () => {
     if (!newIgnoredApp.trim()) return;
     try {
-      await invoke('add_ignored_app', { appName: newIgnoredApp.trim() });
+      await cmd.addIgnoredApp(newIgnoredApp.trim());
       setIgnoredApps((prev) => [...prev, newIgnoredApp.trim()].sort());
       setNewIgnoredApp('');
       toast.success(`Added ${newIgnoredApp.trim()} to ignored apps`);
@@ -152,7 +130,7 @@ export function GeneralTab({
     }, 1000);
 
     try {
-      const picked = await invoke<PickedApp>('pick_foreground_app', { delayMs: DELAY_SEC * 1000 });
+      const picked = await cmd.pickForegroundApp(DELAY_SEC * 1000);
       // Prefer exe name (what the ignore check compares against). Fall back to display name.
       const target = picked.exe_name || picked.app_name || '';
       if (!target || target.toLowerCase().includes('clippaste')) {
@@ -173,7 +151,7 @@ export function GeneralTab({
 
   const handleBrowseFile = async () => {
     try {
-      const path = await invoke<string>('pick_file');
+      const path = await cmd.pickFile();
       const filename = path.split('\\').pop() || path;
       setNewIgnoredApp(filename);
     } catch (e) {
@@ -186,9 +164,9 @@ export function GeneralTab({
     setReclassifyRunning(true);
     try {
       setReclassifyStage('subtypes');
-      const subtypeUpdated = await invoke<number>('rescan_subtypes');
+      const subtypeUpdated = await cmd.rescanSubtypes();
       setReclassifyStage('sensitive');
-      const sensitiveUpdated = await invoke<number>('rescan_sensitive');
+      const sensitiveUpdated = await cmd.rescanSensitive();
       await refreshDashboardStats();
       toast.success(
         `Reclassified ${subtypeUpdated.toLocaleString()} clips; updated ${sensitiveUpdated.toLocaleString()} sensitive flags`
@@ -206,7 +184,7 @@ export function GeneralTab({
     const days = Math.max(1, settings.image_delete_days || 14);
     setCleanupPreviewLoading(true);
     try {
-      const preview = await invoke<ImageCleanupPreview>('preview_old_image_cleanup', { days });
+      const preview = await cmd.previewOldImageCleanup(days);
       setCleanupPreview(preview);
     } catch (error) {
       console.error(error);
@@ -233,11 +211,11 @@ export function GeneralTab({
       action: async () => {
         try {
           setCleanupRunning(true);
-          const deleted = await invoke<number>('cleanup_old_image_clips', { days });
+          const deleted = await cmd.cleanupOldImageClips(days);
           toast.success(
             deleted === 1 ? 'Deleted 1 old image clip' : `Deleted ${deleted} old image clips`
           );
-          const newSize = await invoke<number>('get_clipboard_history_size');
+          const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
           setCleanupPreview(null);
           await refreshDashboardStats();
@@ -253,7 +231,7 @@ export function GeneralTab({
 
   const handleRemoveIgnoredApp = async (app: string) => {
     try {
-      await invoke('remove_ignored_app', { appName: app });
+      await cmd.removeIgnoredApp(app);
       setIgnoredApps((prev) => prev.filter((a) => a !== app));
       toast.success(`Removed ${app} from ignored apps`);
     } catch (e) {

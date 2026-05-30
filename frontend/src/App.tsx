@@ -239,7 +239,10 @@ function App() {
       title: 'Settings',
       width: 800,
       height: 700,
+      minWidth: 760,
+      minHeight: 520,
       resizable: true,
+      maximizable: true,
       decorations: false,
       center: true,
     });

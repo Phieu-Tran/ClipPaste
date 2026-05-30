@@ -62,9 +62,17 @@ static HASH_STATE: Lazy<parking_lot::Mutex<ClipboardHashState>> = Lazy::new(|| {
 pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> =
     Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
-/// In-memory search index: uuid → (preview_lowercase, folder_id, note_lowercase)
+/// In-memory search index keyed by clip uuid.
 /// Loaded once at startup, updated on each clipboard change. HashMap for O(1) remove/update.
-type SearchCacheMap = std::collections::HashMap<String, (String, Option<i64>, String)>;
+#[derive(Debug, Clone)]
+pub struct SearchCacheEntry {
+    pub preview: String,
+    pub folder_id: Option<i64>,
+    pub note: String,
+    pub created_at: i64,
+}
+
+pub type SearchCacheMap = std::collections::HashMap<String, SearchCacheEntry>;
 pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<SearchCacheMap>> =
     Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
 
@@ -108,8 +116,9 @@ pub const DETECTION_RULES_VERSION: i64 = 2;
 /// Load all clip previews into memory for instant search.
 /// Capped at SEARCH_CACHE_MAX entries (most recent first) to bound memory usage.
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
-    let result = sqlx::query_as::<_, (String, String, Option<i64>, Option<String>)>(
-        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note FROM clips ORDER BY created_at DESC LIMIT ?"
+    let result = sqlx::query_as::<_, (String, String, Option<i64>, Option<String>, i64)>(
+        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note, COALESCE(unixepoch(created_at), 0)
+         FROM clips ORDER BY created_at DESC LIMIT ?"
     ).bind(SEARCH_CACHE_MAX as i64).fetch_all(pool).await;
     let rows = match result {
         Ok(r) => r,
@@ -120,14 +129,15 @@ pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
     };
 
     let mut map = std::collections::HashMap::with_capacity(rows.len());
-    for (uuid, preview, fid, note) in rows {
+    for (uuid, preview, fid, note, created_at) in rows {
         map.insert(
             uuid,
-            (
-                preview.to_lowercase(),
-                fid,
-                note.unwrap_or_default().to_lowercase(),
-            ),
+            SearchCacheEntry {
+                preview: preview.to_lowercase(),
+                folder_id: fid,
+                note: note.unwrap_or_default().to_lowercase(),
+                created_at,
+            },
         );
     }
 
@@ -140,13 +150,37 @@ pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
     );
 }
 
-/// Add a single clip to the search cache
+/// Add a single clip to the search cache.
 pub fn add_to_search_cache(uuid: &str, preview: &str, folder_id: Option<i64>) {
+    add_to_search_cache_with_created_at(uuid, preview, folder_id, chrono::Utc::now().timestamp());
+}
+
+pub fn add_to_search_cache_with_created_at(
+    uuid: &str,
+    preview: &str,
+    folder_id: Option<i64>,
+    created_at: i64,
+) {
     let mut cache = SEARCH_CACHE.write();
     cache.insert(
         uuid.to_string(),
-        (preview.to_lowercase(), folder_id, String::new()),
+        SearchCacheEntry {
+            preview: preview.to_lowercase(),
+            folder_id,
+            note: String::new(),
+            created_at,
+        },
     );
+}
+
+pub fn sync_timestamp(created_at: &str) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(created_at)
+        .map(|dt| dt.timestamp())
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%d %H:%M:%S")
+                .map(|dt| dt.and_utc().timestamp())
+        })
+        .unwrap_or(0)
 }
 
 /// Remove a clip from the search cache — O(1) with HashMap
@@ -159,21 +193,23 @@ pub fn remove_from_search_cache(uuid: &str) {
 /// Used by the re-copy self-heal path: if a clip's cache entry was missing or stale,
 /// re-copying the same content forces it back into the cache with current folder_id + note.
 pub async fn refresh_search_cache_for_clip(pool: &sqlx::SqlitePool, uuid: &str, preview: &str) {
-    let row: Option<(Option<i64>, Option<String>)> =
-        sqlx::query_as("SELECT folder_id, note FROM clips WHERE uuid = ?")
-            .bind(uuid)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-    let (fid, note) = row.unwrap_or((None, None));
+    let row: Option<(Option<i64>, Option<String>, i64)> = sqlx::query_as(
+        "SELECT folder_id, note, COALESCE(unixepoch(created_at), 0) FROM clips WHERE uuid = ?",
+    )
+    .bind(uuid)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    let (fid, note, created_at) = row.unwrap_or((None, None, 0));
     let mut cache = SEARCH_CACHE.write();
     cache.insert(
         uuid.to_string(),
-        (
-            preview.to_lowercase(),
-            fid,
-            note.unwrap_or_default().to_lowercase(),
-        ),
+        SearchCacheEntry {
+            preview: preview.to_lowercase(),
+            folder_id: fid,
+            note: note.unwrap_or_default().to_lowercase(),
+            created_at,
+        },
     );
 }
 
@@ -181,7 +217,7 @@ pub async fn refresh_search_cache_for_clip(pool: &sqlx::SqlitePool, uuid: &str, 
 pub fn update_note_in_search_cache(uuid: &str, note: Option<&str>) {
     let mut cache = SEARCH_CACHE.write();
     if let Some(entry) = cache.get_mut(uuid) {
-        entry.2 = note.unwrap_or_default().to_lowercase();
+        entry.note = note.unwrap_or_default().to_lowercase();
     }
 }
 

@@ -1,25 +1,67 @@
-import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Settings } from '../types';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { useTheme } from '../hooks/useTheme';
+import { cmd } from '../commands';
 
 import { Toaster } from 'sonner';
 
 export function SettingsWindow() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const appWindow = useMemo(() => getCurrentWindow(), []);
 
   const effectiveTheme = useTheme(settings?.theme || 'system');
 
+  const refreshMaximized = useCallback(async () => {
+    try {
+      setIsMaximized(await appWindow.isMaximized());
+    } catch (e) {
+      console.error('Failed to read settings window state:', e);
+    }
+  }, [appWindow]);
+
   useEffect(() => {
-    invoke<Settings>('get_settings').then(setSettings).catch(console.error);
+    cmd.getSettings().then(setSettings).catch(console.error);
   }, []);
 
-  const handleClose = async () => {
-    const win = getCurrentWindow();
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+
+    refreshMaximized();
+    appWindow
+      .onResized(() => {
+        refreshMaximized();
+      })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((e) => console.error('Failed to listen for settings window resize:', e));
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [appWindow, refreshMaximized]);
+
+  const handleToggleMaximize = async () => {
     try {
-      await win.close();
+      await appWindow.toggleMaximize();
+      await refreshMaximized();
+    } catch (e) {
+      console.error('Failed to toggle settings window size:', e);
+    }
+  };
+
+  const handleClose = async () => {
+    try {
+      await appWindow.close();
     } catch (e) {
       console.error('Failed to close settings window:', e);
     }
@@ -31,7 +73,12 @@ export function SettingsWindow() {
 
   return (
     <div className="h-screen bg-background text-foreground">
-      <SettingsPanel settings={settings} onClose={handleClose} />
+      <SettingsPanel
+        settings={settings}
+        isMaximized={isMaximized}
+        onToggleMaximize={handleToggleMaximize}
+        onClose={handleClose}
+      />
       <Toaster richColors position="bottom-center" theme={effectiveTheme} />
     </div>
   );

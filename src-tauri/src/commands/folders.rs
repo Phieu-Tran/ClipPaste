@@ -199,7 +199,7 @@ pub async fn move_to_folder(
     {
         let mut cache = crate::clipboard::SEARCH_CACHE.write();
         if let Some(entry) = cache.get_mut(&clip_id) {
-            entry.1 = folder_id;
+            entry.folder_id = folder_id;
         }
     }
 
@@ -305,6 +305,6 @@ mod tests {
         let entry = cache
             .get("clip-kept-after-folder-delete")
             .expect("clip should remain searchable");
-        assert_eq!(entry.1, None);
+        assert_eq!(entry.folder_id, None);
     }
 }
