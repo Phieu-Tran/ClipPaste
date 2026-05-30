@@ -18,9 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Consistent confirm dialogs**: deletions in the Clips & Images tab and the "delete folder" action in the main window's context menu now use the styled `ConfirmDialog` instead of the native `window.confirm()` popup.
 - **Virtualized Clips & Images**: the clip list and the image grid (row-virtualized) now use `@tanstack/react-virtual`, so the tab stays smooth when many pages of items are loaded.
+- **Respects "reduce motion"**: when the OS "reduce motion" setting is on, looping/entrance animations are disabled and transitions become near-instant; the incognito indicator falls back to a static red ring so it stays visible.
+- **Clip list edge fade**: the horizontal list now fades its left/right edge whenever more clips are scrolled off-screen, hinting there's more to scroll (the scrollbar is hidden).
 
 ### Internal
 - New backend commands: `get_library_clips`, `save_clip_image_as`, `move_folder_clips`, `merge_folder`.
+- **Code-split Settings**: the Settings and Scratchpad windows, plus each Settings tab, are now lazy-loaded chunks. The main window's JS chunk dropped from ~480 kB to ~345 kB (clearing the >500 kB Vite warning) and opens faster.
+- **`Cargo.lock` is now committed** for reproducible release builds (the release workflow previously resolved fresh dependency versions on every run).
 - **Single IPC boundary**: remaining raw `invoke()` calls (ScratchpadWindow, ClipCard, useFolderPreview, useWindowLifecycle) now go through the typed `cmd.*` wrapper — raw `invoke` lives only in `commands.ts`.
 - **Frontend compile smoke test**: `frontend/src/smoke/settingsSmoke.tsx` renders `SettingsPanel` and `LibraryTab` so `tsc` catches basic prop/render breakage at build time.
 

@@ -371,4 +371,49 @@
   .animate-folder-accept {
     animation: folder-accept 0.7s ease-in-out infinite;
   }
+
+  /* Edge fade for the horizontal clip list — hints there is more to scroll
+     (the scrollbar is hidden). Applied dynamically based on scroll position. */
+  .fade-x-left {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 36px);
+    mask-image: linear-gradient(to right, transparent 0, black 36px);
+  }
+  .fade-x-right {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 36px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 36px), transparent 100%);
+  }
+  .fade-x-both {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      black 36px,
+      black calc(100% - 36px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      black 36px,
+      black calc(100% - 36px),
+      transparent 100%
+    );
+  }
+
+  /* Respect the OS "reduce motion" setting: near-instant transitions and no
+     looping animations. The incognito indicator falls back to a static red
+     ring (its glow is animation-only) so the paused state stays visible. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .animate-incognito-glow {
+      animation: none !important;
+      box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, 0.7);
+    }
+  }
 }

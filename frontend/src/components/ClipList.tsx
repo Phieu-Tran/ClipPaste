@@ -60,7 +60,18 @@ export function ClipList({
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [staggerKey, setStaggerKey] = useState(0);
+  const [edges, setEdges] = useState({ left: false, right: false });
   const prevClipsKeyRef = useRef('');
+
+  // Track scroll position to fade the edges that still have off-screen clips.
+  const updateEdges = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const left = scrollLeft > 8;
+    const right = scrollLeft + clientWidth < scrollWidth - 8;
+    setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
 
   // Stable callback refs — prevent re-creating inline closures per card on every render
   const onSelectClipRef = useRef(onSelectClip);
@@ -166,12 +177,23 @@ export function ClipList({
 
   // Infinite scroll — load more when near the end
   const handleScroll = useCallback(() => {
+    updateEdges();
     if (!containerRef.current || !hasMore || isLoading) return;
     const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
     if (scrollLeft + clientWidth >= scrollWidth - 300) {
       onLoadMore();
     }
-  }, [hasMore, isLoading, onLoadMore]);
+  }, [hasMore, isLoading, onLoadMore, updateEdges]);
+
+  // Recompute edge fades when the clip set changes or the window resizes.
+  useEffect(() => {
+    const raf = requestAnimationFrame(updateEdges);
+    window.addEventListener('resize', updateEdges);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', updateEdges);
+    };
+  }, [updateEdges, clips.length, staggerKey]);
 
   // Convert vertical wheel → horizontal scroll. Trackpad horizontal gestures work natively.
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -273,7 +295,14 @@ export function ClipList({
       aria-orientation="horizontal"
       className={clsx(
         'no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden transition-opacity duration-150',
-        isPreviewing && 'opacity-90'
+        isPreviewing && 'opacity-90',
+        edges.left && edges.right
+          ? 'fade-x-both'
+          : edges.left
+            ? 'fade-x-left'
+            : edges.right
+              ? 'fade-x-right'
+              : undefined
       )}
       onScroll={handleScroll}
       onWheel={handleWheel}

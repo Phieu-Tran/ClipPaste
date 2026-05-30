@@ -15,7 +15,8 @@ Thumbs.db
 
 # Rust
 target/
-Cargo.lock
+# Cargo.lock is committed for reproducible release builds (release.yml uses
+# fresh dependency resolution otherwise).
 
 # Logs
 *.log

@@ -14,7 +14,7 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useTheme } from '../hooks/useTheme';
 import { emit } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
@@ -27,13 +27,26 @@ import { useShortcutRecorder } from 'use-shortcut-recorder';
 import { clsx } from 'clsx';
 import { cmd } from '../commands';
 
-import { DashboardTab } from './settings/DashboardTab';
-import { GeneralTab } from './settings/GeneralTab';
-import { FoldersTab } from './settings/FoldersTab';
-import { HotkeysTab } from './settings/HotkeysTab';
-import { SyncTab } from './settings/SyncTab';
-import { LibraryTab } from './settings/LibraryTab';
-import { BackupTab } from './settings/BackupTab';
+// Tabs are lazy-loaded so each becomes its own chunk, fetched only when opened.
+const DashboardTab = lazy(() =>
+  import('./settings/DashboardTab').then((m) => ({ default: m.DashboardTab }))
+);
+const GeneralTab = lazy(() =>
+  import('./settings/GeneralTab').then((m) => ({ default: m.GeneralTab }))
+);
+const FoldersTab = lazy(() =>
+  import('./settings/FoldersTab').then((m) => ({ default: m.FoldersTab }))
+);
+const HotkeysTab = lazy(() =>
+  import('./settings/HotkeysTab').then((m) => ({ default: m.HotkeysTab }))
+);
+const SyncTab = lazy(() => import('./settings/SyncTab').then((m) => ({ default: m.SyncTab })));
+const LibraryTab = lazy(() =>
+  import('./settings/LibraryTab').then((m) => ({ default: m.LibraryTab }))
+);
+const BackupTab = lazy(() =>
+  import('./settings/BackupTab').then((m) => ({ default: m.BackupTab }))
+);
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -695,104 +708,110 @@ export function SettingsPanel({
                 </div>
               )}
 
-              {activeTab === 'dashboard' && (
-                <DashboardTab
-                  dashStats={dashStats}
-                  dashStatsError={dashStatsError}
-                  dashDate={dashDate}
-                  setDashDate={setDashDate}
-                  dashSearch={dashSearch}
-                  setDashSearch={setDashSearch}
-                  dashSourceApp={dashSourceApp}
-                  setDashSourceApp={setDashSourceApp}
-                  dashClips={dashClips}
-                  dashClipsLoading={dashClipsLoading}
-                  dashClipsHasMore={dashClipsHasMore}
-                  onLoadMoreDashClips={handleLoadMoreDashClips}
-                  onOpenStorageSettings={() => setActiveTab('general')}
-                  onExportBackup={handleExportBackup}
-                  onRemoveDuplicates={handleRemoveDuplicates}
-                  onRefreshStats={() => refreshDashboardStats(true)}
-                  onCheckDbIntegrity={handleCheckDbIntegrity}
-                />
-              )}
+              <Suspense
+                fallback={
+                  <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
+                }
+              >
+                {activeTab === 'dashboard' && (
+                  <DashboardTab
+                    dashStats={dashStats}
+                    dashStatsError={dashStatsError}
+                    dashDate={dashDate}
+                    setDashDate={setDashDate}
+                    dashSearch={dashSearch}
+                    setDashSearch={setDashSearch}
+                    dashSourceApp={dashSourceApp}
+                    setDashSourceApp={setDashSourceApp}
+                    dashClips={dashClips}
+                    dashClipsLoading={dashClipsLoading}
+                    dashClipsHasMore={dashClipsHasMore}
+                    onLoadMoreDashClips={handleLoadMoreDashClips}
+                    onOpenStorageSettings={() => setActiveTab('general')}
+                    onExportBackup={handleExportBackup}
+                    onRemoveDuplicates={handleRemoveDuplicates}
+                    onRefreshStats={() => refreshDashboardStats(true)}
+                    onCheckDbIntegrity={handleCheckDbIntegrity}
+                  />
+                )}
 
-              {activeTab === 'library' && (
-                <LibraryTab
-                  folders={folders}
-                  onDataChanged={handleLibraryDataChanged}
-                  requestConfirm={requestConfirm}
-                />
-              )}
+                {activeTab === 'library' && (
+                  <LibraryTab
+                    folders={folders}
+                    onDataChanged={handleLibraryDataChanged}
+                    requestConfirm={requestConfirm}
+                  />
+                )}
 
-              {activeTab === 'general' && (
-                <GeneralTab
-                  settings={settings}
-                  updateSetting={updateSetting}
-                  handleThemeChange={handleThemeChange}
-                  isRecordingMode={isRecordingMode}
-                  shortcut={shortcut}
-                  savedShortcut={savedShortcut}
-                  formatHotkey={formatHotkey}
-                  handleStartRecording={handleStartRecording}
-                  handleSaveHotkey={handleSaveHotkey}
-                  handleCancelRecording={handleCancelRecording}
-                  ignoredApps={ignoredApps}
-                  setIgnoredApps={setIgnoredApps}
-                  newIgnoredApp={newIgnoredApp}
-                  setNewIgnoredApp={setNewIgnoredApp}
-                  dataDirectory={dataDirectory}
-                  handleSelectDataDirectory={handleSelectDataDirectory}
-                  dashStats={dashStats}
-                  refreshDashboardStats={refreshDashboardStats}
-                  requestConfirm={requestConfirm}
-                  setHistorySize={setHistorySize}
-                  confirmClearHistory={confirmClearHistory}
-                  handleRemoveDuplicates={handleRemoveDuplicates}
-                  handleExportBackup={handleExportBackup}
-                  handleImportBackup={handleImportBackup}
-                  dataAction={dataAction}
-                  updateProgress={updateProgress}
-                  handleCheckUpdate={handleCheckUpdate}
-                  appVersion={appVersion}
-                />
-              )}
+                {activeTab === 'general' && (
+                  <GeneralTab
+                    settings={settings}
+                    updateSetting={updateSetting}
+                    handleThemeChange={handleThemeChange}
+                    isRecordingMode={isRecordingMode}
+                    shortcut={shortcut}
+                    savedShortcut={savedShortcut}
+                    formatHotkey={formatHotkey}
+                    handleStartRecording={handleStartRecording}
+                    handleSaveHotkey={handleSaveHotkey}
+                    handleCancelRecording={handleCancelRecording}
+                    ignoredApps={ignoredApps}
+                    setIgnoredApps={setIgnoredApps}
+                    newIgnoredApp={newIgnoredApp}
+                    setNewIgnoredApp={setNewIgnoredApp}
+                    dataDirectory={dataDirectory}
+                    handleSelectDataDirectory={handleSelectDataDirectory}
+                    dashStats={dashStats}
+                    refreshDashboardStats={refreshDashboardStats}
+                    requestConfirm={requestConfirm}
+                    setHistorySize={setHistorySize}
+                    confirmClearHistory={confirmClearHistory}
+                    handleRemoveDuplicates={handleRemoveDuplicates}
+                    handleExportBackup={handleExportBackup}
+                    handleImportBackup={handleImportBackup}
+                    dataAction={dataAction}
+                    updateProgress={updateProgress}
+                    handleCheckUpdate={handleCheckUpdate}
+                    appVersion={appVersion}
+                  />
+                )}
 
-              {activeTab === 'folders' && (
-                <FoldersTab
-                  folders={folders}
-                  newFolderName={newFolderName}
-                  setNewFolderName={setNewFolderName}
-                  editingFolderId={editingFolderId}
-                  setEditingFolderId={setEditingFolderId}
-                  renameValue={renameValue}
-                  setRenameValue={setRenameValue}
-                  loadFolders={loadFolders}
-                  requestConfirm={requestConfirm}
-                />
-              )}
+                {activeTab === 'folders' && (
+                  <FoldersTab
+                    folders={folders}
+                    newFolderName={newFolderName}
+                    setNewFolderName={setNewFolderName}
+                    editingFolderId={editingFolderId}
+                    setEditingFolderId={setEditingFolderId}
+                    renameValue={renameValue}
+                    setRenameValue={setRenameValue}
+                    loadFolders={loadFolders}
+                    requestConfirm={requestConfirm}
+                  />
+                )}
 
-              {activeTab === 'backup' && (
-                <BackupTab
-                  settings={settings}
-                  dashStats={dashStats}
-                  dataDirectory={dataDirectory}
-                  dataAction={dataAction}
-                  handleSelectDataDirectory={handleSelectDataDirectory}
-                  handleExportBackup={handleExportBackup}
-                  handleImportBackup={handleImportBackup}
-                  handleRemoveDuplicates={handleRemoveDuplicates}
-                  confirmClearHistory={confirmClearHistory}
-                  handleCheckDbIntegrity={handleCheckDbIntegrity}
-                  refreshDashboardStats={refreshDashboardStats}
-                  setHistorySize={setHistorySize}
-                  requestConfirm={requestConfirm}
-                />
-              )}
+                {activeTab === 'backup' && (
+                  <BackupTab
+                    settings={settings}
+                    dashStats={dashStats}
+                    dataDirectory={dataDirectory}
+                    dataAction={dataAction}
+                    handleSelectDataDirectory={handleSelectDataDirectory}
+                    handleExportBackup={handleExportBackup}
+                    handleImportBackup={handleImportBackup}
+                    handleRemoveDuplicates={handleRemoveDuplicates}
+                    confirmClearHistory={confirmClearHistory}
+                    handleCheckDbIntegrity={handleCheckDbIntegrity}
+                    refreshDashboardStats={refreshDashboardStats}
+                    setHistorySize={setHistorySize}
+                    requestConfirm={requestConfirm}
+                  />
+                )}
 
-              {activeTab === 'hotkeys' && <HotkeysTab currentHotkey={settings.hotkey} />}
+                {activeTab === 'hotkeys' && <HotkeysTab currentHotkey={settings.hotkey} />}
 
-              {activeTab === 'sync' && <SyncTab />}
+                {activeTab === 'sync' && <SyncTab />}
+              </Suspense>
             </div>
           </div>
         </div>
