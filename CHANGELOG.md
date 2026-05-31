@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Settings → Diagnostics tab**: shows the app's RAM (working set + private bytes) and dev-helper processes (node/pnpm/PowerShell), total clip count, image/icon cache sizes, and a "clear cache" button. Includes a captured **error log** — `console.error`, uncaught `window` errors, and unhandled promise rejections (kept in localStorage, last 80, with a clear button).
-- **Go to # in the main clip list**: type a clip number to jump to and select it (within the currently-loaded clips).
 - **Image viewer**: full-size image preview now supports wheel zoom, click-drag panning while zoomed, Fit / 100% buttons, Copy, Save as…, and left/right navigation between images.
 - **Clips & Images — filter & sort**: filter by kind / pinned / date, sort by newest / oldest / largest / most used / smart, plus dedicated Smart and Frequent virtual folders.
 - **Settings → Backup tab**: export / import a backup, choose the data folder, view storage stats with a large-size warning, run a DB integrity check, remove duplicates, clean up old images, and clear history.

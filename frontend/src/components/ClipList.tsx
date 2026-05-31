@@ -4,7 +4,7 @@ import { clsx } from 'clsx';
 import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 import { LAYOUT, TOTAL_COLUMN_WIDTH } from '../constants';
-import { CornerDownRight, FolderOpen, Hash, SearchX, Settings } from 'lucide-react';
+import { FolderOpen, SearchX, Settings } from 'lucide-react';
 
 interface ClipListProps {
   clips: ClipboardItem[];
@@ -61,8 +61,6 @@ export function ClipList({
   const containerRef = useRef<HTMLDivElement>(null);
   const [staggerKey, setStaggerKey] = useState(0);
   const [edges, setEdges] = useState({ left: false, right: false });
-  const [jumpValue, setJumpValue] = useState('');
-  const [jumpError, setJumpError] = useState('');
   const prevClipsKeyRef = useRef('');
 
   // Track scroll position to fade the edges that still have off-screen clips.
@@ -139,24 +137,6 @@ export function ClipList({
     horizontal: true,
     overscan: 5,
   });
-
-  const handleJumpToNumber = useCallback(
-    (event?: React.FormEvent) => {
-      event?.preventDefault();
-      const target = Number.parseInt(jumpValue, 10);
-      if (!Number.isFinite(target) || target < 1 || target > clips.length) {
-        setJumpError(`1-${clips.length}`);
-        return;
-      }
-
-      setJumpError('');
-      const clip = clips[target - 1];
-      if (!clip) return;
-      stableOnSelect(clip.id);
-      virtualizer.scrollToIndex(target - 1, { align: 'center' });
-    },
-    [clips, jumpValue, stableOnSelect, virtualizer]
-  );
 
   // Scroll selected card into view when navigating with arrow keys
   useEffect(() => {
@@ -308,133 +288,95 @@ export function ClipList({
   }
 
   return (
-    <div className="relative h-full w-full">
-      {clips.length > 1 && (
-        <form
-          onSubmit={handleJumpToNumber}
-          className="absolute right-3 top-2 z-30 flex items-center gap-1 rounded-md border border-border/70 bg-background/90 p-1 shadow-lg shadow-black/10 backdrop-blur"
-        >
-          <Hash size={13} className="text-muted-foreground" />
-          <input
-            value={jumpValue}
-            onChange={(event) => {
-              setJumpValue(event.target.value);
-              setJumpError('');
-            }}
-            type="number"
-            min={1}
-            max={clips.length}
-            inputMode="numeric"
-            placeholder="#"
-            aria-label="Go to clip number"
-            title={`Go to clip number 1-${clips.length}`}
-            className="h-7 w-14 rounded border border-border bg-background px-2 text-xs tabular-nums outline-none focus:border-primary"
-          />
-          <button
-            type="submit"
-            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title="Jump"
-          >
-            <CornerDownRight size={14} />
-          </button>
-          {jumpError && (
-            <span className="px-1 text-[10px] font-medium tabular-nums text-amber-300">
-              {jumpError}
-            </span>
-          )}
-        </form>
+    <div
+      ref={containerRef}
+      role="listbox"
+      aria-label="Clipboard history"
+      aria-orientation="horizontal"
+      className={clsx(
+        'no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden transition-opacity duration-150',
+        isPreviewing && 'opacity-90',
+        edges.left && edges.right
+          ? 'fade-x-both'
+          : edges.left
+            ? 'fade-x-left'
+            : edges.right
+              ? 'fade-x-right'
+              : undefined
       )}
-
+      onScroll={handleScroll}
+      onWheel={handleWheel}
+      style={{
+        scrollPaddingLeft: LAYOUT.SIDE_PADDING,
+      }}
+    >
+      {/* Virtual spacer — the full scrollable width */}
       <div
-        ref={containerRef}
-        role="listbox"
-        aria-label="Clipboard history"
-        aria-orientation="horizontal"
-        className={clsx(
-          'no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden transition-opacity duration-150',
-          isPreviewing && 'opacity-90',
-          edges.left && edges.right
-            ? 'fade-x-both'
-            : edges.left
-              ? 'fade-x-left'
-              : edges.right
-                ? 'fade-x-right'
-                : undefined
-        )}
-        onScroll={handleScroll}
-        onWheel={handleWheel}
+        key={staggerKey}
+        className={clsx('relative h-full', isPreviewing && 'animate-preview-refresh')}
         style={{
-          scrollPaddingLeft: LAYOUT.SIDE_PADDING,
+          width: virtualizer.getTotalSize() + LAYOUT.SIDE_PADDING * 2,
+          minWidth: '100%',
         }}
       >
-        {/* Virtual spacer — the full scrollable width */}
-        <div
-          key={staggerKey}
-          className={clsx('relative h-full', isPreviewing && 'animate-preview-refresh')}
-          style={{
-            width: virtualizer.getTotalSize() + LAYOUT.SIDE_PADDING * 2,
-            minWidth: '100%',
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualItem, viewIndex) => {
-            const clip = clips[virtualItem.index];
-            return (
-              <div
-                key={clip.id}
-                className={clsx(
-                  'absolute flex items-center',
-                  isSearching ? undefined : 'animate-stagger-in'
-                )}
-                style={{
-                  top: 0,
-                  left: virtualItem.start + LAYOUT.SIDE_PADDING,
-                  width: virtualItem.size,
-                  height: '100%',
-                  ...(isSearching ? {} : { animationDelay: `${viewIndex * 30}ms` }),
-                }}
-                data-stagger-key={staggerKey}
-              >
-                <ClipCard
-                  clip={clip}
-                  isSelected={selectedClipId === clip.id}
-                  displayIndex={virtualItem.index + 1}
-                  isMultiSelected={selectedClipIds?.has(clip.id) ?? false}
-                  multiSelectIndex={
-                    selectedClipIds?.has(clip.id) ? multiSelectOrder.get(clip.id) : undefined
-                  }
-                  onSelect={(e) => stableOnSelect(clip.id, e)}
-                  onPaste={() => stableOnPaste(clip.id)}
-                  onCopy={() => stableOnCopy(clip.id)}
-                  onPin={() => stableOnPin(clip.id)}
-                  showPin={showPin}
-                  folderName={
-                    isSearching && folderMap && selectedFolder
-                      ? clip.folder_id !== selectedFolder
-                        ? clip.folder_id
-                          ? folderMap[clip.folder_id]
-                          : 'All'
-                        : null
-                      : isSearching && folderMap && !selectedFolder && clip.folder_id
+        {virtualizer.getVirtualItems().map((virtualItem, viewIndex) => {
+          const clip = clips[virtualItem.index];
+          return (
+            <div
+              key={clip.id}
+              className={clsx(
+                'absolute flex items-center',
+                isSearching ? undefined : 'animate-stagger-in'
+              )}
+              style={{
+                top: 0,
+                left: virtualItem.start + LAYOUT.SIDE_PADDING,
+                width: virtualItem.size,
+                height: '100%',
+                ...(isSearching ? {} : { animationDelay: `${viewIndex * 30}ms` }),
+              }}
+              data-stagger-key={staggerKey}
+            >
+              <ClipCard
+                clip={clip}
+                isSelected={selectedClipId === clip.id}
+                displayIndex={virtualItem.index + 1}
+                isMultiSelected={selectedClipIds?.has(clip.id) ?? false}
+                multiSelectIndex={
+                  selectedClipIds?.has(clip.id) ? multiSelectOrder.get(clip.id) : undefined
+                }
+                onSelect={(e) => stableOnSelect(clip.id, e)}
+                onPaste={() => stableOnPaste(clip.id)}
+                onCopy={() => stableOnCopy(clip.id)}
+                onPin={() => stableOnPin(clip.id)}
+                showPin={showPin}
+                folderName={
+                  isSearching && folderMap && selectedFolder
+                    ? clip.folder_id !== selectedFolder
+                      ? clip.folder_id
                         ? folderMap[clip.folder_id]
-                        : null
-                  }
-                  onNativeDragStart={stableOnDragStart}
-                  onContextMenu={(e: React.MouseEvent) => stableOnContextMenu(e, clip.id)}
-                  searchQuery={searchQuery}
-                  isCopied={copiedClipId === clip.id}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Loading indicator at the end */}
-        {isLoading && clips.length > 0 && (
-          <div className="flex h-full min-w-[100px] items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-          </div>
-        )}
+                        : 'All'
+                      : null
+                    : isSearching && folderMap && !selectedFolder && clip.folder_id
+                      ? folderMap[clip.folder_id]
+                      : null
+                }
+                onNativeDragStart={stableOnDragStart}
+                onContextMenu={(e: React.MouseEvent) => stableOnContextMenu(e, clip.id)}
+                searchQuery={searchQuery}
+                isCopied={copiedClipId === clip.id}
+              />
+            </div>
+          );
+        })}
       </div>
+
+      {/* Loading indicator at the end */}
+      {isLoading && clips.length > 0 && (
+        <div className="flex h-full min-w-[100px] items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+        </div>
+      )}
     </div>
   );
 }
