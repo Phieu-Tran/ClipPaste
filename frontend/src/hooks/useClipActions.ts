@@ -36,6 +36,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
   } = opts;
 
   const isDeletingRef = useRef(false);
+  const isLoadingRef = useRef(false);
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
 
@@ -48,11 +49,13 @@ export function useClipActions(opts: UseClipActionsOpts) {
       searchOverride: string = '',
       typeFilter: string | null = null
     ) => {
+      if (append && isLoadingRef.current) return;
+
       const thisGen = ++loadGenRef.current;
+      isLoadingRef.current = true;
+      setIsLoading(true);
 
       try {
-        if (clipsRef.current.length === 0) setIsLoading(true);
-
         const currentOffset = append ? clipsRef.current.length : 0;
 
         let data: AppClipboardItem[];
@@ -106,6 +109,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
         console.error('Failed to load clips:', error);
       } finally {
         if (loadGenRef.current === thisGen) {
+          isLoadingRef.current = false;
           setIsLoading(false);
         }
       }

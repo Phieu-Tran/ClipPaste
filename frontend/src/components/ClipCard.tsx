@@ -126,6 +126,7 @@ function ImageWithFallback({
 interface ClipCardProps {
   clip: ClipboardItem;
   isSelected: boolean;
+  displayIndex?: number;
   isMultiSelected?: boolean;
   multiSelectIndex?: number;
   onSelect: (e?: React.MouseEvent) => void;
@@ -222,6 +223,7 @@ function getImageSizeFromMeta(metadata: string | null): string | null {
 export const ClipCard = memo(function ClipCard({
   clip,
   isSelected,
+  displayIndex,
   isMultiSelected,
   multiSelectIndex,
   onSelect,
@@ -489,7 +491,7 @@ export const ClipCard = memo(function ClipCard({
       data-clip-id={clip.id}
       role="option"
       aria-selected={isSelected}
-      aria-label={`${title} clip: ${clip.preview?.substring(0, 50) || clip.clip_type}. ${clip.is_sensitive ? 'Sensitive content.' : ''}`}
+      aria-label={`${displayIndex ? `Clip #${displayIndex}. ` : ''}${title} clip: ${clip.preview?.substring(0, 50) || clip.clip_type}. ${clip.is_sensitive ? 'Sensitive content.' : ''}`}
       style={{
         width: TOTAL_COLUMN_WIDTH - LAYOUT.CARD_GAP,
         height: `calc(100% - ${LAYOUT.CARD_VERTICAL_PADDING * 2}px)`,
@@ -529,6 +531,14 @@ export const ClipCard = memo(function ClipCard({
             'flex flex-shrink-0 items-center gap-1.5 border-b border-black/10 px-2.5 py-2 dark:border-black/20'
           )}
         >
+          {displayIndex != null && (
+            <span
+              className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded bg-black/20 px-1.5 text-[10px] font-black tabular-nums text-white/90 shadow-sm"
+              title={`Clip #${displayIndex}`}
+            >
+              #{displayIndex}
+            </span>
+          )}
           {sourceIcon && (
             <img
               src={`data:image/png;base64,${sourceIcon}`}
@@ -644,6 +654,7 @@ function areClipCardPropsEqual(prev: ClipCardProps, next: ClipCardProps): boolea
   return (
     prev.clip === next.clip &&
     prev.isSelected === next.isSelected &&
+    prev.displayIndex === next.displayIndex &&
     prev.isMultiSelected === next.isMultiSelected &&
     prev.multiSelectIndex === next.multiSelectIndex &&
     prev.showPin === next.showPin &&

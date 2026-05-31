@@ -10,6 +10,7 @@ import type {
   SyncStatus,
   SyncSettings,
   PickedApp,
+  RuntimeDiagnostics,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -178,6 +179,8 @@ export const cmd = {
   pickForegroundApp: (delayMs: number) => invoke<PickedApp>('pick_foreground_app', { delayMs }),
 
   checkDbIntegrity: () => invoke<string>('check_db_integrity'),
+
+  getRuntimeDiagnostics: () => invoke<RuntimeDiagnostics>('get_runtime_diagnostics'),
 
   // ---------------------------------------------------------------------------
   // Sync

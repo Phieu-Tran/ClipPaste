@@ -8,6 +8,7 @@ import {
   ClipboardList,
   BarChart3,
   Archive,
+  Activity,
   Keyboard,
   Cloud,
   CheckCircle2,
@@ -48,6 +49,9 @@ const LibraryTab = lazy(() =>
 const BackupTab = lazy(() =>
   import('./settings/BackupTab').then((m) => ({ default: m.BackupTab }))
 );
+const DiagnosticsTab = lazy(() =>
+  import('./settings/DiagnosticsTab').then((m) => ({ default: m.DiagnosticsTab }))
+);
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -56,7 +60,15 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type Tab = 'dashboard' | 'library' | 'general' | 'folders' | 'backup' | 'hotkeys' | 'sync';
+type Tab =
+  | 'dashboard'
+  | 'library'
+  | 'general'
+  | 'folders'
+  | 'backup'
+  | 'diagnostics'
+  | 'hotkeys'
+  | 'sync';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
 
@@ -655,6 +667,18 @@ export function SettingsPanel({
                 Backup
               </button>
               <button
+                onClick={() => setActiveTab('diagnostics')}
+                className={clsx(
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  activeTab === 'diagnostics'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )}
+              >
+                <Activity size={16} />
+                Diagnostics
+              </button>
+              <button
                 onClick={() => setActiveTab('hotkeys')}
                 className={clsx(
                   'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -686,7 +710,10 @@ export function SettingsPanel({
             <div
               className={clsx(
                 'mx-auto space-y-8',
-                activeTab === 'library' || activeTab === 'folders' || activeTab === 'backup'
+                activeTab === 'library' ||
+                  activeTab === 'folders' ||
+                  activeTab === 'backup' ||
+                  activeTab === 'diagnostics'
                   ? 'max-w-6xl'
                   : 'max-w-2xl'
               )}
@@ -811,6 +838,8 @@ export function SettingsPanel({
                     requestConfirm={requestConfirm}
                   />
                 )}
+
+                {activeTab === 'diagnostics' && <DiagnosticsTab />}
 
                 {activeTab === 'hotkeys' && <HotkeysTab currentHotkey={settings.hotkey} />}
 

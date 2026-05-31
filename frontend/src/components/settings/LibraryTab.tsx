@@ -488,6 +488,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [previewClip, setPreviewClip] = useState<ClipboardItem | null>(null);
   const loadSeqRef = useRef(0);
+  const loadingRef = useRef(false);
   const imageScrollRef = useRef<HTMLDivElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const [imageGridWidth, setImageGridWidth] = useState(0);
@@ -545,8 +546,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
   }, []);
 
   const loadPage = useCallback(
-    async (nextOffset: number, append: boolean) => {
+    async (nextOffset: number, append: boolean): Promise<boolean> => {
+      if (append && loadingRef.current) return false;
+
       const loadSeq = ++loadSeqRef.current;
+      loadingRef.current = true;
       setLoading(true);
       try {
         const data = await cmd.getLibraryClips({
@@ -560,14 +564,19 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           offset: nextOffset,
         });
 
-        if (loadSeq !== loadSeqRef.current) return;
+        if (loadSeq !== loadSeqRef.current) return false;
         setClips((prev) => (append ? [...prev, ...data] : data));
         setHasMore(data.length === PAGE_SIZE);
+        return true;
       } catch (e) {
-        if (loadSeq !== loadSeqRef.current) return;
+        if (loadSeq !== loadSeqRef.current) return false;
         toast.error(`Failed to load clips: ${e}`);
+        return false;
       } finally {
-        if (loadSeq === loadSeqRef.current) setLoading(false);
+        if (loadSeq === loadSeqRef.current) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
       }
     },
     [dateFilter, debouncedQuery, folderId, mode, pinFilter, sortOrder, typeFilter]
@@ -640,10 +649,10 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
   };
 
   const handleLoadMore = async () => {
-    if (loading) return;
+    if (loadingRef.current || loading || !hasMore) return;
     const nextOffset = offset + PAGE_SIZE;
-    setOffset(nextOffset);
-    await loadPage(nextOffset, true);
+    const loaded = await loadPage(nextOffset, true);
+    if (loaded) setOffset(nextOffset);
   };
 
   const handleBulkPin = async (pinned: boolean) => {
@@ -1046,7 +1055,8 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                         transform: `translateY(${virtualRow.start}px)`,
                       }}
                     >
-                      {rowClips.map((clip) => {
+                      {rowClips.map((clip, columnIndex) => {
+                        const displayIndex = start + columnIndex + 1;
                         const checked = selectedIds.has(clip.id);
                         const folderName = clip.folder_id
                           ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
@@ -1074,6 +1084,12 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                             >
                               <Check size={12} />
                             </button>
+                            <span
+                              className="absolute left-8 top-2 z-10 rounded bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground shadow-sm"
+                              title={`Clip #${displayIndex}`}
+                            >
+                              #{displayIndex}
+                            </span>
 
                             <div className="relative bg-black/20">
                               <LibraryThumb
@@ -1154,8 +1170,9 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
             </div>
           ) : (
             <div>
-              <div className="grid grid-cols-[24px_60px_minmax(0,1fr)_120px_116px_104px] gap-3 border-b border-border bg-background/30 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
+              <div className="grid grid-cols-[24px_44px_60px_minmax(0,1fr)_120px_116px_104px] gap-3 border-b border-border bg-background/30 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
                 <span />
+                <span>#</span>
                 <span>Type</span>
                 <span>Content</span>
                 <span>Details</span>
@@ -1180,7 +1197,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                         ref={listVirtualizer.measureElement}
                         data-index={virtualRow.index}
                         className={clsx(
-                          'group absolute left-0 top-0 grid w-full grid-cols-[24px_60px_minmax(0,1fr)_120px_116px_104px] items-center gap-3 border-b border-l-2 border-border/50 border-l-transparent px-3 py-2.5 transition-colors hover:bg-accent/30',
+                          'group absolute left-0 top-0 grid w-full grid-cols-[24px_44px_60px_minmax(0,1fr)_120px_116px_104px] items-center gap-3 border-b border-l-2 border-border/50 border-l-transparent px-3 py-2.5 transition-colors hover:bg-accent/30',
                           checked && 'border-l-primary bg-primary/[0.07]'
                         )}
                         style={{ transform: `translateY(${virtualRow.start}px)` }}
@@ -1197,6 +1214,12 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                         >
                           <Check size={11} />
                         </button>
+                        <span
+                          className="text-xs font-semibold tabular-nums text-muted-foreground/70"
+                          title={`Clip #${virtualRow.index + 1}`}
+                        >
+                          #{virtualRow.index + 1}
+                        </span>
 
                         <LibraryThumb
                           clip={clip}

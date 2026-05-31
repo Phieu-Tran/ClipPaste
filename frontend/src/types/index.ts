@@ -96,6 +96,19 @@ export interface ImageCleanupPreview {
   newest_created_at: string | null;
 }
 
+export interface ProcessMemoryInfo {
+  pid: number;
+  name: string;
+  working_set_bytes: number;
+  private_bytes: number;
+}
+
+export interface RuntimeDiagnostics {
+  generated_at: string;
+  app: ProcessMemoryInfo;
+  dev_helpers: ProcessMemoryInfo[];
+}
+
 export interface SyncStatus {
   state: 'disabled' | 'idle' | 'syncing' | 'error' | 'offline';
   last_sync_at: string | null;

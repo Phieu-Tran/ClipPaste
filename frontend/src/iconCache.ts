@@ -50,6 +50,18 @@ export function getIcon(app: string | null): string | null {
   return cached.icon;
 }
 
+export function clearIconCache() {
+  _cache.clear();
+  cacheBytes = 0;
+}
+
+export function getIconCacheStats() {
+  return {
+    entries: _cache.size,
+    estimatedBytes: Math.max(0, cacheBytes),
+  };
+}
+
 export function stripIcons(clips: ClipboardItem[]): ClipboardItem[] {
   return clips.map((c) => ({ ...c, source_icon: null }));
 }

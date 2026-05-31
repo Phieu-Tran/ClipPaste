@@ -544,7 +544,8 @@ pub fn run_app() {
             commands::reorder_scratchpads,
             commands::toggle_scratchpad_pin,
             commands::scratchpad_paste,
-            commands::capture_prev_foreground
+            commands::capture_prev_foreground,
+            commands::get_runtime_diagnostics
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
