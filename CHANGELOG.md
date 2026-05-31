@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.10.15] - 2026-05-31
 
 ### Added
 - **Settings → Diagnostics tab**: shows the app's RAM (working set + private bytes) and dev-helper processes (node/pnpm/PowerShell), total clip count, image/icon cache sizes, and a "clear cache" button. Includes a captured **error log** — `console.error`, uncaught `window` errors, and unhandled promise rejections (kept in localStorage, last 80, with a clear button).
