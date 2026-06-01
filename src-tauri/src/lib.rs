@@ -494,6 +494,8 @@ pub fn run_app() {
             commands::save_settings,
             commands::preview_old_image_cleanup,
             commands::cleanup_old_image_clips,
+            commands::preview_old_clip_cleanup,
+            commands::cleanup_old_clips,
             commands::hide_window,
             commands::get_clipboard_history_size,
             commands::clear_clipboard_history,

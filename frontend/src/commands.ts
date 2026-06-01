@@ -6,6 +6,7 @@ import type {
   ScratchpadItem,
   DashboardStats,
   DashClip,
+  ClipCleanupPreview,
   ImageCleanupPreview,
   SyncStatus,
   SyncSettings,
@@ -171,6 +172,11 @@ export const cmd = {
     invoke<ImageCleanupPreview>('preview_old_image_cleanup', { days }),
 
   cleanupOldImageClips: (days: number) => invoke<number>('cleanup_old_image_clips', { days }),
+
+  previewOldClipCleanup: (days: number) =>
+    invoke<ClipCleanupPreview>('preview_old_clip_cleanup', { days }),
+
+  cleanupOldClips: (days: number) => invoke<number>('cleanup_old_clips', { days }),
 
   pickFile: () => invoke<string>('pick_file'),
 

@@ -18,6 +18,16 @@ pub struct ImageCleanupPreview {
     pub newest_created_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ClipCleanupPreview {
+    pub days: i64,
+    pub count: i64,
+    pub bytes: u64,
+    pub protected_count: i64,
+    pub oldest_created_at: Option<String>,
+    pub newest_created_at: Option<String>,
+}
+
 fn is_hex_hash(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
@@ -1088,6 +1098,129 @@ impl Database {
             .sum();
 
         ImageCleanupPreview {
+            days,
+            count: rows.len() as i64,
+            bytes,
+            protected_count,
+            oldest_created_at,
+            newest_created_at,
+        }
+    }
+
+    /// Delete non-image clips older than `days` (only unprotected: not in folder, not pinned).
+    /// Image clips have a separate cleanup path because they also own files on disk.
+    pub async fn delete_old_clips(&self, days: i64) -> u64 {
+        if days <= 0 {
+            return 0;
+        }
+
+        let mut tx = match self.pool.begin().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                log::error!("delete_old_clips: failed to begin tx: {}", e);
+                return 0;
+            }
+        };
+
+        let doomed: Vec<String> = sqlx::query_scalar(
+            "SELECT uuid FROM clips
+             WHERE clip_type != 'image'
+             AND folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
+
+        if doomed.is_empty() {
+            let _ = tx.commit().await;
+            return 0;
+        }
+
+        let result = sqlx::query(
+            "DELETE FROM clips
+             WHERE clip_type != 'image'
+             AND folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .execute(&mut *tx)
+        .await;
+
+        let removed = match result {
+            Ok(r) => r.rows_affected(),
+            Err(e) => {
+                log::error!("delete_old_clips failed: {}", e);
+                let _ = tx.rollback().await;
+                return 0;
+            }
+        };
+
+        if let Err(e) = tx.commit().await {
+            log::error!("delete_old_clips: commit failed: {}", e);
+            return 0;
+        }
+
+        for uuid in &doomed {
+            crate::clipboard::remove_from_search_cache(uuid);
+        }
+
+        if removed > 0 {
+            let _ = sqlx::query("PRAGMA optimize").execute(&self.pool).await;
+            log::info!("DB: Deleted {} clips older than {} days", removed, days);
+        }
+
+        removed
+    }
+
+    /// Preview what delete_old_clips would remove without changing data.
+    pub async fn preview_old_clip_cleanup(&self, days: i64) -> ClipCleanupPreview {
+        let days = days.clamp(1, 3650);
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT COALESCE(LENGTH(content), 0), CAST(created_at AS TEXT) FROM clips
+             WHERE clip_type != 'image'
+             AND folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+
+        let protected_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM clips
+             WHERE clip_type != 'image'
+             AND (folder_id IS NOT NULL OR is_pinned = 1)
+             AND created_at < datetime('now', '-' || ? || ' days')",
+        )
+        .bind(days)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+
+        let mut bytes = 0u64;
+        let mut oldest_created_at: Option<String> = None;
+        let mut newest_created_at: Option<String> = None;
+        for (size, created_at) in &rows {
+            bytes = bytes.saturating_add((*size).max(0) as u64);
+            if oldest_created_at
+                .as_ref()
+                .map(|oldest| created_at < oldest)
+                .unwrap_or(true)
+            {
+                oldest_created_at = Some(created_at.clone());
+            }
+            if newest_created_at
+                .as_ref()
+                .map(|newest| created_at > newest)
+                .unwrap_or(true)
+            {
+                newest_created_at = Some(created_at.clone());
+            }
+        }
+
+        ClipCleanupPreview {
             days,
             count: rows.len() as i64,
             bytes,

@@ -242,6 +242,24 @@ pub async fn preview_old_image_cleanup(
 }
 
 #[tauri::command]
+pub async fn cleanup_old_clips(
+    days: i64,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<u64, String> {
+    let days = days.clamp(1, 3650);
+    Ok(db.delete_old_clips(days).await)
+}
+
+#[tauri::command]
+pub async fn preview_old_clip_cleanup(
+    days: i64,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<crate::database::ClipCleanupPreview, String> {
+    let days = days.clamp(1, 3650);
+    Ok(db.preview_old_clip_cleanup(days).await)
+}
+
+#[tauri::command]
 pub async fn get_clipboard_history_size(
     db: tauri::State<'_, Arc<Database>>,
 ) -> Result<i64, String> {

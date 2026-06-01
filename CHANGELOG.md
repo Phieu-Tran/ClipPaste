@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Old clip cleanup (Backup tab)**: a day-based cleanup for non-image clips, mirroring the old-image cleanup. The day threshold deletes only non-image clips older than N days; clips newer than the threshold, pinned clips, and clips inside folders are never removed. Includes a preview (count, reclaimable size, and how many old clips are protected) and a confirm step before deleting. The day field defaults to the "Auto-delete clips after" setting, falling back to 30 days when that setting is Never/0 (images default to the "Delete images older than" setting).
+
+---
+
 ## [1.10.17] - 2026-06-01
 
 ### Fixed

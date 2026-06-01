@@ -96,6 +96,15 @@ export interface ImageCleanupPreview {
   newest_created_at: string | null;
 }
 
+export interface ClipCleanupPreview {
+  days: number;
+  count: number;
+  bytes: number;
+  protected_count: number;
+  oldest_created_at: string | null;
+  newest_created_at: string | null;
+}
+
 export interface ProcessMemoryInfo {
   pid: number;
   name: string;
