@@ -86,6 +86,10 @@ fn dev_helper_processes() -> Vec<ProcessMemoryInfo> {
         TH32CS_SNAPPROCESS,
     };
 
+    if !cfg!(debug_assertions) {
+        return Vec::new();
+    }
+
     const HELPERS: &[&str] = &["node.exe", "pnpm.exe", "powershell.exe"];
 
     let snapshot = match unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) } {

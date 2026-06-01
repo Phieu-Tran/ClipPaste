@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.17] - 2026-06-01
+
+### Fixed
+- **Search ranking now actually applies folder/pin/note priority (FTS path)**: previously the full-text path led its ordering with raw `bm25`, whose near-unique relevance score per row meant the folder → pin → note tiebreakers almost never took effect, so a clip in a folder wasn't floated above equally-matching clips that weren't. Results are now bucketed by coarse relevance (starts-with → contains → other) first, then folder → pinned → note (A–Z), with `bm25` and recency as the in-bucket tiebreakers.
+
+---
+
 ## [1.10.16] - 2026-05-31
 
 ### Fixed
