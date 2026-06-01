@@ -1117,12 +1117,24 @@ async fn search_clips_fts(
     if folder_filter.is_some() {
         sql.push_str(" AND c.folder_id = ?");
     }
+    // Coarse relevance bucket FIRST (mirrors the in-memory cache tiers): raw
+    // bm25 is a near-unique float per row, so if it led the ORDER BY the
+    // folder/pin/note keys after it would almost never break a tie. Bucket by
+    // "starts with the query" / "contains the query" so equally-relevant
+    // matches are then ordered by folder -> pin -> note, with bm25 as the
+    // fine-grained tiebreak inside each bucket.
     sql.push_str(
-        " ORDER BY bm25(clips_fts),
+        " ORDER BY
+            CASE
+              WHEN LOWER(c.text_preview) LIKE ? THEN 0
+              WHEN LOWER(c.text_preview) LIKE ? THEN 1
+              ELSE 2
+            END,
             CASE WHEN c.folder_id IS NOT NULL THEN 0 ELSE 1 END,
             c.is_pinned DESC,
             CASE WHEN c.note IS NOT NULL AND c.note != '' THEN 0 ELSE 1 END,
             CASE WHEN c.note IS NOT NULL AND c.note != '' THEN c.note ELSE NULL END,
+            bm25(clips_fts),
             c.created_at DESC
           LIMIT ? OFFSET ?",
     );
@@ -1134,6 +1146,9 @@ async fn search_clips_fts(
     if let Some(fid) = folder_filter {
         query = query.bind(fid);
     }
+    query = query
+        .bind(format!("{}%", query_lower))
+        .bind(format!("%{}%", query_lower));
     query = query.bind(limit).bind(offset);
 
     match query.fetch_all(pool).await {
