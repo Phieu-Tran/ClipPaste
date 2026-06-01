@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.16] - 2026-05-31
+
+### Fixed
+- **Search result ranking**: when a search query is present, results are now ordered by relevance → clip in a folder → pinned → has a note (notes A–Z) → newest, across both the FTS and in-memory cache paths. An empty search in the "All" view still lists newest-first as before. The in-memory search cache now tracks each clip's pin/note state and is kept in sync on pin toggles, note edits, and pulled sync changes.
+
+### Changed
+- **Diagnostics tab** now shows **Private RAM** as the headline figure (with working set as the detail), since private bytes better reflects the app's real memory use.
+- Update check: the "Checking for updates…" toast is now always dismissed (including on error), and download progress is clamped to 100%.
+
+---
+
 ## [1.10.15] - 2026-05-31
 
 ### Added
