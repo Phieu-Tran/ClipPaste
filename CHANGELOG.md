@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Search ranking now actually applies folder/pin/note priority (FTS path)**: previously the full-text path led its ordering with raw `bm25`, whose near-unique relevance score per row meant the folder → pin → note tiebreakers almost never took effect, so a clip in a folder wasn't floated above equally-matching clips that weren't. Results are now bucketed by coarse relevance (starts-with → contains → other) first, then folder → pinned → note (A–Z), with `bm25` and recency as the in-bucket tiebreakers.
+- **Diagnostics "Dev helpers" no longer mislabels unrelated processes**: the helper-process scan (node/pnpm/PowerShell) ran by name across the whole machine, so a release build could show Node processes belonging to other apps. It is now limited to debug/dev builds; release builds report no dev helpers.
 
 ---
 
