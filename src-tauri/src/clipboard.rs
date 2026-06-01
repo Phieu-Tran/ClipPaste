@@ -69,6 +69,7 @@ pub struct SearchCacheEntry {
     pub preview: String,
     pub folder_id: Option<i64>,
     pub note: String,
+    pub is_pinned: bool,
     pub created_at: i64,
 }
 
@@ -121,8 +122,8 @@ pub const DETECTION_RULES_VERSION: i64 = 2;
 /// Load all clip previews into memory for instant search.
 /// Capped at SEARCH_CACHE_MAX entries (most recent first) to bound memory usage.
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
-    let result = sqlx::query_as::<_, (String, String, Option<i64>, Option<String>, i64)>(
-        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note, COALESCE(unixepoch(created_at), 0)
+    let result = sqlx::query_as::<_, (String, String, Option<i64>, Option<String>, bool, i64)>(
+        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note, is_pinned, COALESCE(unixepoch(created_at), 0)
          FROM clips ORDER BY created_at DESC LIMIT ?"
     ).bind(SEARCH_CACHE_MAX as i64).fetch_all(pool).await;
     let rows = match result {
@@ -134,13 +135,14 @@ pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
     };
 
     let mut map = std::collections::HashMap::with_capacity(rows.len());
-    for (uuid, preview, fid, note, created_at) in rows {
+    for (uuid, preview, fid, note, is_pinned, created_at) in rows {
         map.insert(
             uuid,
             SearchCacheEntry {
                 preview: preview.to_lowercase(),
                 folder_id: fid,
                 note: note.unwrap_or_default().to_lowercase(),
+                is_pinned,
                 created_at,
             },
         );
@@ -166,13 +168,25 @@ pub fn add_to_search_cache_with_created_at(
     folder_id: Option<i64>,
     created_at: i64,
 ) {
+    add_to_search_cache_with_metadata(uuid, preview, folder_id, None, false, created_at);
+}
+
+pub fn add_to_search_cache_with_metadata(
+    uuid: &str,
+    preview: &str,
+    folder_id: Option<i64>,
+    note: Option<&str>,
+    is_pinned: bool,
+    created_at: i64,
+) {
     let mut cache = SEARCH_CACHE.write();
     cache.insert(
         uuid.to_string(),
         SearchCacheEntry {
             preview: preview.to_lowercase(),
             folder_id,
-            note: String::new(),
+            note: note.unwrap_or_default().to_lowercase(),
+            is_pinned,
             created_at,
         },
     );
@@ -198,14 +212,14 @@ pub fn remove_from_search_cache(uuid: &str) {
 /// Used by the re-copy self-heal path: if a clip's cache entry was missing or stale,
 /// re-copying the same content forces it back into the cache with current folder_id + note.
 pub async fn refresh_search_cache_for_clip(pool: &sqlx::SqlitePool, uuid: &str, preview: &str) {
-    let row: Option<(Option<i64>, Option<String>, i64)> = sqlx::query_as(
-        "SELECT folder_id, note, COALESCE(unixepoch(created_at), 0) FROM clips WHERE uuid = ?",
+    let row: Option<(Option<i64>, Option<String>, bool, i64)> = sqlx::query_as(
+        "SELECT folder_id, note, is_pinned, COALESCE(unixepoch(created_at), 0) FROM clips WHERE uuid = ?",
     )
     .bind(uuid)
     .fetch_optional(pool)
     .await
     .unwrap_or(None);
-    let (fid, note, created_at) = row.unwrap_or((None, None, 0));
+    let (fid, note, is_pinned, created_at) = row.unwrap_or((None, None, false, 0));
     let mut cache = SEARCH_CACHE.write();
     cache.insert(
         uuid.to_string(),
@@ -213,6 +227,7 @@ pub async fn refresh_search_cache_for_clip(pool: &sqlx::SqlitePool, uuid: &str, 
             preview: preview.to_lowercase(),
             folder_id: fid,
             note: note.unwrap_or_default().to_lowercase(),
+            is_pinned,
             created_at,
         },
     );
@@ -223,6 +238,14 @@ pub fn update_note_in_search_cache(uuid: &str, note: Option<&str>) {
     let mut cache = SEARCH_CACHE.write();
     if let Some(entry) = cache.get_mut(uuid) {
         entry.note = note.unwrap_or_default().to_lowercase();
+    }
+}
+
+/// Update a clip's pin state in the search cache.
+pub fn update_pin_in_search_cache(uuid: &str, is_pinned: bool) {
+    let mut cache = SEARCH_CACHE.write();
+    if let Some(entry) = cache.get_mut(uuid) {
+        entry.is_pinned = is_pinned;
     }
 }
 

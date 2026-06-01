@@ -139,9 +139,9 @@ export function DiagnosticsTab() {
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           icon={Activity}
-          label="App RAM"
-          value={formatBytes(diagnostics?.app.working_set_bytes ?? 0)}
-          detail={`Private ${formatBytes(diagnostics?.app.private_bytes ?? 0)}`}
+          label="Private RAM"
+          value={formatBytes(diagnostics?.app.private_bytes ?? 0)}
+          detail={`Working set ${formatBytes(diagnostics?.app.working_set_bytes ?? 0)}`}
         />
         <StatCard
           icon={HardDrive}

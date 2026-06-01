@@ -829,10 +829,12 @@ pub(crate) async fn apply_delta(
                 .execute(&db.pool).await?;
             }
         }
-        crate::clipboard::add_to_search_cache_with_created_at(
+        crate::clipboard::add_to_search_cache_with_metadata(
             &clip.uuid,
             &clip.text_preview,
             folder_id,
+            clip.note.as_deref(),
+            clip.is_pinned,
             crate::clipboard::sync_timestamp(&clip.created_at),
         );
         report.pulled_clips += 1;

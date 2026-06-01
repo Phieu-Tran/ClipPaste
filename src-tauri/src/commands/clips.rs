@@ -1056,7 +1056,15 @@ async fn search_clips_filtered_sql(
         }
         sql.push(')');
     }
-    sql.push_str(" ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?");
+    sql.push_str(
+        " ORDER BY
+            CASE WHEN folder_id IS NOT NULL THEN 0 ELSE 1 END,
+            is_pinned DESC,
+            CASE WHEN note IS NOT NULL AND note != '' THEN 0 ELSE 1 END,
+            CASE WHEN note IS NOT NULL AND note != '' THEN note ELSE NULL END,
+            created_at DESC
+          LIMIT ? OFFSET ?",
+    );
 
     let mut query = sqlx::query_as::<_, Clip>(&sql);
     if let Some(subtype) = subtype_bind {
@@ -1109,7 +1117,15 @@ async fn search_clips_fts(
     if folder_filter.is_some() {
         sql.push_str(" AND c.folder_id = ?");
     }
-    sql.push_str(" ORDER BY bm25(clips_fts), c.created_at DESC LIMIT ? OFFSET ?");
+    sql.push_str(
+        " ORDER BY bm25(clips_fts),
+            CASE WHEN c.folder_id IS NOT NULL THEN 0 ELSE 1 END,
+            c.is_pinned DESC,
+            CASE WHEN c.note IS NOT NULL AND c.note != '' THEN 0 ELSE 1 END,
+            CASE WHEN c.note IS NOT NULL AND c.note != '' THEN c.note ELSE NULL END,
+            c.created_at DESC
+          LIMIT ? OFFSET ?",
+    );
 
     let mut query = sqlx::query_as::<_, Clip>(&sql).bind(match_query);
     if let Some(subtype) = subtype_bind {
@@ -1185,6 +1201,8 @@ struct SearchMatch {
     folder_id: Option<i64>,
     tier: u8,
     starts_with: bool,
+    is_pinned: bool,
+    note: String,
     created_at: i64,
 }
 
@@ -1195,6 +1213,8 @@ impl SearchMatch {
             folder_id: entry.folder_id,
             tier,
             starts_with: entry.preview.starts_with(query),
+            is_pinned: entry.is_pinned,
+            note: entry.note.clone(),
             created_at: entry.created_at,
         }
     }
@@ -1216,6 +1236,14 @@ fn search_folder_rank(fid: Option<i64>, folder_filter: Option<i64>) -> u8 {
     }
 }
 
+fn search_note_rank(note: &str) -> u8 {
+    if note.is_empty() {
+        1
+    } else {
+        0
+    }
+}
+
 fn paginate_search_matches(
     mut matched: Vec<SearchMatch>,
     folder_filter: Option<i64>,
@@ -1234,6 +1262,15 @@ fn paginate_search_matches(
             .then_with(|| {
                 search_folder_rank(a.folder_id, folder_filter)
                     .cmp(&search_folder_rank(b.folder_id, folder_filter))
+            })
+            .then_with(|| b.is_pinned.cmp(&a.is_pinned))
+            .then_with(|| search_note_rank(&a.note).cmp(&search_note_rank(&b.note)))
+            .then_with(|| {
+                if a.note.is_empty() || b.note.is_empty() {
+                    std::cmp::Ordering::Equal
+                } else {
+                    a.note.cmp(&b.note)
+                }
             })
             .then_with(|| b.created_at.cmp(&a.created_at))
             .then_with(|| a.uuid.cmp(&b.uuid))
@@ -1257,6 +1294,26 @@ mod tests {
             folder_id: None,
             tier,
             starts_with,
+            is_pinned: false,
+            note: String::new(),
+            created_at,
+        }
+    }
+
+    fn search_match_with_priority(
+        uuid: &str,
+        folder_id: Option<i64>,
+        is_pinned: bool,
+        note: &str,
+        created_at: i64,
+    ) -> SearchMatch {
+        SearchMatch {
+            uuid: uuid.to_string(),
+            folder_id,
+            tier: 0,
+            starts_with: false,
+            is_pinned,
+            note: note.to_string(),
             created_at,
         }
     }
@@ -1291,6 +1348,28 @@ mod tests {
         assert_eq!(
             paginate_search_matches(matched, None, 2, 2),
             vec!["aaa-old"]
+        );
+    }
+
+    #[test]
+    fn paginate_search_matches_prioritizes_folder_pin_and_note_tiebreakers() {
+        let matched = vec![
+            search_match_with_priority("plain-pinned-new", None, true, "", 50),
+            search_match_with_priority("folder-plain-old", Some(1), false, "", 10),
+            search_match_with_priority("folder-pinned-plain", Some(1), true, "", 20),
+            search_match_with_priority("folder-pinned-zeta-note", Some(1), true, "zeta", 30),
+            search_match_with_priority("folder-pinned-alpha-note", Some(1), true, "alpha", 40),
+        ];
+
+        assert_eq!(
+            paginate_search_matches(matched, None, 5, 0),
+            vec![
+                "folder-pinned-alpha-note",
+                "folder-pinned-zeta-note",
+                "folder-pinned-plain",
+                "folder-plain-old",
+                "plain-pinned-new"
+            ]
         );
     }
 
@@ -1496,6 +1575,10 @@ pub async fn bulk_set_pin(
     }
     let result = q.execute(pool).await.map_err(|e| e.to_string())?;
 
+    for id in &ids {
+        crate::clipboard::update_pin_in_search_cache(id, pinned);
+    }
+
     Ok(result.rows_affected() as i64)
 }
 
@@ -1511,6 +1594,8 @@ pub async fn toggle_pin(id: String, db: tauri::State<'_, Arc<Database>>) -> Resu
         .fetch_one(pool)
         .await
         .map_err(|e| e.to_string())?;
+
+    crate::clipboard::update_pin_in_search_cache(&id, is_pinned);
 
     Ok(is_pinned)
 }

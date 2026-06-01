@@ -146,7 +146,7 @@ export function SettingsPanel({
   };
 
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    updateSettings({ [key]: value });
+    return updateSettings({ [key]: value });
   };
 
   const handleThemeChange = (newTheme: string) => {
@@ -326,8 +326,8 @@ export function SettingsPanel({
   } | null>(null);
 
   const handleCheckUpdate = async () => {
+    const loadingToast = toast.loading('Checking for updates...');
     try {
-      const loadingToast = toast.loading('Checking for updates...');
       const update = await check();
       toast.dismiss(loadingToast);
 
@@ -349,7 +349,9 @@ export function SettingsPanel({
                   } else if (event.event === 'Progress') {
                     downloadedBytes += event.data.chunkLength;
                     const percent =
-                      totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+                      totalBytes > 0
+                        ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))
+                        : 0;
                     setUpdateProgress({ percent, downloaded: downloadedBytes, total: totalBytes });
                   } else if (event.event === 'Finished') {
                     setUpdateProgress({ percent: 100, downloaded: totalBytes, total: totalBytes });
@@ -370,6 +372,7 @@ export function SettingsPanel({
         toast.success('You are on the latest version.');
       }
     } catch (e) {
+      toast.dismiss(loadingToast);
       toast.error(`Check failed: ${e}`);
     }
   };
