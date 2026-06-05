@@ -1,6 +1,6 @@
 {
   "name": "clippaste",
-  "version": "1.10.17",
+  "version": "1.10.18",
   "description": "A beautiful clipboard history manager for Windows",
   "type": "module",
   "license": "GPL-3.0",
@@ -8,14 +8,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1",
+    "tauri": "tauri",
     "format": "prettier --write \"frontend/src/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"frontend/src/**/*.{ts,tsx,css}\"",
     "test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1 -Mode all",
     "test:be": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1 -Mode be",
     "test:fe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1 -Mode fe",
     "kill": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/kill-dev.ps1",
-    "dev:clean": "pnpm tauri dev"
+    "dev:clean": "pnpm kill && pnpm tauri dev"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.23",

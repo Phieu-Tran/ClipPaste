@@ -59,6 +59,8 @@ export const cmd = {
 
   pasteClip: (id: string) => invoke<void>('paste_clip', { id }),
 
+  pasteClips: (ids: string[]) => invoke<void>('paste_clips', { ids }),
+
   copyClip: (id: string) => invoke<void>('copy_clip', { id }),
 
   deleteClip: (id: string) => invoke<void>('delete_clip', { id }),

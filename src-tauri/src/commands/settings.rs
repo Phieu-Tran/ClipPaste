@@ -184,6 +184,14 @@ pub async fn save_settings(
     if let Some(hotkey) = settings.get("hotkey").and_then(|v| v.as_str()) {
         // Validate hotkey format before saving
         if Shortcut::from_str(hotkey).is_ok() {
+            let scratchpad_hotkey = db
+                .get_setting("scratchpad_hotkey")
+                .await
+                .map_err(|e| e.to_string())?
+                .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+            if hotkey.eq_ignore_ascii_case(&scratchpad_hotkey) {
+                return Err("Main hotkey conflicts with scratchpad hotkey".to_string());
+            }
             save_setting_value(pool, "hotkey", hotkey).await?;
         } else {
             return Err(format!("Invalid hotkey format: {}", hotkey));
@@ -452,8 +460,25 @@ pub async fn register_global_shortcut(
         .await
         .map_err(|e| e.to_string())?
         .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+    let previous_hotkey = db
+        .get_setting("hotkey")
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
 
-    register_app_shortcuts(app, db.inner().clone(), &hotkey, &scratchpad_hotkey)
+    register_app_shortcuts(app, db.inner().clone(), &hotkey, &scratchpad_hotkey)?;
+    if let Err(e) = save_setting_value(&db.pool, "hotkey", &hotkey).await {
+        let _ = register_app_shortcuts(
+            app,
+            db.inner().clone(),
+            &previous_hotkey,
+            &scratchpad_hotkey,
+        );
+        return Err(e);
+    }
+    crate::clipboard::load_settings_cache(&db.pool).await;
+
+    Ok(())
 }
 
 #[tauri::command]

@@ -480,6 +480,7 @@ pub fn run_app() {
             commands::get_clip_image_data_url,
             commands::save_clip_image_as,
             commands::paste_clip,
+            commands::paste_clips,
             commands::copy_clip,
             commands::delete_clip,
             commands::move_to_folder,

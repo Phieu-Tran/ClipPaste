@@ -1,7 +1,9 @@
 use crate::models::{Clip, ClipboardItem};
 use std::path::Path;
 use tauri::AppHandle;
-use tauri_plugin_clipboard_x::{start_listening, stop_listening, write_image, write_text};
+use tauri_plugin_clipboard_x::{
+    start_listening, stop_listening, write_files, write_image, write_text,
+};
 
 /// Convert a Clip DB row to a ClipboardItem for the frontend.
 /// For images: returns the absolute file path for non-preview operations.
@@ -146,6 +148,52 @@ pub async fn clipboard_write_image(
 
     if !last_err.is_empty() {
         return Err(format!("Failed to write clipboard image: {}", last_err));
+    }
+
+    Ok(())
+}
+
+/// Write files to clipboard with retry logic, managing listener stop/start.
+/// This is used for batch image paste so target apps receive a multi-file clipboard payload.
+pub async fn clipboard_write_files(
+    app: &AppHandle,
+    files: &[String],
+    content_hash: &str,
+) -> Result<(), String> {
+    let _guard = crate::clipboard::CLIPBOARD_SYNC.lock().await;
+
+    crate::clipboard::set_ignore_hash(content_hash.to_string());
+    crate::clipboard::set_last_stable_hash(content_hash.to_string());
+
+    if let Err(e) = stop_listening().await {
+        log::error!("Failed to stop listener: {}", e);
+    }
+
+    let mut last_err = String::new();
+    for i in 0..5 {
+        match write_files(files.to_vec()).await {
+            Ok(_) => {
+                last_err.clear();
+                break;
+            }
+            Err(e) => {
+                last_err = e.to_string();
+                log::warn!(
+                    "Clipboard files write attempt {} failed: {}. Retrying...",
+                    i + 1,
+                    last_err
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+    }
+
+    if let Err(e) = start_listening(app.clone()).await {
+        log::error!("Failed to restart listener: {}", e);
+    }
+
+    if !last_err.is_empty() {
+        return Err(format!("Failed to write clipboard files: {}", last_err));
     }
 
     Ok(())

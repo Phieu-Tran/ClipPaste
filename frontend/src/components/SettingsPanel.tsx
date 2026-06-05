@@ -126,15 +126,25 @@ export function SettingsPanel({
     if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
     setSaveStatus('saving');
 
+    const hotkeyChanged =
+      typeof updates.hotkey === 'string' && updates.hotkey !== prevSettings.hotkey;
+
     try {
+      if (hotkeyChanged) {
+        await cmd.registerGlobalShortcut(newSettings.hotkey);
+      }
+
       await cmd.saveSettings(newSettings);
       await emit('settings-changed', newSettings);
-
-      if (updates.hotkey) {
-        await cmd.registerGlobalShortcut(updates.hotkey);
-      }
     } catch (error) {
       console.error(`Failed to save settings:`, error);
+      if (hotkeyChanged) {
+        try {
+          await cmd.registerGlobalShortcut(prevSettings.hotkey);
+        } catch (rollbackError) {
+          console.error('Failed to restore previous hotkey:', rollbackError);
+        }
+      }
       setSettings(prevSettings); // Rollback on failure
       setSaveStatus('error');
       toast.error(`Failed to save settings`);

@@ -1,5 +1,6 @@
 use super::helpers::{
-    check_auto_paste_and_hide, clip_to_item_async, clipboard_write_image, clipboard_write_text,
+    check_auto_paste_and_hide, clip_to_item_async, clipboard_write_files, clipboard_write_image,
+    clipboard_write_text,
 };
 use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
@@ -676,6 +677,78 @@ fn is_safe_image_filename(filename: &str) -> bool {
         && !filename.contains('/')
 }
 
+async fn fetch_clip_for_clipboard(
+    pool: &sqlx::SqlitePool,
+    id: &str,
+) -> Result<Option<Clip>, String> {
+    sqlx::query_as(
+        "SELECT id, uuid, clip_type, content, text_preview, content_hash,
+                folder_id, is_deleted, source_app, '' as source_icon, metadata,
+                created_at, last_accessed, last_pasted_at, is_pinned,
+                subtype, note, paste_count, is_sensitive, updated_at
+         FROM clips WHERE uuid = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+fn batch_content_hash(clips: &[Clip]) -> String {
+    let mut hasher = Sha256::new();
+    for clip in clips {
+        hasher.update(clip.content_hash.as_bytes());
+        hasher.update([0]);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn image_paths_for_clips(
+    clips: &[Clip],
+    images_dir: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    let mut paths = Vec::with_capacity(clips.len());
+    for clip in clips {
+        let filename = String::from_utf8_lossy(&clip.content).into_owned();
+        if !is_safe_image_filename(&filename) {
+            return Err("Invalid image filename".to_string());
+        }
+        let image_path = images_dir.join(&filename);
+        if !image_path.exists() {
+            return Err("Image file not found".to_string());
+        }
+        paths.push(image_path.to_string_lossy().to_string());
+    }
+    Ok(paths)
+}
+
+async fn mark_clips_pasted(pool: &sqlx::SqlitePool, uuids: &[String]) {
+    if uuids.is_empty() {
+        return;
+    }
+
+    let placeholders = uuids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "UPDATE clips SET created_at = CURRENT_TIMESTAMP, last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1, updated_at = CURRENT_TIMESTAMP WHERE uuid IN ({})",
+        placeholders
+    );
+    let mut query = sqlx::query(&sql);
+    for uuid in uuids {
+        query = query.bind(uuid);
+    }
+    if let Err(e) = query.execute(pool).await {
+        log::warn!("Failed to update batch paste metadata: {}", e);
+    }
+
+    let pasted_at = chrono::Utc::now().timestamp();
+    let mut cache = crate::clipboard::SEARCH_CACHE.write();
+    for uuid in uuids {
+        if let Some(entry) = cache.get_mut(uuid) {
+            entry.created_at = pasted_at;
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn paste_clip(
     id: String,
@@ -736,6 +809,77 @@ pub async fn paste_clip(
         }
         None => Err("Clip not found".to_string()),
     }
+}
+
+#[tauri::command]
+pub async fn paste_clips(
+    ids: Vec<String>,
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let pool = &db.pool;
+    let mut clips = Vec::with_capacity(ids.len());
+    for id in &ids {
+        let Some(clip) = fetch_clip_for_clipboard(pool, id).await? else {
+            return Err("Clip not found".to_string());
+        };
+        clips.push(clip);
+    }
+
+    let has_images = clips.iter().any(|clip| clip.clip_type == "image");
+    let has_text = clips.iter().any(|clip| clip.clip_type != "image");
+    if has_images && has_text {
+        return Err("Select either text clips or image clips, not both".to_string());
+    }
+
+    let uuids = clips
+        .iter()
+        .map(|clip| clip.uuid.clone())
+        .collect::<Vec<_>>();
+
+    if has_images {
+        let paths = image_paths_for_clips(&clips, &db.images_dir)?;
+        let content_hash = if clips.len() == 1 {
+            clips[0].content_hash.clone()
+        } else {
+            batch_content_hash(&clips)
+        };
+
+        if paths.len() == 1 {
+            clipboard_write_image(&app, &paths[0], &content_hash).await?;
+        } else {
+            clipboard_write_files(&app, &paths, &content_hash).await?;
+        }
+
+        mark_clips_pasted(pool, &uuids).await;
+        let content = if paths.len() == 1 {
+            "[Image]"
+        } else {
+            "[Images]"
+        };
+        let _ = window.emit("clipboard-write", content);
+    } else {
+        let content = clips
+            .iter()
+            .map(|clip| String::from_utf8_lossy(&clip.content).into_owned())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        clipboard_write_text(&app, &content, &content_hash).await?;
+        mark_clips_pasted(pool, &uuids).await;
+        let _ = window.emit("clipboard-write", &content);
+    }
+
+    check_auto_paste_and_hide(&window);
+    Ok(())
 }
 
 #[tauri::command]

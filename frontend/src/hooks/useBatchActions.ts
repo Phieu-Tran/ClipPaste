@@ -101,20 +101,24 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
   const handleBulkPaste = useCallback(async () => {
     if (selectedClipIds.size === 0) return;
     const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
-    const textsInOrder = displayedClips
-      .filter((c) => selectedClipIds.has(c.id) && c.clip_type !== 'image')
-      .map((c) => c.content);
-    if (textsInOrder.length === 0) {
-      toast.error('No text clips selected');
+    const selectedClipsInOrder = displayedClips.filter((c) => selectedClipIds.has(c.id));
+    if (selectedClipsInOrder.length === 0) {
       return;
     }
+    const hasImages = selectedClipsInOrder.some((c) => c.clip_type === 'image');
+    const hasText = selectedClipsInOrder.some((c) => c.clip_type !== 'image');
+    if (hasImages && hasText) {
+      toast.error('Select only text clips or only image clips');
+      return;
+    }
+
     try {
-      await cmd.pasteText(textsInOrder.join('\n'));
+      await cmd.pasteClips(selectedClipsInOrder.map((c) => c.id));
       setSelectedClipIds(new Set());
       setSelectedClipId(null);
     } catch (error) {
       console.error('Bulk paste failed:', error);
-      toast.error('Failed to paste');
+      toast.error(error ? String(error) : 'Failed to paste');
     }
   }, [
     selectedClipIds,
