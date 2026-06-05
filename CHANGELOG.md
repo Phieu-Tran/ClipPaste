@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.10.18] - 2026-06-05
 
 ### Added
+- **Batch paste for images**: selecting multiple image clips and pasting now writes them to the clipboard as a file list (in display order) and auto-pastes, so apps that accept multiple files/images from the clipboard (chat, email, file targets) receive all of them. A single selected image still pastes as a bitmap. Mixing text and image clips is rejected, since there's no reliable clipboard format to paste both in order across apps. (Some editors that only accept a single bitmap may still receive just one image or no file list.)
 - **Old clip cleanup (Backup tab)**: a day-based cleanup for non-image clips, mirroring the old-image cleanup. The day threshold deletes only non-image clips older than N days; clips newer than the threshold, pinned clips, and clips inside folders are never removed. Includes a preview (count, reclaimable size, and how many old clips are protected) and a confirm step before deleting. The day field defaults to the "Auto-delete clips after" setting, falling back to 30 days when that setting is Never/0 (images default to the "Delete images older than" setting).
+
+### Changed
+- Saving a new global hotkey now registers it *before* persisting and rolls back to the previous hotkey if registration fails, so a hotkey that can't be registered is never saved.
 
 ---
 
