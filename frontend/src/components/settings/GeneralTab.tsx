@@ -76,73 +76,156 @@ const INTERFACE_THEMES = [
     id: 'default',
     label: 'Default',
     description: 'Balanced ClipPaste look',
+    category: 'Balanced',
     swatches: ['#6d28d9', '#2b2d30', '#171a1e'],
   },
   {
     id: 'glass',
     label: 'Glass',
     description: 'Bright translucent depth',
+    category: 'Balanced',
     swatches: ['#22d3ee', '#1d4ed8', '#0f172a'],
   },
   {
     id: 'graphite',
     label: 'Graphite',
     description: 'Focused neutral contrast',
+    category: 'Focus',
     swatches: ['#10b981', '#2f3338', '#121417'],
   },
   {
     id: 'ember',
     label: 'Ember',
     description: 'Warm command surface',
+    category: 'Balanced',
     swatches: ['#f97316', '#3a2a25', '#151821'],
   },
   {
     id: 'mint',
     label: 'Mint',
     description: 'Clean calm highlight',
+    category: 'Balanced',
     swatches: ['#14b8a6', '#12342f', '#0b1720'],
   },
   {
     id: 'mono',
     label: 'Mono',
     description: 'Technical blue-gray',
+    category: 'Focus',
     swatches: ['#3b82f6', '#2a2d31', '#111318'],
   },
   {
     id: 'aurora',
     label: 'Aurora',
     description: 'Cool glow, high clarity',
+    category: 'Balanced',
     swatches: ['#06b6d4', '#8b5cf6', '#10202a'],
   },
   {
     id: 'cobalt',
     label: 'Cobalt',
     description: 'Blue control surface',
+    category: 'Balanced',
     swatches: ['#2563eb', '#f59e0b', '#0f172a'],
   },
   {
     id: 'rose',
     label: 'Rose',
     description: 'Soft warm highlight',
+    category: 'Balanced',
     swatches: ['#e11d48', '#fb7185', '#21141a'],
   },
   {
     id: 'solar',
     label: 'Solar',
     description: 'Bright productive contrast',
+    category: 'Balanced',
     swatches: ['#ca8a04', '#0ea5e9', '#1c1917'],
   },
   {
     id: 'forest',
     label: 'Forest',
     description: 'Calm green workspace',
+    category: 'Focus',
     swatches: ['#16a34a', '#84cc16', '#111b14'],
   },
   {
     id: 'circuit',
     label: 'Circuit',
     description: 'Sharp terminal energy',
+    category: 'Focus',
     swatches: ['#84cc16', '#22c55e', '#08110c'],
+  },
+  {
+    id: 'cyber',
+    label: 'Cyber',
+    description: 'Cyan magenta pulse',
+    category: 'Colorful',
+    swatches: ['#22d3ee', '#f472b6', '#0b1020'],
+  },
+  {
+    id: 'synthwave',
+    label: 'Synth',
+    description: 'Retro neon warmth',
+    category: 'Colorful',
+    swatches: ['#a855f7', '#fb7185', '#f59e0b'],
+  },
+  {
+    id: 'candy',
+    label: 'Candy',
+    description: 'Pink mint pop',
+    category: 'Colorful',
+    swatches: ['#ec4899', '#5eead4', '#fdf2f8'],
+  },
+  {
+    id: 'ocean',
+    label: 'Ocean',
+    description: 'Deep blue clarity',
+    category: 'Colorful',
+    swatches: ['#0284c7', '#2dd4bf', '#082f49'],
+  },
+  {
+    id: 'sunset',
+    label: 'Sunset',
+    description: 'Orange rose violet',
+    category: 'Colorful',
+    swatches: ['#f97316', '#e11d48', '#6d28d9'],
+  },
+  {
+    id: 'royal',
+    label: 'Royal',
+    description: 'Cobalt gold polish',
+    category: 'Colorful',
+    swatches: ['#2563eb', '#facc15', '#312e81'],
+  },
+  {
+    id: 'ice',
+    label: 'Ice',
+    description: 'Bright cold glass',
+    category: 'Colorful',
+    swatches: ['#38bdf8', '#818cf8', '#f8fafc'],
+  },
+  {
+    id: 'bloom',
+    label: 'Bloom',
+    description: 'Fuchsia green spark',
+    category: 'Colorful',
+    swatches: ['#d946ef', '#22c55e', '#fef08a'],
+  },
+] as const;
+const QUICK_THEME_IDS = ['default', 'glass', 'aurora', 'cyber', 'sunset', 'candy'] as const;
+const THEME_GROUPS = [
+  {
+    label: 'Balanced',
+    themeIds: ['default', 'glass', 'ember', 'mint', 'aurora', 'cobalt', 'rose', 'solar'],
+  },
+  {
+    label: 'Colorful',
+    themeIds: ['cyber', 'synthwave', 'candy', 'ocean', 'sunset', 'royal', 'ice', 'bloom'],
+  },
+  {
+    label: 'Focus',
+    themeIds: ['graphite', 'mono', 'forest', 'circuit'],
   },
 ] as const;
 const FONT_OPTIONS = [
@@ -323,6 +406,12 @@ export function GeneralTab({
     return 'Fallback';
   };
 
+  const getThemeById = (themeId: string) =>
+    INTERFACE_THEMES.find((themeOption) => themeOption.id === themeId) ?? INTERFACE_THEMES[0];
+  const selectedInterfaceTheme = settings.interface_theme || 'default';
+  const selectedThemeOption = getThemeById(selectedInterfaceTheme);
+  const quickThemes = QUICK_THEME_IDS.map((themeId) => getThemeById(themeId));
+
   const handleAddIgnoredApp = async () => {
     if (!newIgnoredApp.trim()) return;
     try {
@@ -467,69 +556,114 @@ export function GeneralTab({
         <h3 className="text-sm font-medium text-muted-foreground">Appearance & Behavior</h3>
 
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Paintbrush size={14} className="text-primary" />
-            <span className="text-sm font-medium">Theme</span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Paintbrush size={14} className="text-primary" />
+              <span className="text-sm font-medium">Theme</span>
+            </div>
+            <span className="rounded-full border border-border bg-card/60 px-2 py-0.5 text-[11px] text-muted-foreground">
+              {INTERFACE_THEMES.length} presets
+            </span>
           </div>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-            {INTERFACE_THEMES.map((themeOption) => {
-              const selected = (settings.interface_theme || 'default') === themeOption.id;
-              return (
-                <button
-                  key={themeOption.id}
-                  type="button"
-                  onClick={() => updateSetting('interface_theme', themeOption.id)}
-                  className={`group min-h-[104px] overflow-hidden rounded-lg border text-left transition-all ${
-                    selected
-                      ? 'border-primary bg-primary/10 text-foreground shadow-lg shadow-primary/10 ring-1 ring-primary/40'
-                      : 'border-border bg-card/40 text-muted-foreground hover:border-primary/50 hover:bg-accent/40 hover:text-foreground'
-                  }`}
-                  aria-pressed={selected}
-                >
-                  <span className="block border-b border-border/50 bg-background/30 px-3 py-2">
-                    <span className="flex items-center justify-between gap-2">
-                      <span>
-                        <span className="block text-sm font-semibold">{themeOption.label}</span>
-                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
+          <div className="rounded-lg border border-border bg-card/30 p-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {quickThemes.map((themeOption) => {
+                const selected = selectedInterfaceTheme === themeOption.id;
+                return (
+                  <button
+                    key={themeOption.id}
+                    type="button"
+                    onClick={() => updateSetting('interface_theme', themeOption.id)}
+                    className={`group min-h-[68px] overflow-hidden rounded-md border p-2 text-left transition-all ${
+                      selected
+                        ? 'border-primary bg-primary/10 text-foreground shadow-lg shadow-primary/10 ring-1 ring-primary/40'
+                        : 'border-border/60 bg-background/35 text-muted-foreground hover:border-primary/50 hover:bg-accent/40 hover:text-foreground'
+                    }`}
+                    aria-pressed={selected}
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-semibold">
+                          {themeOption.label}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
                           {themeOption.description}
                         </span>
                       </span>
-                      <span className="flex overflow-hidden rounded-full border border-border/70">
-                        {themeOption.swatches.map((swatch) => (
+                      <span className="grid h-8 w-10 shrink-0 grid-cols-3 overflow-hidden rounded border border-border/70">
+                        {themeOption.swatches.map((swatch, index) => (
                           <span
-                            key={swatch}
-                            className="h-5 w-5"
+                            key={`${themeOption.id}-${swatch}`}
+                            className={index === 2 ? 'col-span-3' : ''}
                             style={{ backgroundColor: swatch }}
                           />
                         ))}
                       </span>
                     </span>
-                  </span>
-                  <span className="block px-3 py-2">
-                    <span className="mb-2 flex items-center gap-1.5">
+                    <span className="mt-2 flex items-center gap-1">
                       <span
-                        className="h-2.5 w-10 rounded-full"
+                        className="h-1.5 flex-1 rounded-full"
                         style={{ backgroundColor: themeOption.swatches[0] }}
                       />
                       <span
-                        className="h-2.5 w-5 rounded-full opacity-70"
-                        style={{ backgroundColor: themeOption.swatches[1] }}
-                      />
-                    </span>
-                    <span className="grid grid-cols-[1.2fr_0.8fr] gap-1.5">
-                      <span
-                        className="h-5 rounded-md opacity-80 transition-opacity group-hover:opacity-100"
+                        className="h-1.5 flex-1 rounded-full opacity-80"
                         style={{ backgroundColor: themeOption.swatches[1] }}
                       />
                       <span
-                        className="h-5 rounded-md opacity-65 transition-opacity group-hover:opacity-90"
+                        className="h-1.5 flex-1 rounded-full opacity-70"
                         style={{ backgroundColor: themeOption.swatches[2] }}
                       />
                     </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
+              <label className="block min-w-0">
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                  All themes
+                </span>
+                <select
+                  value={selectedInterfaceTheme}
+                  onChange={(e) => updateSetting('interface_theme', e.target.value)}
+                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {THEME_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.themeIds.map((themeId) => {
+                        const themeOption = getThemeById(themeId);
+                        return (
+                          <option key={themeOption.id} value={themeOption.id}>
+                            {themeOption.label}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex min-h-[62px] items-center gap-3 rounded-md border border-border/70 bg-background/35 px-3 py-2">
+                <span className="grid h-9 w-12 shrink-0 grid-cols-3 overflow-hidden rounded border border-border/70">
+                  {selectedThemeOption.swatches.map((swatch, index) => (
+                    <span
+                      key={`${selectedThemeOption.id}-${swatch}`}
+                      className={index === 2 ? 'col-span-3' : ''}
+                      style={{ backgroundColor: swatch }}
+                    />
+                  ))}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold">
+                    {selectedThemeOption.label}
                   </span>
-                </button>
-              );
-            })}
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {selectedThemeOption.category} - {selectedThemeOption.description}
+                  </span>
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 

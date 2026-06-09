@@ -225,6 +225,14 @@ pub async fn save_settings(
                 | "solar"
                 | "forest"
                 | "circuit"
+                | "cyber"
+                | "synthwave"
+                | "candy"
+                | "ocean"
+                | "sunset"
+                | "royal"
+                | "ice"
+                | "bloom"
         ) {
             save_setting_value(pool, "interface_theme", interface_theme).await?;
         } else {

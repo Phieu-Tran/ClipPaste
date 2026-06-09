@@ -13,6 +13,14 @@ const INTERFACE_THEME_CLASSES = [
   'theme-solar',
   'theme-forest',
   'theme-circuit',
+  'theme-cyber',
+  'theme-synthwave',
+  'theme-candy',
+  'theme-ocean',
+  'theme-sunset',
+  'theme-royal',
+  'theme-ice',
+  'theme-bloom',
 ];
 const FONT_CLASSES = ['font-system', 'font-rounded', 'font-mono-ui', 'font-readable'];
 const DENSITY_CLASSES = ['density-comfortable', 'density-compact'];
@@ -46,6 +54,14 @@ const INTERFACE_THEME_CLASS_BY_VALUE: Record<string, string> = {
   solar: 'theme-solar',
   forest: 'theme-forest',
   circuit: 'theme-circuit',
+  cyber: 'theme-cyber',
+  synthwave: 'theme-synthwave',
+  candy: 'theme-candy',
+  ocean: 'theme-ocean',
+  sunset: 'theme-sunset',
+  royal: 'theme-royal',
+  ice: 'theme-ice',
+  bloom: 'theme-bloom',
 };
 
 const FONT_CLASS_BY_VALUE: Record<string, string> = {

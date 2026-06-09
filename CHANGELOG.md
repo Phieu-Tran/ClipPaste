@@ -11,9 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Appearance themes**: Settings now includes theme presets, font choices, and UI density controls that apply live across the main window, Settings, and Scratchpad.
+- **Colorful theme presets**: added Cyber, Synth, Candy, Ocean, Sunset, Royal, Ice, and Bloom for brighter interface styles.
 - **Window Effect styles**: expanded Window Effect from native-only choices into compact style presets such as Auto Glow, Luxe, Frost, Prism, Vivid, Focus, and Neon. These combine the best supported native Windows backdrop with visible ClipPaste surface styling, so selecting an effect changes the app shell, cards, borders, and depth more clearly.
 
 ### Changed
+- **Theme picker UX**: the Appearance panel now shows a small quick-pick set plus a grouped dropdown for all presets, keeping extra themes available without turning Settings into a large wall of cards.
 - **Window vibrancy support detection**: bumped the custom `window-vibrancy` dependency to the latest `dev` rev, adding direct support-check APIs and more reliable Windows build fallback selection for Tabbed, Mica, Acrylic, Blur, and Clear.
 - **Backup import UX**: import results in the Backup tab now persist in-panel, with clearer messages for cancelled imports, missing `clipboard.db`, oversized backups, duplicate entries, unsafe paths, and unreadable zip files.
 
