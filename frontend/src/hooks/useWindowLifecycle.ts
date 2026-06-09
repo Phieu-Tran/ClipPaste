@@ -17,6 +17,10 @@ interface UseWindowLifecycleOptions {
   setSelectedClipIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setPreviewFolder: (folder: any) => void;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
+  setInterfaceTheme: React.Dispatch<React.SetStateAction<string>>;
+  setFontFamily: React.Dispatch<React.SetStateAction<string>>;
+  setUiDensity: React.Dispatch<React.SetStateAction<string>>;
+  setWindowEffect: React.Dispatch<React.SetStateAction<string>>;
 }
 
 export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
@@ -32,6 +36,10 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
     setSelectedClipIds,
     setPreviewFolder,
     setTheme,
+    setInterfaceTheme,
+    setFontFamily,
+    setUiDensity,
+    setWindowEffect,
   } = opts;
 
   const [windowFocusCount, setWindowFocusCount] = useState(0);
@@ -43,11 +51,19 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
       .getSettings()
       .then((s) => {
         setTheme(s.theme);
+        setInterfaceTheme(s.interface_theme);
+        setFontFamily(s.font_family);
+        setUiDensity(s.ui_density);
+        setWindowEffect(s.mica_effect || 'clear');
       })
       .catch(console.error);
 
     const unlisten = listen<Settings>('settings-changed', (event) => {
       setTheme(event.payload.theme);
+      setInterfaceTheme(event.payload.interface_theme);
+      setFontFamily(event.payload.font_family);
+      setUiDensity(event.payload.ui_density);
+      setWindowEffect(event.payload.mica_effect || 'clear');
     });
 
     return () => {

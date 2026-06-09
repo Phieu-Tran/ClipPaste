@@ -33,10 +33,14 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
+  const [interfaceTheme, setInterfaceTheme] = useState('default');
+  const [fontFamily, setFontFamily] = useState('system');
+  const [uiDensity, setUiDensity] = useState('comfortable');
+  const [windowEffect, setWindowEffect] = useState('clear');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const effectiveTheme = useTheme(theme);
+  const effectiveTheme = useTheme(theme, interfaceTheme, fontFamily, uiDensity, windowEffect);
 
   const appWindow = getCurrentWindow();
   const selectedFolderRef = useRef(selectedFolder);
@@ -188,6 +192,10 @@ function App() {
     setSelectedClipIds,
     setPreviewFolder,
     setTheme,
+    setInterfaceTheme,
+    setFontFamily,
+    setUiDensity,
+    setWindowEffect,
   });
 
   // Keep refreshCurrentFolderRef in sync for clipboard-change listener
@@ -430,7 +438,10 @@ function App() {
       />
 
       <div className="relative h-full w-full" style={{ padding: `${LAYOUT.WINDOW_PADDING}px` }}>
-        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]">
+        <div
+          data-app-shell
+          className="relative flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]"
+        >
           {/* Incognito mode: ambient red glow so the paused state is always visible */}
           {isIncognito && (
             <div

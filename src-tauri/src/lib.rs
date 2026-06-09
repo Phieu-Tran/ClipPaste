@@ -15,7 +15,8 @@ use window_vibrancy_macos::{apply_vibrancy, NSVisualEffectMaterial};
 
 #[cfg(target_os = "windows")]
 use window_vibrancy::{
-    apply_rounded_corners, clear_all_effects, switch_effect, CornerPreference, Effect,
+    apply_best_effect, apply_rounded_corners, clear_all_effects, switch_effect, CornerPreference,
+    Effect,
 };
 
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
@@ -493,6 +494,7 @@ pub fn run_app() {
             commands::get_folders,
             commands::get_settings,
             commands::save_settings,
+            commands::get_window_effect_support,
             commands::preview_old_image_cleanup,
             commands::cleanup_old_image_clips,
             commands::preview_old_clip_cleanup,
@@ -1052,27 +1054,41 @@ pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &
     {
         let dark = Some(matches!(theme, tauri::Theme::Dark));
 
-        // Use switch_effect for flicker-free transitions (clears old effect first)
+        // Style presets are frontend surface treatments mapped onto native Windows effects.
+        // Use switch_effect for flicker-free transitions (clears old effect first).
         match effect {
-            "clear" => {
+            "best" | "best_glow" => {
+                let _ = clear_all_effects(window);
+                let applied = apply_best_effect(window, dark);
+                log::info!("THEME:Applied best effect {:?} (Theme: {})", applied, theme);
+            }
+            "clear" | "clear_focus" | "clear_neon" => {
                 let _ = clear_all_effects(window);
                 log::info!("THEME:All effects cleared");
             }
-            "mica" => {
+            "mica" | "mica_soft" => {
                 let _ = switch_effect(window, Effect::Mica, dark, None);
                 log::info!("THEME:Applied Mica effect (Theme: {})", theme);
             }
-            "acrylic" => {
+            "acrylic" | "acrylic_frost" | "acrylic_tint" => {
                 let _ = switch_effect(window, Effect::Acrylic, dark, None);
                 log::info!("THEME:Applied Acrylic effect (Theme: {})", theme);
             }
-            "blur" => {
+            "blur" | "blur_vivid" => {
                 let _ = switch_effect(window, Effect::Blur, dark, None);
                 log::info!("THEME:Applied Blur effect (Theme: {})", theme);
             }
-            _ => {
+            "mica_alt" | "mica_alt_luxe" => {
                 let _ = switch_effect(window, Effect::Tabbed, dark, None);
                 log::info!("THEME:Applied Tabbed/Mica Alt effect (Theme: {})", theme);
+            }
+            _ => {
+                let _ = switch_effect(window, Effect::Tabbed, dark, None);
+                log::info!(
+                    "THEME:Unknown effect {}, falling back to Tabbed/Mica Alt (Theme: {})",
+                    effect,
+                    theme
+                );
             }
         }
 

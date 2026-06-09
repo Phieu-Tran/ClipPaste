@@ -56,6 +56,529 @@
     --sidebar-border: 240 3.7% 15.9%;
   }
 
+  .theme-glass {
+    --background: 205 38% 96%;
+    --foreground: 220 32% 12%;
+    --card: 204 45% 98%;
+    --card-foreground: 220 32% 12%;
+    --popover: 204 45% 98%;
+    --popover-foreground: 220 32% 12%;
+    --primary: 189 94% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 204 42% 90%;
+    --secondary-foreground: 220 32% 12%;
+    --muted: 204 38% 90%;
+    --muted-foreground: 212 16% 38%;
+    --accent: 190 52% 88%;
+    --accent-foreground: 220 32% 12%;
+    --border: 203 28% 82%;
+    --input: 203 34% 88%;
+    --ring: 189 94% 36%;
+    --sidebar-background: 205 38% 96%;
+    --sidebar-foreground: 220 32% 12%;
+    --sidebar-border: 203 28% 82%;
+  }
+
+  .dark.theme-glass {
+    --background: 214 30% 10%;
+    --foreground: 204 42% 96%;
+    --card: 214 26% 17%;
+    --card-foreground: 204 42% 96%;
+    --popover: 214 28% 13%;
+    --popover-foreground: 204 42% 96%;
+    --primary: 188 86% 48%;
+    --primary-foreground: 215 36% 10%;
+    --secondary: 214 22% 20%;
+    --secondary-foreground: 204 42% 96%;
+    --muted: 214 20% 18%;
+    --muted-foreground: 207 22% 70%;
+    --accent: 196 45% 24%;
+    --accent-foreground: 204 42% 96%;
+    --border: 210 24% 25%;
+    --input: 214 23% 22%;
+    --ring: 188 86% 48%;
+    --sidebar-background: 214 30% 10%;
+    --sidebar-foreground: 204 42% 96%;
+    --sidebar-border: 210 24% 25%;
+  }
+
+  .theme-graphite {
+    --background: 210 14% 96%;
+    --foreground: 210 18% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 210 18% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 18% 10%;
+    --primary: 160 62% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 12% 90%;
+    --secondary-foreground: 210 18% 10%;
+    --muted: 210 12% 90%;
+    --muted-foreground: 210 9% 39%;
+    --accent: 160 30% 88%;
+    --accent-foreground: 210 18% 10%;
+    --border: 210 12% 82%;
+    --input: 210 12% 88%;
+    --ring: 160 62% 32%;
+    --sidebar-background: 210 14% 96%;
+    --sidebar-foreground: 210 18% 10%;
+    --sidebar-border: 210 12% 82%;
+  }
+
+  .dark.theme-graphite {
+    --background: 220 7% 9%;
+    --foreground: 210 17% 94%;
+    --card: 220 7% 16%;
+    --card-foreground: 210 17% 94%;
+    --popover: 220 7% 12%;
+    --popover-foreground: 210 17% 94%;
+    --primary: 158 64% 42%;
+    --primary-foreground: 160 45% 8%;
+    --secondary: 220 6% 19%;
+    --secondary-foreground: 210 17% 94%;
+    --muted: 220 6% 18%;
+    --muted-foreground: 210 8% 66%;
+    --accent: 158 22% 22%;
+    --accent-foreground: 210 17% 94%;
+    --border: 220 6% 24%;
+    --input: 220 6% 22%;
+    --ring: 158 64% 42%;
+    --sidebar-background: 220 7% 9%;
+    --sidebar-foreground: 210 17% 94%;
+    --sidebar-border: 220 6% 24%;
+  }
+
+  .theme-ember {
+    --background: 42 35% 96%;
+    --foreground: 220 24% 12%;
+    --card: 40 40% 99%;
+    --card-foreground: 220 24% 12%;
+    --popover: 40 40% 99%;
+    --popover-foreground: 220 24% 12%;
+    --primary: 17 86% 47%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 38 32% 88%;
+    --secondary-foreground: 220 24% 12%;
+    --muted: 38 28% 88%;
+    --muted-foreground: 27 13% 40%;
+    --accent: 31 56% 86%;
+    --accent-foreground: 220 24% 12%;
+    --border: 36 24% 80%;
+    --input: 36 28% 87%;
+    --ring: 17 86% 47%;
+    --sidebar-background: 42 35% 96%;
+    --sidebar-foreground: 220 24% 12%;
+    --sidebar-border: 36 24% 80%;
+  }
+
+  .dark.theme-ember {
+    --background: 225 12% 10%;
+    --foreground: 36 36% 94%;
+    --card: 224 11% 17%;
+    --card-foreground: 36 36% 94%;
+    --popover: 225 12% 12%;
+    --popover-foreground: 36 36% 94%;
+    --primary: 24 88% 55%;
+    --primary-foreground: 20 28% 10%;
+    --secondary: 224 10% 20%;
+    --secondary-foreground: 36 36% 94%;
+    --muted: 224 10% 18%;
+    --muted-foreground: 36 16% 68%;
+    --accent: 24 42% 24%;
+    --accent-foreground: 36 36% 94%;
+    --border: 224 9% 25%;
+    --input: 224 9% 22%;
+    --ring: 24 88% 55%;
+    --sidebar-background: 225 12% 10%;
+    --sidebar-foreground: 36 36% 94%;
+    --sidebar-border: 224 9% 25%;
+  }
+
+  .theme-mint {
+    --background: 168 30% 96%;
+    --foreground: 210 28% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 210 28% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 28% 12%;
+    --primary: 172 76% 31%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 168 28% 89%;
+    --secondary-foreground: 210 28% 12%;
+    --muted: 168 24% 89%;
+    --muted-foreground: 176 13% 38%;
+    --accent: 176 40% 86%;
+    --accent-foreground: 210 28% 12%;
+    --border: 170 19% 80%;
+    --input: 170 22% 87%;
+    --ring: 172 76% 31%;
+    --sidebar-background: 168 30% 96%;
+    --sidebar-foreground: 210 28% 12%;
+    --sidebar-border: 170 19% 80%;
+  }
+
+  .dark.theme-mint {
+    --background: 210 22% 9%;
+    --foreground: 166 38% 94%;
+    --card: 210 18% 16%;
+    --card-foreground: 166 38% 94%;
+    --popover: 210 20% 12%;
+    --popover-foreground: 166 38% 94%;
+    --primary: 166 75% 44%;
+    --primary-foreground: 170 48% 8%;
+    --secondary: 210 16% 20%;
+    --secondary-foreground: 166 38% 94%;
+    --muted: 210 15% 18%;
+    --muted-foreground: 170 17% 70%;
+    --accent: 170 33% 23%;
+    --accent-foreground: 166 38% 94%;
+    --border: 210 14% 25%;
+    --input: 210 14% 22%;
+    --ring: 166 75% 44%;
+    --sidebar-background: 210 22% 9%;
+    --sidebar-foreground: 166 38% 94%;
+    --sidebar-border: 210 14% 25%;
+  }
+
+  .theme-mono {
+    --background: 210 16% 97%;
+    --foreground: 220 13% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 10%;
+    --primary: 217 78% 44%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 12% 90%;
+    --secondary-foreground: 220 13% 10%;
+    --muted: 210 10% 90%;
+    --muted-foreground: 220 7% 40%;
+    --accent: 217 22% 88%;
+    --accent-foreground: 220 13% 10%;
+    --border: 210 9% 80%;
+    --input: 210 10% 87%;
+    --ring: 217 78% 44%;
+    --sidebar-background: 210 16% 97%;
+    --sidebar-foreground: 220 13% 10%;
+    --sidebar-border: 210 9% 80%;
+  }
+
+  .dark.theme-mono {
+    --background: 220 9% 8%;
+    --foreground: 210 9% 94%;
+    --card: 220 8% 15%;
+    --card-foreground: 210 9% 94%;
+    --popover: 220 8% 11%;
+    --popover-foreground: 210 9% 94%;
+    --primary: 214 84% 58%;
+    --primary-foreground: 220 24% 9%;
+    --secondary: 220 7% 18%;
+    --secondary-foreground: 210 9% 94%;
+    --muted: 220 7% 17%;
+    --muted-foreground: 220 6% 66%;
+    --accent: 214 24% 23%;
+    --accent-foreground: 210 9% 94%;
+    --border: 220 6% 24%;
+    --input: 220 6% 21%;
+    --ring: 214 84% 58%;
+    --sidebar-background: 220 9% 8%;
+    --sidebar-foreground: 210 9% 94%;
+    --sidebar-border: 220 6% 24%;
+  }
+
+  .theme-aurora {
+    --background: 205 38% 97%;
+    --foreground: 222 28% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 28% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 28% 12%;
+    --primary: 190 92% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 28% 91%;
+    --secondary-foreground: 222 28% 12%;
+    --muted: 205 24% 90%;
+    --muted-foreground: 215 15% 40%;
+    --accent: 275 42% 89%;
+    --accent-foreground: 222 28% 12%;
+    --border: 205 22% 82%;
+    --input: 205 26% 88%;
+    --ring: 190 92% 36%;
+    --sidebar-background: 205 38% 97%;
+    --sidebar-foreground: 222 28% 12%;
+    --sidebar-border: 205 22% 82%;
+  }
+
+  .dark.theme-aurora {
+    --background: 218 32% 9%;
+    --foreground: 198 42% 95%;
+    --card: 218 26% 16%;
+    --card-foreground: 198 42% 95%;
+    --popover: 218 30% 12%;
+    --popover-foreground: 198 42% 95%;
+    --primary: 188 88% 48%;
+    --primary-foreground: 218 42% 9%;
+    --secondary: 218 22% 20%;
+    --secondary-foreground: 198 42% 95%;
+    --muted: 218 20% 18%;
+    --muted-foreground: 205 18% 70%;
+    --accent: 267 35% 27%;
+    --accent-foreground: 198 42% 95%;
+    --border: 218 18% 25%;
+    --input: 218 18% 22%;
+    --ring: 188 88% 48%;
+    --sidebar-background: 218 32% 9%;
+    --sidebar-foreground: 198 42% 95%;
+    --sidebar-border: 218 18% 25%;
+  }
+
+  .theme-cobalt {
+    --background: 214 28% 97%;
+    --foreground: 222 34% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 34% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 34% 12%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 24% 90%;
+    --secondary-foreground: 222 34% 12%;
+    --muted: 214 20% 90%;
+    --muted-foreground: 217 12% 40%;
+    --accent: 39 58% 86%;
+    --accent-foreground: 222 34% 12%;
+    --border: 214 18% 80%;
+    --input: 214 20% 87%;
+    --ring: 221 83% 53%;
+    --sidebar-background: 214 28% 97%;
+    --sidebar-foreground: 222 34% 12%;
+    --sidebar-border: 214 18% 80%;
+  }
+
+  .dark.theme-cobalt {
+    --background: 222 35% 9%;
+    --foreground: 214 40% 95%;
+    --card: 222 27% 16%;
+    --card-foreground: 214 40% 95%;
+    --popover: 222 32% 12%;
+    --popover-foreground: 214 40% 95%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 42% 9%;
+    --secondary: 222 22% 20%;
+    --secondary-foreground: 214 40% 95%;
+    --muted: 222 20% 18%;
+    --muted-foreground: 215 20% 70%;
+    --accent: 39 42% 24%;
+    --accent-foreground: 214 40% 95%;
+    --border: 222 18% 25%;
+    --input: 222 18% 22%;
+    --ring: 217 91% 60%;
+    --sidebar-background: 222 35% 9%;
+    --sidebar-foreground: 214 40% 95%;
+    --sidebar-border: 222 18% 25%;
+  }
+
+  .theme-rose {
+    --background: 350 32% 97%;
+    --foreground: 225 24% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 225 24% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 225 24% 12%;
+    --primary: 346 77% 49%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 350 28% 90%;
+    --secondary-foreground: 225 24% 12%;
+    --muted: 350 22% 90%;
+    --muted-foreground: 346 12% 42%;
+    --accent: 12 48% 87%;
+    --accent-foreground: 225 24% 12%;
+    --border: 350 18% 82%;
+    --input: 350 22% 88%;
+    --ring: 346 77% 49%;
+    --sidebar-background: 350 32% 97%;
+    --sidebar-foreground: 225 24% 12%;
+    --sidebar-border: 350 18% 82%;
+  }
+
+  .dark.theme-rose {
+    --background: 228 20% 9%;
+    --foreground: 350 38% 95%;
+    --card: 228 16% 16%;
+    --card-foreground: 350 38% 95%;
+    --popover: 228 18% 12%;
+    --popover-foreground: 350 38% 95%;
+    --primary: 346 84% 60%;
+    --primary-foreground: 228 28% 9%;
+    --secondary: 228 14% 20%;
+    --secondary-foreground: 350 38% 95%;
+    --muted: 228 13% 18%;
+    --muted-foreground: 350 18% 70%;
+    --accent: 346 32% 24%;
+    --accent-foreground: 350 38% 95%;
+    --border: 228 12% 25%;
+    --input: 228 12% 22%;
+    --ring: 346 84% 60%;
+    --sidebar-background: 228 20% 9%;
+    --sidebar-foreground: 350 38% 95%;
+    --sidebar-border: 228 12% 25%;
+  }
+
+  .theme-solar {
+    --background: 48 40% 96%;
+    --foreground: 220 25% 12%;
+    --card: 45 48% 99%;
+    --card-foreground: 220 25% 12%;
+    --popover: 45 48% 99%;
+    --popover-foreground: 220 25% 12%;
+    --primary: 42 89% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 199 30% 89%;
+    --secondary-foreground: 220 25% 12%;
+    --muted: 44 27% 88%;
+    --muted-foreground: 36 13% 40%;
+    --accent: 199 47% 86%;
+    --accent-foreground: 220 25% 12%;
+    --border: 43 22% 80%;
+    --input: 43 25% 87%;
+    --ring: 42 89% 42%;
+    --sidebar-background: 48 40% 96%;
+    --sidebar-foreground: 220 25% 12%;
+    --sidebar-border: 43 22% 80%;
+  }
+
+  .dark.theme-solar {
+    --background: 225 16% 9%;
+    --foreground: 43 42% 94%;
+    --card: 225 13% 16%;
+    --card-foreground: 43 42% 94%;
+    --popover: 225 15% 12%;
+    --popover-foreground: 43 42% 94%;
+    --primary: 43 92% 55%;
+    --primary-foreground: 225 30% 9%;
+    --secondary: 204 24% 20%;
+    --secondary-foreground: 43 42% 94%;
+    --muted: 225 12% 18%;
+    --muted-foreground: 43 20% 68%;
+    --accent: 204 35% 24%;
+    --accent-foreground: 43 42% 94%;
+    --border: 225 11% 25%;
+    --input: 225 11% 22%;
+    --ring: 43 92% 55%;
+    --sidebar-background: 225 16% 9%;
+    --sidebar-foreground: 43 42% 94%;
+    --sidebar-border: 225 11% 25%;
+  }
+
+  .theme-forest {
+    --background: 132 28% 96%;
+    --foreground: 210 22% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 210 22% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 22% 11%;
+    --primary: 142 76% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 128 25% 89%;
+    --secondary-foreground: 210 22% 11%;
+    --muted: 128 20% 89%;
+    --muted-foreground: 142 11% 38%;
+    --accent: 83 35% 85%;
+    --accent-foreground: 210 22% 11%;
+    --border: 130 17% 80%;
+    --input: 130 20% 87%;
+    --ring: 142 76% 36%;
+    --sidebar-background: 132 28% 96%;
+    --sidebar-foreground: 210 22% 11%;
+    --sidebar-border: 130 17% 80%;
+  }
+
+  .dark.theme-forest {
+    --background: 150 24% 8%;
+    --foreground: 120 32% 94%;
+    --card: 150 18% 15%;
+    --card-foreground: 120 32% 94%;
+    --popover: 150 22% 11%;
+    --popover-foreground: 120 32% 94%;
+    --primary: 142 69% 45%;
+    --primary-foreground: 150 36% 8%;
+    --secondary: 150 15% 19%;
+    --secondary-foreground: 120 32% 94%;
+    --muted: 150 14% 17%;
+    --muted-foreground: 120 15% 68%;
+    --accent: 84 30% 24%;
+    --accent-foreground: 120 32% 94%;
+    --border: 150 13% 24%;
+    --input: 150 13% 21%;
+    --ring: 142 69% 45%;
+    --sidebar-background: 150 24% 8%;
+    --sidebar-foreground: 120 32% 94%;
+    --sidebar-border: 150 13% 24%;
+  }
+
+  .theme-circuit {
+    --background: 130 22% 96%;
+    --foreground: 150 28% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 150 28% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 28% 10%;
+    --primary: 84 74% 35%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 20% 89%;
+    --secondary-foreground: 150 28% 10%;
+    --muted: 150 16% 89%;
+    --muted-foreground: 150 12% 38%;
+    --accent: 142 32% 86%;
+    --accent-foreground: 150 28% 10%;
+    --border: 150 14% 80%;
+    --input: 150 16% 87%;
+    --ring: 84 74% 35%;
+    --sidebar-background: 130 22% 96%;
+    --sidebar-foreground: 150 28% 10%;
+    --sidebar-border: 150 14% 80%;
+  }
+
+  .dark.theme-circuit {
+    --background: 150 32% 6%;
+    --foreground: 96 40% 92%;
+    --card: 150 24% 12%;
+    --card-foreground: 96 40% 92%;
+    --popover: 150 28% 9%;
+    --popover-foreground: 96 40% 92%;
+    --primary: 84 81% 52%;
+    --primary-foreground: 150 48% 7%;
+    --secondary: 150 20% 16%;
+    --secondary-foreground: 96 40% 92%;
+    --muted: 150 18% 14%;
+    --muted-foreground: 96 18% 66%;
+    --accent: 142 34% 20%;
+    --accent-foreground: 96 40% 92%;
+    --border: 150 16% 22%;
+    --input: 150 16% 19%;
+    --ring: 84 81% 52%;
+    --sidebar-background: 150 32% 6%;
+    --sidebar-foreground: 96 40% 92%;
+    --sidebar-border: 150 16% 22%;
+  }
+
+  .font-system {
+    --font-ui: 'Segoe UI Variable', 'Segoe UI', Inter, system-ui, -apple-system, sans-serif;
+  }
+
+  .font-rounded {
+    --font-ui: 'Segoe UI Variable Display', Aptos, 'Trebuchet MS', system-ui, sans-serif;
+  }
+
+  .font-mono-ui {
+    --font-ui:
+      'Cascadia Code', 'Cascadia Mono', Consolas, 'SFMono-Regular', ui-monospace, monospace;
+  }
+
+  .font-readable {
+    --font-ui: 'Atkinson Hyperlegible', Verdana, 'Segoe UI', system-ui, sans-serif;
+  }
+
   * {
     @apply border-border;
   }
@@ -68,13 +591,15 @@
 
   body {
     @apply text-foreground antialiased;
-    font-family:
+    font-family: var(
+      --font-ui,
       'Segoe UI Variable',
       'Segoe UI',
       Inter,
       system-ui,
       -apple-system,
-      sans-serif;
+      sans-serif
+    );
   }
 
   ::-webkit-scrollbar {
@@ -146,6 +671,22 @@
   .keyboard-shortcut {
     @apply inline-flex h-6 min-w-[24px] items-center justify-center rounded bg-muted px-1.5 font-mono text-xs text-muted-foreground;
   }
+
+  .density-compact .btn {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .density-compact .icon-button {
+    @apply p-1.5;
+  }
+
+  .density-compact .clip-card {
+    @apply p-3;
+  }
+
+  .density-compact .search-input {
+    @apply px-3 py-1.5 text-sm;
+  }
 }
 
 @layer utilities {
@@ -155,6 +696,327 @@
 
   .glass-dark {
     @apply bg-background/90 backdrop-blur-xl;
+  }
+
+  .theme-glass .glass,
+  .theme-glass .glass-dark {
+    @apply bg-background/65 backdrop-blur-2xl;
+  }
+
+  .theme-glass [data-app-shell],
+  .theme-glass [data-settings-shell],
+  .theme-glass [data-scratchpad-shell] {
+    background-color: hsl(var(--background) / 0.72);
+  }
+
+  .theme-graphite [data-app-shell],
+  .theme-graphite [data-settings-shell],
+  .theme-graphite [data-scratchpad-shell],
+  .theme-mono [data-app-shell] {
+    box-shadow:
+      0 8px 28px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  [data-app-shell],
+  [data-settings-shell],
+  [data-scratchpad-shell],
+  [data-window-effect-panel] {
+    transition:
+      background-color 160ms ease,
+      background 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      backdrop-filter 160ms ease;
+  }
+
+  .effect-auto {
+    --window-effect-bg:
+      linear-gradient(135deg, hsl(var(--primary) / 0.08), transparent 38%),
+      hsl(var(--background) / 0.9);
+    --window-effect-border: hsl(var(--primary) / 0.2);
+    --window-effect-shadow:
+      0 18px 48px hsl(var(--primary) / 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --window-effect-card-shadow:
+      0 8px 26px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --window-effect-panel-bg: hsl(var(--card) / 0.42);
+    --window-effect-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --window-effect-backdrop: blur(12px) saturate(1.04);
+  }
+
+  .effect-glow {
+    --window-effect-bg:
+      linear-gradient(135deg, hsl(var(--primary) / 0.18), transparent 42%),
+      linear-gradient(315deg, rgba(34, 211, 238, 0.12), transparent 44%),
+      hsl(var(--background) / 0.86);
+    --window-effect-border: hsl(var(--primary) / 0.44);
+    --window-effect-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.24), 0 24px 70px hsl(var(--primary) / 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    --window-effect-card-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.16), 0 14px 34px hsl(var(--primary) / 0.2);
+    --window-effect-panel-bg: hsl(var(--card) / 0.5);
+    --window-effect-panel-shadow: 0 12px 34px hsl(var(--primary) / 0.14);
+    --window-effect-backdrop: blur(16px) saturate(1.12);
+  }
+
+  .effect-tabbed {
+    --window-effect-bg: linear-gradient(
+      180deg,
+      hsl(var(--card) / 0.9) 0 52px,
+      hsl(var(--background) / 0.88) 52px
+    );
+    --window-effect-border: hsl(var(--border) / 0.9);
+    --window-effect-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 hsl(var(--primary) / 0.1),
+      0 16px 42px rgba(0, 0, 0, 0.16);
+    --window-effect-card-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --window-effect-panel-bg: hsl(var(--card) / 0.46);
+    --window-effect-panel-shadow: inset 0 1px 0 hsl(var(--primary) / 0.14);
+    --window-effect-backdrop: blur(10px);
+  }
+
+  .effect-luxe {
+    --window-effect-bg:
+      linear-gradient(135deg, rgba(245, 158, 11, 0.14), transparent 34%),
+      linear-gradient(315deg, hsl(var(--primary) / 0.12), transparent 42%),
+      hsl(var(--background) / 0.88);
+    --window-effect-border: rgba(245, 158, 11, 0.36);
+    --window-effect-shadow:
+      0 0 0 1px rgba(245, 158, 11, 0.14), 0 20px 60px rgba(0, 0, 0, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    --window-effect-card-shadow:
+      0 12px 32px rgba(245, 158, 11, 0.14), 0 18px 42px rgba(0, 0, 0, 0.18);
+    --window-effect-panel-bg: rgba(245, 158, 11, 0.08);
+    --window-effect-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    --window-effect-backdrop: blur(14px) saturate(1.08);
+  }
+
+  .effect-mica {
+    --window-effect-bg:
+      linear-gradient(140deg, hsl(var(--muted) / 0.24), transparent 36%),
+      hsl(var(--background) / 0.9);
+    --window-effect-border: hsl(var(--border) / 0.78);
+    --window-effect-shadow:
+      0 14px 38px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    --window-effect-card-shadow:
+      0 8px 22px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --window-effect-panel-bg: hsl(var(--card) / 0.4);
+    --window-effect-panel-shadow: inset 0 1px 0 hsl(var(--muted) / 0.22);
+    --window-effect-backdrop: blur(8px);
+  }
+
+  .effect-soft {
+    --window-effect-bg:
+      linear-gradient(135deg, hsl(var(--muted) / 0.3), transparent 48%),
+      hsl(var(--background) / 0.94);
+    --window-effect-border: hsl(var(--border) / 0.55);
+    --window-effect-shadow: 0 12px 34px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    --window-effect-card-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    --window-effect-panel-bg: hsl(var(--muted) / 0.22);
+    --window-effect-panel-shadow: none;
+    --window-effect-backdrop: blur(6px);
+  }
+
+  .effect-acrylic {
+    --window-effect-bg:
+      linear-gradient(135deg, rgba(45, 212, 191, 0.12), transparent 40%),
+      hsl(var(--background) / 0.72);
+    --window-effect-border: rgba(45, 212, 191, 0.28);
+    --window-effect-shadow: 0 18px 54px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    --window-effect-card-shadow:
+      0 10px 28px rgba(45, 212, 191, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    --window-effect-panel-bg: hsl(var(--card) / 0.34);
+    --window-effect-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    --window-effect-backdrop: blur(22px) saturate(1.2);
+  }
+
+  .effect-frost {
+    --window-effect-bg:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 42%),
+      linear-gradient(315deg, rgba(125, 211, 252, 0.12), transparent 44%),
+      hsl(var(--background) / 0.62);
+    --window-effect-border: rgba(255, 255, 255, 0.28);
+    --window-effect-shadow:
+      0 18px 58px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    --window-effect-card-shadow:
+      0 12px 30px rgba(15, 23, 42, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --window-effect-panel-bg: rgba(255, 255, 255, 0.1);
+    --window-effect-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --window-effect-backdrop: blur(28px) saturate(1.28);
+  }
+
+  .effect-prism {
+    --window-effect-bg:
+      linear-gradient(135deg, rgba(34, 211, 238, 0.14), transparent 30%),
+      linear-gradient(225deg, rgba(244, 114, 182, 0.12), transparent 36%),
+      linear-gradient(315deg, rgba(251, 191, 36, 0.1), transparent 44%),
+      hsl(var(--background) / 0.82);
+    --window-effect-border: rgba(34, 211, 238, 0.34);
+    --window-effect-shadow:
+      0 18px 56px rgba(34, 211, 238, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    --window-effect-card-shadow:
+      0 10px 28px rgba(244, 114, 182, 0.12), 0 16px 40px rgba(34, 211, 238, 0.1);
+    --window-effect-panel-bg: hsl(var(--card) / 0.45);
+    --window-effect-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    --window-effect-backdrop: blur(20px) saturate(1.24);
+  }
+
+  .effect-blur {
+    --window-effect-bg: hsl(var(--background) / 0.76);
+    --window-effect-border: hsl(var(--border) / 0.72);
+    --window-effect-shadow: 0 20px 58px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    --window-effect-card-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --window-effect-panel-bg: hsl(var(--card) / 0.36);
+    --window-effect-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --window-effect-backdrop: blur(18px);
+  }
+
+  .effect-vivid {
+    --window-effect-bg:
+      linear-gradient(135deg, rgba(59, 130, 246, 0.16), transparent 36%),
+      linear-gradient(315deg, rgba(16, 185, 129, 0.13), transparent 42%),
+      hsl(var(--background) / 0.88);
+    --window-effect-border: hsl(var(--primary) / 0.42);
+    --window-effect-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.18), 0 22px 64px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    --window-effect-card-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.14), 0 14px 34px rgba(0, 0, 0, 0.22);
+    --window-effect-panel-bg: hsl(var(--card) / 0.52);
+    --window-effect-panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    --window-effect-backdrop: blur(14px) saturate(1.35);
+  }
+
+  .effect-clear {
+    --window-effect-bg: hsl(var(--background));
+    --window-effect-border: hsl(var(--border));
+    --window-effect-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --window-effect-card-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --window-effect-panel-bg: hsl(var(--card) / 0.32);
+    --window-effect-panel-shadow: none;
+    --window-effect-backdrop: none;
+  }
+
+  .effect-focus {
+    --window-effect-bg: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted) / 0.18));
+    --window-effect-border: hsl(var(--primary) / 0.46);
+    --window-effect-shadow: 0 0 0 1px hsl(var(--primary) / 0.16), 0 12px 28px rgba(0, 0, 0, 0.12);
+    --window-effect-card-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.12), 0 8px 18px rgba(0, 0, 0, 0.1);
+    --window-effect-panel-bg: hsl(var(--background) / 0.72);
+    --window-effect-panel-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.1);
+    --window-effect-backdrop: none;
+  }
+
+  .effect-neon {
+    --window-effect-bg:
+      linear-gradient(135deg, rgba(132, 204, 22, 0.13), transparent 34%),
+      linear-gradient(315deg, rgba(34, 197, 94, 0.11), transparent 42%),
+      hsl(var(--background) / 0.92);
+    --window-effect-border: rgba(132, 204, 22, 0.42);
+    --window-effect-shadow:
+      0 0 0 1px rgba(132, 204, 22, 0.2), 0 0 34px rgba(132, 204, 22, 0.14),
+      0 18px 46px rgba(0, 0, 0, 0.26);
+    --window-effect-card-shadow:
+      0 0 0 1px rgba(132, 204, 22, 0.16), 0 0 22px rgba(132, 204, 22, 0.12);
+    --window-effect-panel-bg: rgba(132, 204, 22, 0.08);
+    --window-effect-panel-shadow: inset 0 0 0 1px rgba(132, 204, 22, 0.12);
+    --window-effect-backdrop: blur(10px) saturate(1.2);
+  }
+
+  :is(
+      .effect-auto,
+      .effect-glow,
+      .effect-tabbed,
+      .effect-luxe,
+      .effect-mica,
+      .effect-soft,
+      .effect-acrylic,
+      .effect-frost,
+      .effect-prism,
+      .effect-blur,
+      .effect-vivid,
+      .effect-clear,
+      .effect-focus,
+      .effect-neon
+    )
+    :is([data-app-shell], [data-settings-shell], [data-scratchpad-shell]) {
+    background: var(--window-effect-bg);
+    border-color: var(--window-effect-border);
+    box-shadow: var(--window-effect-shadow);
+    backdrop-filter: var(--window-effect-backdrop);
+  }
+
+  :is(
+      .effect-auto,
+      .effect-glow,
+      .effect-tabbed,
+      .effect-luxe,
+      .effect-mica,
+      .effect-soft,
+      .effect-acrylic,
+      .effect-frost,
+      .effect-prism,
+      .effect-blur,
+      .effect-vivid,
+      .effect-clear,
+      .effect-focus,
+      .effect-neon
+    )
+    [data-window-effect-panel] {
+    background: var(--window-effect-panel-bg);
+    border-color: var(--window-effect-border);
+    box-shadow: var(--window-effect-panel-shadow);
+    backdrop-filter: var(--window-effect-backdrop);
+  }
+
+  :is(
+      .effect-auto,
+      .effect-glow,
+      .effect-tabbed,
+      .effect-luxe,
+      .effect-mica,
+      .effect-soft,
+      .effect-acrylic,
+      .effect-frost,
+      .effect-prism,
+      .effect-blur,
+      .effect-vivid,
+      .effect-clear,
+      .effect-focus,
+      .effect-neon
+    )
+    [data-window-effect-panel]
+    button[aria-pressed='true'] {
+    box-shadow:
+      0 0 0 1px var(--window-effect-border),
+      0 10px 24px hsl(var(--primary) / 0.16);
+  }
+
+  :is(
+      .effect-auto,
+      .effect-glow,
+      .effect-tabbed,
+      .effect-luxe,
+      .effect-mica,
+      .effect-soft,
+      .effect-acrylic,
+      .effect-frost,
+      .effect-prism,
+      .effect-blur,
+      .effect-vivid,
+      .effect-clear,
+      .effect-focus,
+      .effect-neon
+    )
+    :is(.clip-card, [data-clip-id] > [draggable]) {
+    border-color: var(--window-effect-border);
+    box-shadow: var(--window-effect-card-shadow);
   }
 
   /* Depth effect — cards float above background */

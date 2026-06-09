@@ -34,10 +34,19 @@ export interface Settings {
   show_in_taskbar: boolean;
   hotkey: string;
   theme: string;
+  interface_theme: string;
+  font_family: string;
+  ui_density: string;
   mica_effect?: string;
   auto_paste: boolean;
   ignore_ghost_clips: boolean;
   data_directory?: string;
+}
+
+export interface WindowEffectSupport {
+  platform: string;
+  best_effect: string;
+  effects: { id: string; supported: boolean }[];
 }
 
 export interface ScratchpadItem {

@@ -11,6 +11,10 @@ const smokeSettings: Settings = {
   show_in_taskbar: false,
   hotkey: 'Ctrl+Alt+V',
   theme: 'system',
+  interface_theme: 'default',
+  font_family: 'system',
+  ui_density: 'comfortable',
+  mica_effect: 'clear',
   auto_paste: true,
   ignore_ghost_clips: true,
 };

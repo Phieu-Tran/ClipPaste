@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { ScratchpadItem } from '../types';
+import { ScratchpadItem, Settings } from '../types';
 import { useTheme } from '../hooks/useTheme';
 import {
   X,
@@ -219,15 +219,33 @@ export function ScratchpadWindow() {
 
   // Theme
   const [themeSetting, setThemeSetting] = useState('system');
+  const [interfaceTheme, setInterfaceTheme] = useState('default');
+  const [fontFamily, setFontFamily] = useState('system');
+  const [uiDensity, setUiDensity] = useState('comfortable');
+  const [windowEffect, setWindowEffect] = useState('clear');
   useEffect(() => {
+    const applySettings = (s: Settings) => {
+      if (s.theme) setThemeSetting(s.theme);
+      if (s.interface_theme) setInterfaceTheme(s.interface_theme);
+      if (s.font_family) setFontFamily(s.font_family);
+      if (s.ui_density) setUiDensity(s.ui_density);
+      if (s.mica_effect) setWindowEffect(s.mica_effect);
+    };
+
     cmd
       .getSettings()
-      .then((s) => {
-        if (s.theme) setThemeSetting(s.theme);
-      })
+      .then(applySettings)
       .catch(() => {});
+
+    const unlisten = listen<Settings>('settings-changed', (event) => {
+      applySettings(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
   }, []);
-  useTheme(themeSetting);
+  useTheme(themeSetting, interfaceTheme, fontFamily, uiDensity, windowEffect);
 
   // Load
   const loadScratchpads = useCallback(async () => {
@@ -651,7 +669,10 @@ export function ScratchpadWindow() {
     }
 
     return (
-      <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl">
+      <div
+        data-scratchpad-shell
+        className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl"
+      >
         {/* Header */}
         <div
           className="flex items-center gap-2 border-b border-border/30 px-3 py-2"

@@ -1,5 +1,11 @@
-import { Settings, DashboardStats, ImageCleanupPreview, ImportBackupResult } from '../../types';
-import { useState } from 'react';
+import {
+  Settings,
+  DashboardStats,
+  ImageCleanupPreview,
+  ImportBackupResult,
+  WindowEffectSupport,
+} from '../../types';
+import { useEffect, useState } from 'react';
 import {
   X,
   Trash2,
@@ -10,6 +16,8 @@ import {
   HardDrive,
   Database,
   RefreshCw,
+  Paintbrush,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
@@ -63,6 +71,190 @@ interface GeneralTabProps {
 const IMAGE_DELETE_DAY_OPTIONS = [7, 14, 30, 60, 90, 180, 365];
 const CLIP_DELETE_DAY_OPTIONS = [0, 7, 14, 30, 60, 90, 180, 365];
 const MAX_ITEM_OPTIONS = [0, 500, 1000, 2000, 5000, 10000];
+const INTERFACE_THEMES = [
+  {
+    id: 'default',
+    label: 'Default',
+    description: 'Balanced ClipPaste look',
+    swatches: ['#6d28d9', '#2b2d30', '#171a1e'],
+  },
+  {
+    id: 'glass',
+    label: 'Glass',
+    description: 'Bright translucent depth',
+    swatches: ['#22d3ee', '#1d4ed8', '#0f172a'],
+  },
+  {
+    id: 'graphite',
+    label: 'Graphite',
+    description: 'Focused neutral contrast',
+    swatches: ['#10b981', '#2f3338', '#121417'],
+  },
+  {
+    id: 'ember',
+    label: 'Ember',
+    description: 'Warm command surface',
+    swatches: ['#f97316', '#3a2a25', '#151821'],
+  },
+  {
+    id: 'mint',
+    label: 'Mint',
+    description: 'Clean calm highlight',
+    swatches: ['#14b8a6', '#12342f', '#0b1720'],
+  },
+  {
+    id: 'mono',
+    label: 'Mono',
+    description: 'Technical blue-gray',
+    swatches: ['#3b82f6', '#2a2d31', '#111318'],
+  },
+  {
+    id: 'aurora',
+    label: 'Aurora',
+    description: 'Cool glow, high clarity',
+    swatches: ['#06b6d4', '#8b5cf6', '#10202a'],
+  },
+  {
+    id: 'cobalt',
+    label: 'Cobalt',
+    description: 'Blue control surface',
+    swatches: ['#2563eb', '#f59e0b', '#0f172a'],
+  },
+  {
+    id: 'rose',
+    label: 'Rose',
+    description: 'Soft warm highlight',
+    swatches: ['#e11d48', '#fb7185', '#21141a'],
+  },
+  {
+    id: 'solar',
+    label: 'Solar',
+    description: 'Bright productive contrast',
+    swatches: ['#ca8a04', '#0ea5e9', '#1c1917'],
+  },
+  {
+    id: 'forest',
+    label: 'Forest',
+    description: 'Calm green workspace',
+    swatches: ['#16a34a', '#84cc16', '#111b14'],
+  },
+  {
+    id: 'circuit',
+    label: 'Circuit',
+    description: 'Sharp terminal energy',
+    swatches: ['#84cc16', '#22c55e', '#08110c'],
+  },
+] as const;
+const FONT_OPTIONS = [
+  { id: 'system', label: 'System' },
+  { id: 'rounded', label: 'Rounded' },
+  { id: 'mono', label: 'Mono' },
+  { id: 'readable', label: 'Readable' },
+] as const;
+const DENSITY_OPTIONS = [
+  { id: 'comfortable', label: 'Comfortable' },
+  { id: 'compact', label: 'Compact' },
+] as const;
+const WINDOW_EFFECTS = [
+  {
+    id: 'best',
+    label: 'Auto',
+    description: 'Native best',
+    nativeEffect: 'best',
+    preview: 'from-primary/80 via-cyan-300/40 to-white/10',
+  },
+  {
+    id: 'best_glow',
+    label: 'Auto Glow',
+    description: 'Best + glow',
+    nativeEffect: 'best',
+    preview: 'from-violet-400/80 via-cyan-300/45 to-emerald-300/25',
+  },
+  {
+    id: 'mica_alt',
+    label: 'Tabbed',
+    description: 'Win11 layered',
+    nativeEffect: 'mica_alt',
+    preview: 'from-sky-400/70 via-cyan-300/35 to-white/10',
+  },
+  {
+    id: 'mica_alt_luxe',
+    label: 'Luxe',
+    description: 'Layered shine',
+    nativeEffect: 'mica_alt',
+    preview: 'from-amber-300/75 via-slate-200/25 to-violet-400/25',
+  },
+  {
+    id: 'mica',
+    label: 'Mica',
+    description: 'Quiet native',
+    nativeEffect: 'mica',
+    preview: 'from-indigo-400/65 via-violet-400/30 to-white/10',
+  },
+  {
+    id: 'mica_soft',
+    label: 'Soft',
+    description: 'Calm surface',
+    nativeEffect: 'mica',
+    preview: 'from-slate-300/50 via-emerald-300/25 to-blue-300/20',
+  },
+  {
+    id: 'acrylic',
+    label: 'Acrylic',
+    description: 'Glass native',
+    nativeEffect: 'acrylic',
+    preview: 'from-teal-300/70 via-blue-400/30 to-white/10',
+  },
+  {
+    id: 'acrylic_frost',
+    label: 'Frost',
+    description: 'Frosted glass',
+    nativeEffect: 'acrylic',
+    preview: 'from-white/70 via-cyan-200/35 to-slate-400/20',
+  },
+  {
+    id: 'acrylic_tint',
+    label: 'Prism',
+    description: 'Color tint',
+    nativeEffect: 'acrylic',
+    preview: 'from-cyan-300/70 via-fuchsia-300/35 to-amber-200/25',
+  },
+  {
+    id: 'blur',
+    label: 'Blur',
+    description: 'Classic blur',
+    nativeEffect: 'blur',
+    preview: 'from-slate-300/60 via-slate-500/30 to-white/10',
+  },
+  {
+    id: 'blur_vivid',
+    label: 'Vivid',
+    description: 'Strong depth',
+    nativeEffect: 'blur',
+    preview: 'from-blue-400/75 via-emerald-300/35 to-rose-300/20',
+  },
+  {
+    id: 'clear',
+    label: 'Clear',
+    description: 'Solid surface',
+    nativeEffect: 'clear',
+    preview: 'from-zinc-500/30 via-zinc-300/20 to-zinc-950/10',
+  },
+  {
+    id: 'clear_focus',
+    label: 'Focus',
+    description: 'Sharp edges',
+    nativeEffect: 'clear',
+    preview: 'from-zinc-200/70 via-slate-500/30 to-primary/25',
+  },
+  {
+    id: 'clear_neon',
+    label: 'Neon',
+    description: 'High contrast',
+    nativeEffect: 'clear',
+    preview: 'from-lime-300/75 via-emerald-400/35 to-zinc-950/30',
+  },
+] as const;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -103,6 +295,33 @@ export function GeneralTab({
   const [cleanupRunning, setCleanupRunning] = useState(false);
   const [reclassifyRunning, setReclassifyRunning] = useState(false);
   const [reclassifyStage, setReclassifyStage] = useState<'subtypes' | 'sensitive' | null>(null);
+  const [windowEffectSupport, setWindowEffectSupport] = useState<WindowEffectSupport | null>(null);
+
+  useEffect(() => {
+    cmd.getWindowEffectSupport().then(setWindowEffectSupport).catch(console.error);
+  }, []);
+
+  const getNativeEffectId = (effectId: string) =>
+    WINDOW_EFFECTS.find((effect) => effect.id === effectId)?.nativeEffect ?? effectId;
+
+  const isEffectSupported = (effectId: string) => {
+    const nativeEffectId = getNativeEffectId(effectId);
+    if (nativeEffectId === 'best' || nativeEffectId === 'clear') return true;
+    return (
+      windowEffectSupport?.effects.some(
+        (effect) => effect.id === nativeEffectId && effect.supported
+      ) ?? false
+    );
+  };
+
+  const getEffectBadge = (effectId: string) => {
+    if (effectId === 'best') return 'Auto';
+    const nativeEffectId = getNativeEffectId(effectId);
+    const isNativePreset = nativeEffectId === effectId;
+    if (isNativePreset && windowEffectSupport?.best_effect === nativeEffectId) return 'Best';
+    if (isEffectSupported(effectId)) return isNativePreset ? 'Native' : 'Style';
+    return 'Fallback';
+  };
 
   const handleAddIgnoredApp = async () => {
     if (!newIgnoredApp.trim()) return;
@@ -247,10 +466,77 @@ export function GeneralTab({
       <section className="space-y-4">
         <h3 className="text-sm font-medium text-muted-foreground">Appearance & Behavior</h3>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Paintbrush size={14} className="text-primary" />
+            <span className="text-sm font-medium">Theme</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+            {INTERFACE_THEMES.map((themeOption) => {
+              const selected = (settings.interface_theme || 'default') === themeOption.id;
+              return (
+                <button
+                  key={themeOption.id}
+                  type="button"
+                  onClick={() => updateSetting('interface_theme', themeOption.id)}
+                  className={`group min-h-[104px] overflow-hidden rounded-lg border text-left transition-all ${
+                    selected
+                      ? 'border-primary bg-primary/10 text-foreground shadow-lg shadow-primary/10 ring-1 ring-primary/40'
+                      : 'border-border bg-card/40 text-muted-foreground hover:border-primary/50 hover:bg-accent/40 hover:text-foreground'
+                  }`}
+                  aria-pressed={selected}
+                >
+                  <span className="block border-b border-border/50 bg-background/30 px-3 py-2">
+                    <span className="flex items-center justify-between gap-2">
+                      <span>
+                        <span className="block text-sm font-semibold">{themeOption.label}</span>
+                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                          {themeOption.description}
+                        </span>
+                      </span>
+                      <span className="flex overflow-hidden rounded-full border border-border/70">
+                        {themeOption.swatches.map((swatch) => (
+                          <span
+                            key={swatch}
+                            className="h-5 w-5"
+                            style={{ backgroundColor: swatch }}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="block px-3 py-2">
+                    <span className="mb-2 flex items-center gap-1.5">
+                      <span
+                        className="h-2.5 w-10 rounded-full"
+                        style={{ backgroundColor: themeOption.swatches[0] }}
+                      />
+                      <span
+                        className="h-2.5 w-5 rounded-full opacity-70"
+                        style={{ backgroundColor: themeOption.swatches[1] }}
+                      />
+                    </span>
+                    <span className="grid grid-cols-[1.2fr_0.8fr] gap-1.5">
+                      <span
+                        className="h-5 rounded-md opacity-80 transition-opacity group-hover:opacity-100"
+                        style={{ backgroundColor: themeOption.swatches[1] }}
+                      />
+                      <span
+                        className="h-5 rounded-md opacity-65 transition-opacity group-hover:opacity-90"
+                        style={{ backgroundColor: themeOption.swatches[2] }}
+                      />
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-3">
             <label className="block">
-              <span className="text-sm font-medium">Theme</span>
+              <span className="text-sm font-medium">Mode</span>
             </label>
             <select
               value={settings.theme}
@@ -265,19 +551,92 @@ export function GeneralTab({
 
           <div className="space-y-3">
             <label className="block">
-              <span className="text-sm font-medium">Window Effect</span>
+              <span className="text-sm font-medium">Font</span>
             </label>
             <select
-              value={settings.mica_effect || 'clear'}
-              onChange={(e) => updateSetting('mica_effect', e.target.value)}
+              value={settings.font_family || 'system'}
+              onChange={(e) => updateSetting('font_family', e.target.value)}
               className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              <option value="mica_alt">Mica Alt</option>
-              <option value="mica">Mica</option>
-              <option value="acrylic">Acrylic</option>
-              <option value="blur">Blur</option>
-              <option value="clear">Clear</option>
+              {FONT_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="space-y-3">
+            <label className="block">
+              <span className="text-sm font-medium">Density</span>
+            </label>
+            <select
+              value={settings.ui_density || 'comfortable'}
+              onChange={(e) => updateSetting('ui_density', e.target.value)}
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {DENSITY_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-primary" />
+              <span className="text-sm font-medium">Window Effect</span>
+            </div>
+            <span className="rounded-full border border-border bg-card/60 px-2 py-0.5 text-[11px] text-muted-foreground">
+              {windowEffectSupport?.platform === 'windows' ? 'Windows native' : 'Backdrop'}
+            </span>
+          </div>
+          <div
+            data-window-effect-panel
+            className="grid max-h-[242px] grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-border bg-card/30 p-2 sm:grid-cols-3"
+          >
+            {WINDOW_EFFECTS.map((effect) => {
+              const selected = (settings.mica_effect || 'clear') === effect.id;
+              const badge = getEffectBadge(effect.id);
+              return (
+                <button
+                  key={effect.id}
+                  type="button"
+                  onClick={() => updateSetting('mica_effect', effect.id)}
+                  title={`${effect.label}: ${effect.description}`}
+                  className={`group grid min-h-[52px] grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-all ${
+                    selected
+                      ? 'border-primary bg-primary/10 text-foreground ring-1 ring-primary/40'
+                      : 'border-border/60 bg-background/35 text-muted-foreground hover:border-primary/50 hover:bg-accent/40 hover:text-foreground'
+                  }`}
+                  aria-pressed={selected}
+                >
+                  <span
+                    className={`h-7 w-8 shrink-0 rounded bg-gradient-to-br ${effect.preview} ring-1 ring-white/10`}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold">{effect.label}</span>
+                    <span className="block truncate text-[10px] text-muted-foreground">
+                      {effect.description}
+                    </span>
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                      badge === 'Auto' || badge === 'Best'
+                        ? 'bg-primary text-primary-foreground'
+                        : badge === 'Native' || badge === 'Style'
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-background/75 text-muted-foreground'
+                    }`}
+                  >
+                    {badge}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

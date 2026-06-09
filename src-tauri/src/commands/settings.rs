@@ -19,6 +19,94 @@ async fn save_setting_value(
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct WindowEffectSupport {
+    platform: &'static str,
+    best_effect: &'static str,
+    effects: Vec<WindowEffectSupportItem>,
+}
+
+#[derive(serde::Serialize)]
+pub struct WindowEffectSupportItem {
+    id: &'static str,
+    supported: bool,
+}
+
+#[tauri::command]
+pub fn get_window_effect_support() -> WindowEffectSupport {
+    #[cfg(target_os = "windows")]
+    {
+        use window_vibrancy::{best_supported_effect, is_effect_supported, Effect};
+
+        fn effect_id(effect: Effect) -> &'static str {
+            match effect {
+                Effect::Clear => "clear",
+                Effect::Blur => "blur",
+                Effect::Acrylic => "acrylic",
+                Effect::Mica => "mica",
+                Effect::Tabbed => "mica_alt",
+            }
+        }
+
+        WindowEffectSupport {
+            platform: "windows",
+            best_effect: effect_id(best_supported_effect()),
+            effects: vec![
+                WindowEffectSupportItem {
+                    id: "mica_alt",
+                    supported: is_effect_supported(Effect::Tabbed),
+                },
+                WindowEffectSupportItem {
+                    id: "mica",
+                    supported: is_effect_supported(Effect::Mica),
+                },
+                WindowEffectSupportItem {
+                    id: "acrylic",
+                    supported: is_effect_supported(Effect::Acrylic),
+                },
+                WindowEffectSupportItem {
+                    id: "blur",
+                    supported: is_effect_supported(Effect::Blur),
+                },
+                WindowEffectSupportItem {
+                    id: "clear",
+                    supported: true,
+                },
+            ],
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        WindowEffectSupport {
+            platform: "other",
+            best_effect: "clear",
+            effects: vec![
+                WindowEffectSupportItem {
+                    id: "mica_alt",
+                    supported: false,
+                },
+                WindowEffectSupportItem {
+                    id: "mica",
+                    supported: false,
+                },
+                WindowEffectSupportItem {
+                    id: "acrylic",
+                    supported: false,
+                },
+                WindowEffectSupportItem {
+                    id: "blur",
+                    supported: false,
+                },
+                WindowEffectSupportItem {
+                    id: "clear",
+                    supported: true,
+                },
+            ],
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn get_settings(
     app: AppHandle,
@@ -34,6 +122,9 @@ pub async fn get_settings(
         "show_in_taskbar": false,
         "hotkey": "Ctrl+Shift+V",
         "theme": "dark",
+        "interface_theme": "default",
+        "font_family": "system",
+        "ui_density": "comfortable",
         "mica_effect": "clear",
         "auto_paste": true,
         "ignore_ghost_clips": false,
@@ -47,7 +138,8 @@ pub async fn get_settings(
     {
         for (key, value) in rows {
             match key.as_str() {
-                "mica_effect" | "theme" | "hotkey" => {
+                "mica_effect" | "theme" | "hotkey" | "interface_theme" | "font_family"
+                | "ui_density" => {
                     settings[&key] = serde_json::json!(value);
                 }
                 "ignore_ghost_clips" | "auto_paste" | "image_auto_delete" => {
@@ -118,10 +210,61 @@ pub async fn save_settings(
         }
     }
 
+    if let Some(interface_theme) = settings.get("interface_theme").and_then(|v| v.as_str()) {
+        if matches!(
+            interface_theme,
+            "default"
+                | "glass"
+                | "graphite"
+                | "ember"
+                | "mint"
+                | "mono"
+                | "aurora"
+                | "cobalt"
+                | "rose"
+                | "solar"
+                | "forest"
+                | "circuit"
+        ) {
+            save_setting_value(pool, "interface_theme", interface_theme).await?;
+        } else {
+            return Err(format!("Invalid interface_theme: {}", interface_theme));
+        }
+    }
+
+    if let Some(font_family) = settings.get("font_family").and_then(|v| v.as_str()) {
+        if matches!(font_family, "system" | "rounded" | "mono" | "readable") {
+            save_setting_value(pool, "font_family", font_family).await?;
+        } else {
+            return Err(format!("Invalid font_family: {}", font_family));
+        }
+    }
+
+    if let Some(ui_density) = settings.get("ui_density").and_then(|v| v.as_str()) {
+        if matches!(ui_density, "comfortable" | "compact") {
+            save_setting_value(pool, "ui_density", ui_density).await?;
+        } else {
+            return Err(format!("Invalid ui_density: {}", ui_density));
+        }
+    }
+
     if let Some(mica_effect) = settings.get("mica_effect").and_then(|v| v.as_str()) {
         if matches!(
             mica_effect,
-            "clear" | "mica" | "mica_alt" | "acrylic" | "blur"
+            "best"
+                | "best_glow"
+                | "clear"
+                | "clear_focus"
+                | "clear_neon"
+                | "mica"
+                | "mica_soft"
+                | "mica_alt"
+                | "mica_alt_luxe"
+                | "acrylic"
+                | "acrylic_frost"
+                | "acrylic_tint"
+                | "blur"
+                | "blur_vivid"
         ) {
             save_setting_value(pool, "mica_effect", mica_effect).await?;
         } else {

@@ -115,8 +115,14 @@ export function SettingsPanel({
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedDashSearch, setDebouncedDashSearch] = useState('');
 
-  // Apply theme immediately when settings.theme changes
-  useTheme(settings.theme);
+  // Apply theme immediately when appearance settings change.
+  useTheme(
+    settings.theme,
+    settings.interface_theme,
+    settings.font_family,
+    settings.ui_density,
+    settings.mica_effect || 'clear'
+  );
 
   // Generic handler for immediate settings updates
   const updateSettings = async (updates: Partial<Settings>) => {
@@ -588,7 +594,7 @@ export function SettingsPanel({
         }}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
       />
-      <div className="flex h-full flex-col bg-background text-foreground">
+      <div data-settings-shell className="flex h-full flex-col bg-background text-foreground">
         {/* Header */}
         <div
           className="drag-area flex items-center justify-between border-b border-border p-4"

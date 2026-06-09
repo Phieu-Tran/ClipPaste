@@ -12,7 +12,13 @@ export function SettingsWindow() {
   const [isMaximized, setIsMaximized] = useState(false);
   const appWindow = useMemo(() => getCurrentWindow(), []);
 
-  const effectiveTheme = useTheme(settings?.theme || 'system');
+  const effectiveTheme = useTheme(
+    settings?.theme || 'system',
+    settings?.interface_theme,
+    settings?.font_family,
+    settings?.ui_density,
+    settings?.mica_effect
+  );
 
   const refreshMaximized = useCallback(async () => {
     try {

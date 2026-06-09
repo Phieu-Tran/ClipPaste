@@ -3,6 +3,7 @@ import type {
   ClipboardItem,
   FolderItem,
   Settings,
+  WindowEffectSupport,
   ScratchpadItem,
   DashboardStats,
   DashClip,
@@ -119,6 +120,8 @@ export const cmd = {
   getSettings: () => invoke<Settings>('get_settings'),
 
   saveSettings: (settings: Settings) => invoke<void>('save_settings', { settings }),
+
+  getWindowEffectSupport: () => invoke<WindowEffectSupport>('get_window_effect_support'),
 
   getIgnoredApps: () => invoke<string[]>('get_ignored_apps'),
 
