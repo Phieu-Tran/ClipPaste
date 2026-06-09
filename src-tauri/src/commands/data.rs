@@ -3,6 +3,7 @@ use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
 use crate::utils;
 use once_cell::sync::Lazy;
+use std::collections::HashSet;
 use std::fs;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::path::{Path, PathBuf};
@@ -15,9 +16,66 @@ use tauri::Manager;
 
 const DATA_DB_FILE: &str = "clipboard.db";
 const DASHBOARD_STATS_CACHE_TTL: Duration = Duration::from_secs(5);
+const MAX_IMPORT_ENTRIES: usize = 25_000;
+const MAX_IMPORT_TOTAL_UNCOMPRESSED: u64 = 8 * 1024 * 1024 * 1024;
+const MAX_IMPORT_DB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_IMPORT_IMAGE_BYTES: u64 = 512 * 1024 * 1024;
 
 static DASHBOARD_STATS_CACHE: Lazy<parking_lot::Mutex<Option<(Instant, serde_json::Value)>>> =
     Lazy::new(|| parking_lot::Mutex::new(None));
+
+fn is_hex_hash(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn is_safe_backup_image_filename(filename: &str) -> bool {
+    if filename.is_empty()
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.chars().any(|ch| ch.is_control())
+    {
+        return false;
+    }
+
+    if let Some(hash) = filename.strip_suffix(".png") {
+        return is_hex_hash(hash);
+    }
+    if let Some(hash) = filename.strip_suffix("_thumb.jpg") {
+        return is_hex_hash(hash);
+    }
+    false
+}
+
+fn import_entry_relative_path(name: &str) -> Option<PathBuf> {
+    if name.is_empty()
+        || name.starts_with('/')
+        || name.starts_with('\\')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.chars().any(|ch| ch.is_control())
+    {
+        return None;
+    }
+
+    if name == DATA_DB_FILE {
+        return Some(PathBuf::from(DATA_DB_FILE));
+    }
+
+    let filename = name.strip_prefix("images/")?;
+    if is_safe_backup_image_filename(filename) {
+        return Some(PathBuf::from("images").join(filename));
+    }
+
+    None
+}
+
+fn import_file_size_limit(path: &Path) -> u64 {
+    if path == Path::new(DATA_DB_FILE) {
+        MAX_IMPORT_DB_BYTES
+    } else {
+        MAX_IMPORT_IMAGE_BYTES
+    }
+}
 
 #[tauri::command]
 pub fn get_data_directory() -> Result<String, String> {
@@ -618,13 +676,59 @@ pub async fn import_data(
             std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
 
-        // Validate: must contain clipboard.db
-        let has_db = (0..archive.len()).any(|i| {
-            archive
-                .by_index(i)
-                .map(|f| f.name() == "clipboard.db")
-                .unwrap_or(false)
-        });
+        if archive.len() > MAX_IMPORT_ENTRIES {
+            return Err(format!(
+                "Invalid backup: too many entries (max {})",
+                MAX_IMPORT_ENTRIES
+            ));
+        }
+
+        let mut has_db = false;
+        let mut declared_total = 0u64;
+        let mut seen_paths = HashSet::new();
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = entry.name().to_string();
+            if name.ends_with('/') {
+                continue;
+            }
+
+            let Some(rel_path) = import_entry_relative_path(&name) else {
+                log::warn!("Import: skipping unexpected entry: {}", name);
+                continue;
+            };
+
+            let path_key = rel_path.to_string_lossy().replace('\\', "/");
+            if !seen_paths.insert(path_key.clone()) {
+                return Err(format!("Invalid backup: duplicate entry {}", path_key));
+            }
+
+            let size = entry.size();
+            let file_limit = import_file_size_limit(&rel_path);
+            if size > file_limit {
+                return Err(format!(
+                    "Invalid backup: {} is too large ({} MB, max {} MB)",
+                    name,
+                    size / 1024 / 1024,
+                    file_limit / 1024 / 1024
+                ));
+            }
+
+            declared_total = declared_total
+                .checked_add(size)
+                .ok_or_else(|| "Invalid backup: total extracted size overflow".to_string())?;
+            if declared_total > MAX_IMPORT_TOTAL_UNCOMPRESSED {
+                return Err(format!(
+                    "Invalid backup: extracted data is too large (max {} GB)",
+                    MAX_IMPORT_TOTAL_UNCOMPRESSED / 1024 / 1024 / 1024
+                ));
+            }
+
+            if rel_path == Path::new(DATA_DB_FILE) {
+                has_db = true;
+            }
+        }
+
         if !has_db {
             return Err("Invalid backup: clipboard.db not found in zip".to_string());
         }
@@ -633,55 +737,66 @@ pub async fn import_data(
         let _ = std::fs::remove_dir_all(&temp_dir_clone);
         std::fs::create_dir_all(&temp_dir_clone)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let temp_root = temp_dir_clone
+            .canonicalize()
+            .map_err(|e| format!("Failed to resolve temp dir: {}", e))?;
 
-        // Extract all files to temp dir with strict path validation
+        // Extract safe backup entries only, streaming to disk so a large zip cannot
+        // allocate the full uncompressed entry in memory.
+        let mut extracted_total = 0u64;
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let name = entry.name().to_string();
-
-            // Security: reject path traversal and suspicious names
-            if name.contains("..") || name.starts_with('/') || name.starts_with('\\') {
-                log::warn!("Import: skipping suspicious entry: {}", name);
+            if name.ends_with('/') {
                 continue;
             }
 
-            // Only allow known safe paths: clipboard.db and images/*
-            let is_safe =
-                name == "clipboard.db" || (name.starts_with("images/") && !name.contains(".."));
-            if !is_safe {
-                log::warn!("Import: skipping unexpected entry: {}", name);
+            let Some(rel_path) = import_entry_relative_path(&name) else {
                 continue;
-            }
+            };
+            let out_path = temp_root.join(&rel_path);
 
-            let out_path = temp_dir_clone.join(&name);
-
-            // Canonicalize check: resolved path must be inside temp_dir
             if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent).ok();
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create import directory: {}", e))?;
+                let parent = parent
+                    .canonicalize()
+                    .map_err(|e| format!("Failed to resolve import directory: {}", e))?;
+                if !parent.starts_with(&temp_root) {
+                    return Err(format!("Invalid backup: path escapes import dir: {}", name));
+                }
+            } else {
+                return Err(format!("Invalid backup: missing parent for {}", name));
             }
 
-            // Verify path is inside temp_dir (prevent path escape)
-            // Use normalized string comparison — canonicalize() fails on non-existent files on Windows
-            if !out_path.starts_with(&temp_dir_clone) {
-                log::warn!("Import: path escape detected, skipping: {}", name);
-                continue;
-            }
-
-            // Limit individual file size to 500MB to prevent zip bombs
-            let size = entry.size();
-            if size > 500 * 1024 * 1024 {
-                log::warn!(
-                    "Import: file too large ({}MB), skipping: {}",
-                    size / 1024 / 1024,
+            let declared_size = entry.size();
+            let file_limit = import_file_size_limit(&rel_path);
+            let mut out_file = std::fs::File::create(&out_path)
+                .map_err(|e| format!("Failed to create {}: {}", name, e))?;
+            let written = std::io::copy(&mut entry.by_ref().take(file_limit + 1), &mut out_file)
+                .map_err(|e| format!("Failed to extract {}: {}", name, e))?;
+            if written > file_limit {
+                let _ = std::fs::remove_file(&out_path);
+                return Err(format!(
+                    "Invalid backup: {} exceeded size limit while extracting",
                     name
-                );
-                continue;
+                ));
+            }
+            if written != declared_size {
+                let _ = std::fs::remove_file(&out_path);
+                return Err(format!("Invalid backup: size mismatch for {}", name));
             }
 
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            std::fs::write(&out_path, &buf)
-                .map_err(|e| format!("Failed to write {}: {}", name, e))?;
+            extracted_total = extracted_total
+                .checked_add(written)
+                .ok_or_else(|| "Invalid backup: total extracted size overflow".to_string())?;
+            if extracted_total > MAX_IMPORT_TOTAL_UNCOMPRESSED {
+                let _ = std::fs::remove_file(&out_path);
+                return Err(format!(
+                    "Invalid backup: extracted data exceeded {} GB",
+                    MAX_IMPORT_TOTAL_UNCOMPRESSED / 1024 / 1024 / 1024
+                ));
+            }
         }
 
         // Validate extracted DB exists

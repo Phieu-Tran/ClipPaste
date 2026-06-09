@@ -1,4 +1,4 @@
-import { Settings, DashboardStats, ImageCleanupPreview } from '../../types';
+import { Settings, DashboardStats, ImageCleanupPreview, ImportBackupResult } from '../../types';
 import { useState } from 'react';
 import {
   X,
@@ -51,7 +51,7 @@ interface GeneralTabProps {
   confirmClearHistory: () => void;
   handleRemoveDuplicates: () => Promise<void>;
   handleExportBackup: () => Promise<void>;
-  handleImportBackup: () => Promise<void>;
+  handleImportBackup: (onResult?: (result: ImportBackupResult) => void) => Promise<void>;
   dataAction: 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
   // Update
   updateProgress: { percent: number; downloaded: number; total: number } | null;
@@ -155,8 +155,8 @@ export function GeneralTab({
       const path = await cmd.pickFile();
       const filename = path.split('\\').pop() || path;
       setNewIgnoredApp(filename);
-    } catch (e) {
-      console.log('File picker cancelled or failed', e);
+    } catch {
+      // User cancelled the picker.
     }
   };
 
@@ -723,7 +723,7 @@ export function GeneralTab({
           </button>
 
           <button
-            onClick={handleImportBackup}
+            onClick={() => void handleImportBackup()}
             disabled={!!dataAction || reclassifyRunning}
             className="btn btn-secondary text-xs disabled:opacity-50"
           >

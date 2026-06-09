@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.19] - 2026-06-09
+
+### Changed
+- **Window vibrancy support detection**: bumped the custom `window-vibrancy` dependency to the latest `dev` rev, adding direct support-check APIs and more reliable Windows build fallback selection for Tabbed, Mica, Acrylic, Blur, and Clear.
+- **Backup import UX**: import results in the Backup tab now persist in-panel, with clearer messages for cancelled imports, missing `clipboard.db`, oversized backups, duplicate entries, unsafe paths, and unreadable zip files.
+
+### Security
+- **Backup import hardening**: backup extraction now validates entry count, duplicate paths, allowed filenames, per-file limits, total uncompressed size, and canonicalized output paths, and streams extraction to avoid loading large zip entries into memory.
+
+---
+
 ## [1.10.18] - 2026-06-05
 
 ### Added

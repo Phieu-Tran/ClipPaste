@@ -1,4 +1,4 @@
-import { Settings, FolderItem, DashClip, DashboardStats } from '../types';
+import { Settings, FolderItem, DashClip, DashboardStats, ImportBackupResult } from '../types';
 import {
   X,
   Maximize2,
@@ -501,7 +501,7 @@ export function SettingsPanel({
     }
   };
 
-  const handleImportBackup = async () => {
+  const handleImportBackup = async (onResult?: (result: ImportBackupResult) => void) => {
     requestConfirm({
       title: 'Import Backup',
       message:
@@ -520,6 +520,7 @@ export function SettingsPanel({
           await cmd.importData();
           clearImageDataUrlCache();
           setImportRestartRequired(true);
+          onResult?.({ status: 'success' });
           toast.success('Backup imported. Restart to apply.', {
             duration: 10000,
             action: {
@@ -528,8 +529,12 @@ export function SettingsPanel({
             },
           });
         } catch (error) {
-          if (String(error) !== 'Import cancelled') {
-            toast.error(`Import failed: ${error}`);
+          const message = String(error);
+          if (message === 'Import cancelled') {
+            onResult?.({ status: 'cancelled' });
+          } else {
+            onResult?.({ status: 'error', error: message });
+            toast.error(`Import failed: ${message}`);
           }
         } finally {
           toast.dismiss(loadingToast);
@@ -592,7 +597,6 @@ export function SettingsPanel({
           <h2 className="text-lg font-semibold">Settings</h2>
           <div
             className="no-drag flex items-center gap-2"
-            style={{ WebkitAppRegion: 'no-drag' } as any}
             onDoubleClick={(event) => event.stopPropagation()}
           >
             {renderSaveStatus()}

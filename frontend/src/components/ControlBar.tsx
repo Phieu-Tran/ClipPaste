@@ -488,7 +488,6 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
           className="no-drag no-scrollbar flex h-8 max-w-[174px] shrink-0 items-center overflow-x-auto rounded-full border border-border/60 bg-card/90 px-1.5"
           role="toolbar"
           aria-label="Filter clips"
-          style={{ WebkitAppRegion: 'no-drag' } as any}
         >
           <div ref={filterListRef} className="relative flex items-center gap-1">
             {/* Sliding highlight behind the active pill */}
@@ -533,20 +532,14 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       )}
 
       {showResultCount && (
-        <span
-          className="no-drag shrink-0 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground"
-          style={{ WebkitAppRegion: 'no-drag' } as any}
-        >
+        <span className="no-drag shrink-0 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground">
           {activeFilter?.label ?? 'Results'} · {resultCount}
           {resultHasMore ? '+' : ''}
         </span>
       )}
 
       {showSearch && hasSearchQuery && (
-        <div
-          className="no-drag flex max-w-[180px] items-center gap-1 overflow-hidden"
-          style={{ WebkitAppRegion: 'no-drag' } as any}
-        >
+        <div className="no-drag flex max-w-[180px] items-center gap-1 overflow-hidden">
           <button
             onClick={() => onSearchChange('')}
             title="Clear search text"
@@ -563,8 +556,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         ref={scrollContainerRef}
         role="tablist"
         aria-label="Clip folders"
-        className="no-scrollbar mask-gradient-right flex min-w-0 flex-1 items-center gap-2 overflow-x-auto p-1"
-        style={{ WebkitAppRegion: 'no-drag' } as any}
+        className="no-drag no-scrollbar mask-gradient-right flex min-w-0 flex-1 items-center gap-2 overflow-x-auto p-1"
         onWheel={(e) => {
           if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollLeft += e.deltaY + e.deltaX;
@@ -656,14 +648,11 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                   onFolderContextMenu(e, cat.id);
                 }
               }}
-              style={
-                {
-                  WebkitAppRegion: 'no-drag',
-                  textShadow:
-                    theme === 'light' ? '0 1px 3px rgba(0,0,0,0.8)' : '0 1px 2px rgba(0,0,0,0.7)',
-                  cursor: cat.id ? (folderDragId === cat.id ? 'grabbing' : 'grab') : 'pointer',
-                } as any
-              }
+              style={{
+                textShadow:
+                  theme === 'light' ? '0 1px 3px rgba(0,0,0,0.8)' : '0 1px 2px rgba(0,0,0,0.7)',
+                cursor: cat.id ? (folderDragId === cat.id ? 'grabbing' : 'grab') : 'pointer',
+              }}
               className={clsx(
                 'whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all duration-200',
                 colorClass,
@@ -750,8 +739,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
       {/* Actions */}
       <div
-        className="flex flex-shrink-0 items-center gap-2"
-        style={{ WebkitAppRegion: 'no-drag' } as any}
+        className="no-drag flex flex-shrink-0 items-center gap-2"
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {onToggleScratchpad && (

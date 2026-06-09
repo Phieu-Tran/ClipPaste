@@ -105,6 +105,11 @@ export interface ClipCleanupPreview {
   newest_created_at: string | null;
 }
 
+export type ImportBackupResult =
+  | { status: 'success' }
+  | { status: 'cancelled' }
+  | { status: 'error'; error: string };
+
 export interface ProcessMemoryInfo {
   pid: number;
   name: string;

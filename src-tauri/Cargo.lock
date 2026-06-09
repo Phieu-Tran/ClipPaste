@@ -866,7 +866,7 @@ dependencies = [
 
 [[package]]
 name = "clippaste"
-version = "1.10.18"
+version = "1.10.19"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -4391,7 +4391,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7249,7 +7249,7 @@ dependencies = [
 [[package]]
 name = "window-vibrancy"
 version = "0.8.0"
-source = "git+https://github.com/Phieu-Tran/window-vibrancy.git?rev=67a85de#67a85deb6ef4fb5f888bcee93724439fedbd3585"
+source = "git+https://github.com/Phieu-Tran/window-vibrancy.git?rev=3f776c529ca75dd1e9bfb74599ffcffcca31eb76#3f776c529ca75dd1e9bfb74599ffcffcca31eb76"
 dependencies = [
  "raw-window-handle",
  "windows-sys 0.60.2",

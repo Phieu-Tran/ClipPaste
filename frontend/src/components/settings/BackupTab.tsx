@@ -16,7 +16,13 @@ import {
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
 import { clearImageDataUrlCache } from '../../imageQueue';
-import { ClipCleanupPreview, DashboardStats, ImageCleanupPreview, Settings } from '../../types';
+import {
+  ClipCleanupPreview,
+  DashboardStats,
+  ImageCleanupPreview,
+  ImportBackupResult,
+  Settings,
+} from '../../types';
 
 type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | null;
 
@@ -27,7 +33,7 @@ interface BackupTabProps {
   dataAction: DataAction;
   handleSelectDataDirectory: () => void;
   handleExportBackup: () => Promise<void>;
-  handleImportBackup: () => Promise<void>;
+  handleImportBackup: (onResult?: (result: ImportBackupResult) => void) => Promise<void>;
   handleRemoveDuplicates: () => Promise<void>;
   confirmClearHistory: () => void;
   handleCheckDbIntegrity: () => Promise<void>;
@@ -49,6 +55,83 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+type ImportNoticeTone = 'success' | 'warning' | 'danger';
+
+interface ImportNotice {
+  tone: ImportNoticeTone;
+  title: string;
+  message: string;
+  error?: string;
+}
+
+function describeBackupImportError(error: string): string {
+  const message = error.trim();
+  const lower = message.toLowerCase();
+
+  if (lower.includes('clipboard.db not found')) {
+    return 'This zip is missing clipboard.db, so it does not look like a ClipPaste backup.';
+  }
+  if (lower.includes('too many entries')) {
+    return 'This backup contains more files than ClipPaste accepts. Export a fresh ClipPaste backup and import that zip.';
+  }
+  if (lower.includes('duplicate entry')) {
+    return 'This backup contains duplicate file paths. ClipPaste blocked it to avoid importing ambiguous data.';
+  }
+  if (
+    lower.includes('too large') ||
+    lower.includes('exceeded size limit') ||
+    lower.includes('extracted data exceeded') ||
+    lower.includes('size mismatch')
+  ) {
+    return 'This backup is too large or changed size while extracting. ClipPaste only imports normal exported backups.';
+  }
+  if (
+    lower.includes('path escapes') ||
+    lower.includes('missing parent') ||
+    lower.includes('invalid backup path')
+  ) {
+    return 'This backup contains unsafe file paths. ClipPaste blocked the import before changing current data.';
+  }
+  if (lower.includes('invalid zip')) {
+    return 'The selected file is not a readable zip backup.';
+  }
+  if (lower.includes('failed to open zip')) {
+    return 'ClipPaste could not open the selected backup file.';
+  }
+
+  return message.replace(/^Invalid backup:\s*/i, '') || 'ClipPaste could not import this backup.';
+}
+
+function getImportNotice(result: ImportBackupResult): ImportNotice {
+  if (result.status === 'success') {
+    return {
+      tone: 'success',
+      title: 'Backup imported',
+      message: 'Restart ClipPaste so every window reads the imported data.',
+    };
+  }
+  if (result.status === 'cancelled') {
+    return {
+      tone: 'warning',
+      title: 'Import cancelled',
+      message: 'No backup data was changed.',
+    };
+  }
+
+  return {
+    tone: 'danger',
+    title: 'Import blocked',
+    message: describeBackupImportError(result.error),
+    error: result.error,
+  };
+}
+
+function getImportNoticeClass(tone: ImportNoticeTone): string {
+  if (tone === 'success') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+  if (tone === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+  return 'border-destructive/30 bg-destructive/10 text-destructive';
 }
 
 function Metric({
@@ -94,10 +177,17 @@ export function BackupTab({
   const [clipCleanupPreview, setClipCleanupPreview] = useState<ClipCleanupPreview | null>(null);
   const [clipPreviewLoading, setClipPreviewLoading] = useState(false);
   const [clipCleanupRunning, setClipCleanupRunning] = useState(false);
+  const [importResult, setImportResult] = useState<ImportBackupResult | null>(null);
 
   const totalStorage = dashStats ? dashStats.db_size + dashStats.images_size : 0;
   const storageWarning = totalStorage >= 500 * 1024 * 1024;
   const cleanupRunning = imageCleanupRunning || clipCleanupRunning;
+  const importNotice = importResult ? getImportNotice(importResult) : null;
+
+  const runImportBackup = () => {
+    setImportResult(null);
+    void handleImportBackup(setImportResult);
+  };
 
   const previewOldImages = async () => {
     const days = Math.max(1, imageCleanupDays);
@@ -277,7 +367,7 @@ export function BackupTab({
               {dataAction === 'export' ? 'Exporting...' : 'Export'}
             </button>
             <button
-              onClick={handleImportBackup}
+              onClick={runImportBackup}
               disabled={!!dataAction || cleanupRunning}
               className="btn btn-secondary text-xs disabled:opacity-50"
             >
@@ -301,6 +391,30 @@ export function BackupTab({
               {dataAction === 'duplicates' ? 'Removing...' : 'Duplicates'}
             </button>
           </div>
+          {importNotice && (
+            <div
+              className={`flex gap-2 rounded-md border p-2 ${getImportNoticeClass(
+                importNotice.tone
+              )}`}
+            >
+              {importNotice.tone === 'success' ? (
+                <ShieldCheck size={15} className="mt-0.5 shrink-0" />
+              ) : (
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              )}
+              <div className="min-w-0">
+                <div className="text-xs font-medium">{importNotice.title}</div>
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {importNotice.message}
+                </div>
+                {importNotice.error && importNotice.error !== importNotice.message ? (
+                  <div className="mt-1 break-words text-[11px] leading-5 opacity-80">
+                    {importNotice.error}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3 rounded-lg border border-border bg-card/40 p-3">
