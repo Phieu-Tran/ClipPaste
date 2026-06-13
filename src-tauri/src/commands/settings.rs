@@ -613,7 +613,7 @@ pub fn register_app_shortcuts(
     let win_clone = main_window.clone();
     let db_for_main_hotkey = db.clone();
     app.global_shortcut()
-        .on_shortcut(main_shortcut, move |_app, _shortcut, event| {
+        .on_shortcut(main_shortcut, move |app_handle, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
                 let already_open = win_clone.is_visible().unwrap_or(false)
                     && win_clone.is_focused().unwrap_or(false);
@@ -623,6 +623,9 @@ pub fn register_app_shortcuts(
                     if crate::clipboard::is_foreground_app_ignored(&db_for_main_hotkey) {
                         log::info!("HOTKEY: Suppressed (foreground app is ignored)");
                         return;
+                    }
+                    if crate::hide_scratchpad_window(app_handle) {
+                        std::thread::sleep(std::time::Duration::from_millis(60));
                     }
                     crate::clipboard::capture_prev_foreground();
                     crate::position_window_at_bottom(&win_clone);
@@ -639,6 +642,9 @@ pub fn register_app_shortcuts(
                 if crate::clipboard::is_foreground_app_ignored(&db_for_sp_hotkey) {
                     log::info!("HOTKEY: Scratchpad suppressed (foreground app is ignored)");
                     return;
+                }
+                if crate::hide_main_window(&app_for_sp) {
+                    std::thread::sleep(std::time::Duration::from_millis(60));
                 }
                 crate::clipboard::capture_prev_foreground();
                 match get_or_create_scratchpad_window(&app_for_sp) {

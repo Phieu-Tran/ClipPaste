@@ -47,9 +47,9 @@ export function useScratchpad() {
       }
 
       await cmd.capturePrevForeground();
+      await clipWindow.hide().catch(() => {});
       await cmd.focusWindow('scratchpad').catch(() => win.show());
       await win.emit('scratchpad-open');
-      await clipWindow.hide().catch(() => {});
       setIsVisible(true);
       flashFeedback('on');
       return;
@@ -70,6 +70,9 @@ export function useScratchpad() {
       }
     } catch {}
 
+    await cmd.capturePrevForeground();
+    await clipWindow.hide().catch(() => {});
+
     const scratchpadWin = new WebviewWindow('scratchpad', {
       url: 'index.html?window=scratchpad&open=1',
       title: 'Scratchpad',
@@ -84,7 +87,6 @@ export function useScratchpad() {
       focus: true,
     });
     scratchpadWin.once('tauri://created', () => {
-      clipWindow.hide().catch(() => {});
       setIsVisible(true);
       flashFeedback('on');
     });

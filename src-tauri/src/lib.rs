@@ -327,6 +327,7 @@ pub fn run_app() {
                     if event.id.as_ref() == "quit" {
                         app.exit(0);
                     } else if event.id.as_ref() == "show" {
+                        hide_scratchpad_window(app);
                         if let Some(win) = app.get_webview_window("main") {
                             position_window_at_bottom(&win);
                         }
@@ -334,7 +335,9 @@ pub fn run_app() {
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                        if let Some(win) = tray.app_handle().get_webview_window("main") {
+                        let app_handle = tray.app_handle();
+                        hide_scratchpad_window(app_handle);
+                        if let Some(win) = app_handle.get_webview_window("main") {
                             position_window_at_bottom(&win);
                         }
                     }
@@ -562,6 +565,24 @@ pub fn run_app() {
 
 pub fn position_window_at_bottom(window: &tauri::WebviewWindow) {
     animate_window_show(window);
+}
+
+fn hide_window_by_label(app: &tauri::AppHandle, label: &str) -> bool {
+    if let Some(window) = app.get_webview_window(label) {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            return true;
+        }
+    }
+    false
+}
+
+pub fn hide_main_window(app: &tauri::AppHandle) -> bool {
+    hide_window_by_label(app, "main")
+}
+
+pub fn hide_scratchpad_window(app: &tauri::AppHandle) -> bool {
+    hide_window_by_label(app, "scratchpad")
 }
 
 pub fn animate_window_show(window: &tauri::WebviewWindow) {

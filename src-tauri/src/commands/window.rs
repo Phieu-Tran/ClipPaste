@@ -2,6 +2,9 @@ use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub fn show_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() == "main" {
+        crate::hide_scratchpad_window(window.app_handle());
+    }
     crate::position_window_at_bottom(&window);
     Ok(())
 }
@@ -14,6 +17,11 @@ pub fn hide_window(window: tauri::WebviewWindow) -> Result<(), String> {
 #[tauri::command]
 pub async fn focus_window(app: AppHandle, label: String) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(&label) {
+        if label == "main" {
+            crate::hide_scratchpad_window(&app);
+        } else if label == "scratchpad" {
+            crate::hide_main_window(&app);
+        }
         crate::ensure_window_on_current_virtual_desktop(&window);
         if let Err(e) = window.unminimize() {
             log::warn!("Failed to unminimize window {}: {:?}", label, e);
