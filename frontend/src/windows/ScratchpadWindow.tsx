@@ -287,8 +287,21 @@ export function ScratchpadWindow() {
       }
       setMode(nextMode);
     });
+    const unlistenOpenP = listen('scratchpad-open', () => {
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
+      }
+      setEditingId(null);
+      setPastingId(null);
+      setSearchQuery('');
+      setShowSortMenu(false);
+      setPinned(true);
+      setMode('list');
+    });
     return () => {
       unlistenP.then((fn) => fn()).catch(() => {});
+      unlistenOpenP.then((fn) => fn()).catch(() => {});
     };
   }, [setMode]);
 

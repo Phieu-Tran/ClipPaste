@@ -7,14 +7,19 @@ const COLLAPSED_WIDTH = 16;
 const COLLAPSED_HEIGHT = 100;
 
 export function useScratchpad() {
-  // Toggle: create if not exists, otherwise ask the existing scratchpad window
-  // to switch between its side rail and expanded list.
+  // Toolbar toggle: create/show the side panel, or hide it completely if it is already visible.
   const toggle = useCallback(async () => {
     const win = await WebviewWindow.getByLabel('scratchpad');
     if (win) {
+      const visible = await win.isVisible().catch(() => false);
+      if (visible) {
+        await win.hide();
+        return;
+      }
+
       await cmd.capturePrevForeground();
       await cmd.focusWindow('scratchpad').catch(() => win.show());
-      await win.emit('scratchpad-toggle');
+      await win.emit('scratchpad-open');
       return;
     }
 

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Scratchpad toggle lifecycle**: closing/collapsing Scratchpad no longer destroys the helper window, the global Scratchpad hotkey can create it when missing, and repeated toggles no longer drift because of stale mode state.
+- **Scratchpad toolbar toggle**: the Scratchpad button on the Clip bar now hides an already-visible Scratchpad and reopens it directly to the list view instead of only forcing it to show.
 - **Auto-paste focus routing**: paste targets are now timestamped, stale targets are cleared, and ClipPaste verifies Windows actually restored focus before sending `Shift+Insert`, reducing long-session paste misses and wrong-target paste attempts.
 - **Windows virtual desktop show flow**: main window, tray show, Settings focus, and Scratchpad show now move the window to the current virtual desktop before show/focus, avoiding occasional jumps back to the desktop where the window was last visible.
 
