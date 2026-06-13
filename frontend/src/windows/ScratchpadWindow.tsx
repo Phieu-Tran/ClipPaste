@@ -532,8 +532,6 @@ export function ScratchpadWindow() {
 
   const doPaste = useCallback(async () => {
     if (!pastingId) return;
-    // Hide first so the modal disappears instantly from the user's POV.
-    await appWindow.hide();
     try {
       // Backend awaits the full restore→paste chain inline — the invoke only
       // resolves AFTER Shift+Insert has been delivered to the target app, so
@@ -541,6 +539,7 @@ export function ScratchpadWindow() {
       await cmd.scratchpadPaste(pasteContent);
     } catch {
       await navigator.clipboard.writeText(pasteContent);
+      await appWindow.hide().catch(() => {});
     }
     setPastingId(null);
     setPinned(false);

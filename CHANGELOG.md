@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scratchpad visual feedback**: the Clip bar Scratchpad button now shows active/off feedback, including a red off flash when the panel is hidden.
 - **Scratchpad overlap**: opening Scratchpad list view from the Clip bar now immediately hides the main ClipPaste window so the two floating surfaces do not sit on top of each other.
 - **Scratchpad paste routing**: opening Scratchpad from the Clip bar now waits for ClipPaste to hide before capturing the paste target, and Scratchpad paste falls back to the current foreground app when Windows refuses the saved target restore.
+- **Scratchpad input paste**: global ClipPaste/Scratchpad hotkeys are ignored while a ClipPaste window is focused, so `Ctrl+Shift+V` no longer hijacks paste inside Scratchpad text fields.
+- **Scratchpad paste action**: the Scratchpad Paste button now always performs an explicit paste on Windows instead of depending on the global auto-paste setting.
 - **Main/Scratchpad exclusivity**: opening ClipPaste via global hotkey, tray, or focus command now hides Scratchpad first, and opening Scratchpad hides the main window first, preventing the two floating UIs from stacking.
 - **Auto-paste focus routing**: paste targets are now timestamped, stale targets are cleared, and ClipPaste verifies Windows actually restored focus before sending `Shift+Insert`, reducing long-session paste misses and wrong-target paste attempts.
 - **Windows virtual desktop show flow**: main window, tray show, Settings focus, and Scratchpad show now move the window to the current virtual desktop before show/focus, avoiding occasional jumps back to the desktop where the window was last visible.

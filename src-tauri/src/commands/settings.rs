@@ -620,6 +620,10 @@ pub fn register_app_shortcuts(
                 if already_open {
                     crate::animate_window_hide(&win_clone, None);
                 } else {
+                    if crate::clipboard::is_foreground_own_process() {
+                        log::info!("HOTKEY: Main shortcut ignored while ClipPaste is focused");
+                        return;
+                    }
                     if crate::clipboard::is_foreground_app_ignored(&db_for_main_hotkey) {
                         log::info!("HOTKEY: Suppressed (foreground app is ignored)");
                         return;
@@ -639,6 +643,10 @@ pub fn register_app_shortcuts(
     app.global_shortcut()
         .on_shortcut(scratchpad_shortcut, move |_app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
+                if crate::clipboard::is_foreground_own_process() {
+                    log::info!("HOTKEY: Scratchpad shortcut ignored while ClipPaste is focused");
+                    return;
+                }
                 if crate::clipboard::is_foreground_app_ignored(&db_for_sp_hotkey) {
                     log::info!("HOTKEY: Scratchpad suppressed (foreground app is ignored)");
                     return;
