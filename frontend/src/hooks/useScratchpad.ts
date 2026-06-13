@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { cmd } from '../commands';
@@ -7,6 +7,32 @@ const COLLAPSED_WIDTH = 16;
 const COLLAPSED_HEIGHT = 100;
 
 export function useScratchpad() {
+  const [isVisible, setIsVisible] = useState(false);
+  const [feedback, setFeedback] = useState<'on' | 'off' | null>(null);
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashFeedback = useCallback((next: 'on' | 'off') => {
+    setFeedback(next);
+    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = setTimeout(() => setFeedback(null), 900);
+  }, []);
+
+  const refreshVisibility = useCallback(async () => {
+    const win = await WebviewWindow.getByLabel('scratchpad');
+    if (!win) {
+      setIsVisible(false);
+      return;
+    }
+    setIsVisible(await win.isVisible().catch(() => false));
+  }, []);
+
+  useEffect(() => {
+    refreshVisibility();
+    return () => {
+      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    };
+  }, [refreshVisibility]);
+
   // Toolbar toggle: create/show the side panel, or hide it completely if it is already visible.
   const toggle = useCallback(async () => {
     const win = await WebviewWindow.getByLabel('scratchpad');
@@ -14,12 +40,16 @@ export function useScratchpad() {
       const visible = await win.isVisible().catch(() => false);
       if (visible) {
         await win.hide();
+        setIsVisible(false);
+        flashFeedback('off');
         return;
       }
 
       await cmd.capturePrevForeground();
       await cmd.focusWindow('scratchpad').catch(() => win.show());
       await win.emit('scratchpad-open');
+      setIsVisible(true);
+      flashFeedback('on');
       return;
     }
 
@@ -38,7 +68,7 @@ export function useScratchpad() {
       }
     } catch {}
 
-    new WebviewWindow('scratchpad', {
+    const scratchpadWin = new WebviewWindow('scratchpad', {
       url: 'index.html?window=scratchpad&open=1',
       title: 'Scratchpad',
       width: COLLAPSED_WIDTH,
@@ -51,7 +81,11 @@ export function useScratchpad() {
       skipTaskbar: true,
       focus: true,
     });
-  }, []);
+    scratchpadWin.once('tauri://created', () => {
+      setIsVisible(true);
+      flashFeedback('on');
+    });
+  }, [flashFeedback]);
 
-  return { toggle };
+  return { toggle, isVisible, feedback };
 }

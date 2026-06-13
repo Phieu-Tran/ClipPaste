@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { ScratchpadItem, Settings } from '../types';
 import { useTheme } from '../hooks/useTheme';
 import {
@@ -155,6 +156,16 @@ export function ScratchpadWindow() {
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isResizingRef = useRef(false);
 
+  const hideMainWindow = useCallback(() => {
+    WebviewWindow.getByLabel('main')
+      .then((win) => win?.hide())
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (initialMode === 'list') hideMainWindow();
+  }, [hideMainWindow, initialMode]);
+
   // Disable right-click
   useEffect(() => {
     const prevent = (e: MouseEvent) => e.preventDefault();
@@ -278,6 +289,7 @@ export function ScratchpadWindow() {
       }
       if (nextMode === 'list') {
         setPinned(true);
+        hideMainWindow();
       } else {
         setEditingId(null);
         setPastingId(null);
@@ -298,12 +310,13 @@ export function ScratchpadWindow() {
       setShowSortMenu(false);
       setPinned(true);
       setMode('list');
+      hideMainWindow();
     });
     return () => {
       unlistenP.then((fn) => fn()).catch(() => {});
       unlistenOpenP.then((fn) => fn()).catch(() => {});
     };
-  }, [setMode]);
+  }, [hideMainWindow, setMode]);
 
   // Filter by search + color, then sort. Synced into filteredRef for keydown handler.
   const filtered = useMemo(() => {
@@ -414,9 +427,11 @@ export function ScratchpadWindow() {
   // for roomy editing; list/collapsed pin to the side.
   useEffect(() => {
     if (mode === 'collapsed') moveToCollapsed();
-    else if (mode === 'list') moveToSide();
-    else if (mode === 'paste' || mode === 'edit') moveToCenter();
-  }, [mode, moveToCollapsed, moveToSide, moveToCenter]);
+    else if (mode === 'list') {
+      hideMainWindow();
+      moveToSide();
+    } else if (mode === 'paste' || mode === 'edit') moveToCenter();
+  }, [hideMainWindow, mode, moveToCollapsed, moveToSide, moveToCenter]);
 
   useEffect(() => {
     if (mode === 'edit' && titleRef.current) titleRef.current.focus();

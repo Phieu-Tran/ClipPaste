@@ -214,6 +214,8 @@ interface ControlBarProps {
   isIncognito?: boolean;
   onToggleIncognito?: () => void;
   onToggleScratchpad?: () => void;
+  isScratchpadVisible?: boolean;
+  scratchpadFeedback?: 'on' | 'off' | null;
   resultCount?: number;
   resultHasMore?: boolean;
 }
@@ -244,6 +246,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     isIncognito,
     onToggleIncognito,
     onToggleScratchpad,
+    isScratchpadVisible,
+    scratchpadFeedback,
     resultCount,
     resultHasMore,
   },
@@ -745,11 +749,29 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         {onToggleScratchpad && (
           <button
             onClick={onToggleScratchpad}
-            className="rounded-lg p-2 text-amber-400/60 transition-colors hover:bg-amber-500/10 hover:text-amber-400"
-            title="Toggle scratchpad"
-            aria-label="Toggle scratchpad"
+            className={clsx(
+              'relative rounded-lg p-2 transition-all duration-200',
+              scratchpadFeedback === 'off'
+                ? 'bg-red-500/20 text-red-300 shadow-[0_0_16px_rgba(248,113,113,0.22)] ring-1 ring-red-400/40'
+                : scratchpadFeedback === 'on' || isScratchpadVisible
+                  ? 'bg-amber-500/15 text-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.16)] ring-1 ring-amber-300/25'
+                  : 'text-amber-400/55 hover:bg-amber-500/10 hover:text-amber-300'
+            )}
+            title={isScratchpadVisible ? 'Hide scratchpad' : 'Show scratchpad'}
+            aria-label={isScratchpadVisible ? 'Hide scratchpad' : 'Show scratchpad'}
+            aria-pressed={isScratchpadVisible}
           >
             <StickyNote size={18} />
+            <span
+              className={clsx(
+                'absolute right-1 top-1 h-1.5 w-1.5 rounded-full transition-colors',
+                scratchpadFeedback === 'off'
+                  ? 'bg-red-400'
+                  : isScratchpadVisible
+                    ? 'bg-emerald-400'
+                    : 'bg-muted-foreground/30'
+              )}
+            />
           </button>
         )}
         {onToggleIncognito && (

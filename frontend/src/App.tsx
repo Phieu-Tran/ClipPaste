@@ -393,7 +393,11 @@ function App() {
   };
 
   // --- Scratchpad (auto-starts as separate window on right edge) ---
-  const { toggle: toggleScratchpad } = useScratchpad();
+  const {
+    toggle: toggleScratchpad,
+    isVisible: isScratchpadVisible,
+    feedback: scratchpadFeedback,
+  } = useScratchpad();
 
   // --- Batch Actions (extracted hook) ---
   const { handleBulkDelete, handleBulkMove, handleBulkPaste, handleBulkSetPin } = useBatchActions({
@@ -590,6 +594,8 @@ function App() {
             isIncognito={isIncognito}
             onToggleIncognito={toggleIncognito}
             onToggleScratchpad={toggleScratchpad}
+            isScratchpadVisible={isScratchpadVisible}
+            scratchpadFeedback={scratchpadFeedback}
           />
 
           <main
