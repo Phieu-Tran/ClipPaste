@@ -594,7 +594,10 @@ export function SettingsPanel({
         }}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
       />
-      <div data-settings-shell className="flex h-full flex-col bg-background text-foreground">
+      <div
+        data-settings-shell
+        className="flex h-full min-h-0 flex-col bg-background text-foreground"
+      >
         {/* Header */}
         <div
           className="drag-area flex items-center justify-between border-b border-border p-4"
@@ -625,7 +628,7 @@ export function SettingsPanel({
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Sidebar */}
           <div className="w-48 flex-shrink-0 border-r border-border bg-card/50 p-2">
             <div className="flex flex-col gap-1">
@@ -729,16 +732,25 @@ export function SettingsPanel({
           </div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div
+            className={clsx(
+              'min-w-0 flex-1 overflow-y-auto',
+              activeTab === 'library' ? 'p-4' : 'p-6'
+            )}
+          >
             <div
               className={clsx(
-                'mx-auto space-y-8',
-                activeTab === 'library' ||
-                  activeTab === 'folders' ||
-                  activeTab === 'backup' ||
-                  activeTab === 'diagnostics'
-                  ? 'max-w-6xl'
-                  : 'max-w-2xl'
+                'mx-auto',
+                activeTab === 'library'
+                  ? 'flex h-full min-h-0 max-w-6xl flex-col'
+                  : clsx(
+                      'space-y-8',
+                      activeTab === 'folders' ||
+                        activeTab === 'backup' ||
+                        activeTab === 'diagnostics'
+                        ? 'max-w-6xl'
+                        : 'max-w-2xl'
+                    )
               )}
             >
               {importRestartRequired && (
@@ -873,7 +885,7 @@ export function SettingsPanel({
         </div>
 
         {/* Footer */}
-        <div className="flex flex-col items-center gap-1 border-t border-border bg-background px-4 py-3 text-center">
+        <div className="flex shrink-0 flex-col items-center gap-0.5 border-t border-border bg-background px-4 py-2 text-center">
           <button
             onClick={() => openUrl('https://github.com/Phieu-Tran/ClipPaste').catch(console.error)}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"

@@ -750,7 +750,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
         />
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           Icon={Database}
           label="Clips"
@@ -781,8 +781,8 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
         />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-card/50 shadow-sm shadow-black/5">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background/20 p-3">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card/50 shadow-sm shadow-black/5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background/20 p-3">
           <div className="flex h-9 rounded-md border border-border bg-background/60 p-0.5">
             <button
               onClick={() => setMode('clips')}
@@ -922,7 +922,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background/10 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background/10 px-3 py-2 text-xs text-muted-foreground">
           <span className="rounded-md border border-border bg-background/50 px-2 py-1 text-foreground">
             {modeLabel}
           </span>
@@ -958,7 +958,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
 
         <div
           className={clsx(
-            'flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 transition-colors',
+            'flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 transition-colors',
             selectedCount > 0 ? 'bg-primary/[0.08]' : 'bg-background/20'
           )}
         >
@@ -1024,21 +1024,21 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           )}
         </div>
 
-        <div className="min-h-[380px] overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {loading && clips.length === 0 ? (
-            <div className="flex h-[380px] items-center justify-center gap-2 text-sm text-muted-foreground">
+            <div className="flex h-full min-h-[320px] items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 size={16} className="animate-spin" />
               Loading
             </div>
           ) : clips.length === 0 ? (
-            <div className="flex h-[380px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background/50">
                 <Inbox size={22} className="opacity-60" />
               </div>
               <span>No {mode === 'images' ? 'images' : 'clips'}</span>
             </div>
           ) : mode === 'images' ? (
-            <div ref={imageScrollRef} className="max-h-[560px] overflow-y-auto p-3">
+            <div ref={imageScrollRef} className="h-full overflow-y-auto p-3">
               <div className="relative" style={{ height: `${imageVirtualizer.getTotalSize()}px` }}>
                 {imageVirtualizer.getVirtualItems().map((virtualRow) => {
                   const start = virtualRow.index * imageGridColumns;
@@ -1169,134 +1169,141 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
               </div>
             </div>
           ) : (
-            <div>
-              <div className="grid grid-cols-[24px_44px_60px_minmax(0,1fr)_120px_116px_104px] gap-3 border-b border-border bg-background/30 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
-                <span />
-                <span>#</span>
-                <span>Type</span>
-                <span>Content</span>
-                <span>Details</span>
-                <span>Folder</span>
-                <span className="text-right">Actions</span>
-              </div>
-              <div ref={listScrollRef} className="max-h-[560px] overflow-y-auto">
-                <ul className="relative" style={{ height: `${listVirtualizer.getTotalSize()}px` }}>
-                  {listVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const clip = clips[virtualRow.index];
-                    if (!clip) return null;
-                    const checked = selectedIds.has(clip.id);
-                    const folderName = clip.folder_id
-                      ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
-                      : 'No folder';
-                    const preview =
-                      clip.clip_type === 'image' ? 'Image clip' : clip.preview?.trim() || '(empty)';
-
-                    return (
-                      <li
-                        key={clip.id}
-                        ref={listVirtualizer.measureElement}
-                        data-index={virtualRow.index}
-                        className={clsx(
-                          'group absolute left-0 top-0 grid w-full grid-cols-[24px_44px_60px_minmax(0,1fr)_120px_116px_104px] items-center gap-3 border-b border-l-2 border-border/50 border-l-transparent px-3 py-2.5 transition-colors hover:bg-accent/30',
-                          checked && 'border-l-primary bg-primary/[0.07]'
-                        )}
-                        style={{ transform: `translateY(${virtualRow.start}px)` }}
-                      >
-                        <button
-                          onClick={() => toggleSelection(clip.id)}
-                          className={clsx(
-                            'flex h-4 w-4 items-center justify-center rounded border',
-                            checked
-                              ? 'border-primary bg-primary text-primary-foreground'
-                              : 'border-border text-transparent hover:border-primary/60'
-                          )}
-                          title="Select clip"
-                        >
-                          <Check size={11} />
-                        </button>
-                        <span
-                          className="text-xs font-semibold tabular-nums text-muted-foreground/70"
-                          title={`Clip #${virtualRow.index + 1}`}
-                        >
-                          #{virtualRow.index + 1}
-                        </span>
-
-                        <LibraryThumb
-                          clip={clip}
-                          onOpen={setPreviewClip}
-                          className="h-12 w-14 rounded-md"
-                        />
-
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <ClipTypeIcon type={clip.clip_type} subtype={clip.subtype} />
-                            <div className="truncate text-sm text-foreground/90">{preview}</div>
-                            {clip.is_pinned && (
-                              <Pin size={11} className="shrink-0 text-amber-400" />
-                            )}
-                            {clip.is_sensitive && (
-                              <ShieldAlert size={11} className="shrink-0 text-rose-400" />
-                            )}
-                          </div>
-                          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                            <span className="truncate">{clip.source_app ?? 'Unknown app'}</span>
-                            {clip.note && <span className="truncate italic">{clip.note}</span>}
-                          </div>
-                        </div>
-
-                        <div className="min-w-0 text-xs text-muted-foreground">
-                          <div className="truncate">{clipKindLabel(clip)}</div>
-                          <div className="truncate text-[10px]">
-                            {formatRelativeTime(clip.created_at)}
-                          </div>
-                        </div>
-
-                        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                          <FolderIcon size={12} className="shrink-0" />
-                          <span className="truncate">{folderName}</span>
-                        </div>
-
-                        <div className="flex items-center justify-end gap-0.5 opacity-40 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                          <button
-                            onClick={() => handleTogglePin(clip)}
-                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                            title={clip.is_pinned ? 'Unpin' : 'Pin'}
-                          >
-                            {clip.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                          </button>
-                          <button
-                            onClick={() => handleCopy(clip)}
-                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                            title="Copy"
-                          >
-                            <Copy size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete([clip.id])}
-                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            title="Delete"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-              <div className="flex items-center justify-center border-t border-border p-3">
-                {hasMore ? (
-                  <button
-                    onClick={handleLoadMore}
-                    disabled={loading}
-                    className="btn btn-secondary h-8 text-xs"
+            <div className="flex h-full min-h-0 flex-col overflow-x-auto">
+              <div className="flex min-h-0 min-w-[780px] flex-1 flex-col">
+                <div className="grid shrink-0 grid-cols-[24px_42px_58px_minmax(220px,1fr)_88px_120px_88px] gap-3 border-b border-border bg-background/30 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
+                  <span />
+                  <span>#</span>
+                  <span>Type</span>
+                  <span>Content</span>
+                  <span>Details</span>
+                  <span>Folder</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+                  <ul
+                    className="relative"
+                    style={{ height: `${listVirtualizer.getTotalSize()}px` }}
                   >
-                    {loading ? <Loader2 size={13} className="mr-1 animate-spin" /> : null}
-                    Load more
-                  </button>
-                ) : (
-                  <span className="text-xs text-muted-foreground">End</span>
-                )}
+                    {listVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const clip = clips[virtualRow.index];
+                      if (!clip) return null;
+                      const checked = selectedIds.has(clip.id);
+                      const folderName = clip.folder_id
+                        ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
+                        : 'No folder';
+                      const preview =
+                        clip.clip_type === 'image'
+                          ? 'Image clip'
+                          : clip.preview?.trim() || '(empty)';
+
+                      return (
+                        <li
+                          key={clip.id}
+                          ref={listVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          className={clsx(
+                            'group absolute left-0 top-0 grid w-full grid-cols-[24px_42px_58px_minmax(220px,1fr)_88px_120px_88px] items-center gap-3 border-b border-l-2 border-border/50 border-l-transparent px-3 py-2.5 transition-colors hover:bg-accent/30',
+                            checked && 'border-l-primary bg-primary/[0.07]'
+                          )}
+                          style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        >
+                          <button
+                            onClick={() => toggleSelection(clip.id)}
+                            className={clsx(
+                              'flex h-4 w-4 items-center justify-center rounded border',
+                              checked
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-border text-transparent hover:border-primary/60'
+                            )}
+                            title="Select clip"
+                          >
+                            <Check size={11} />
+                          </button>
+                          <span
+                            className="text-xs font-semibold tabular-nums text-muted-foreground/70"
+                            title={`Clip #${virtualRow.index + 1}`}
+                          >
+                            #{virtualRow.index + 1}
+                          </span>
+
+                          <LibraryThumb
+                            clip={clip}
+                            onOpen={setPreviewClip}
+                            className="h-12 w-14 rounded-md"
+                          />
+
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <ClipTypeIcon type={clip.clip_type} subtype={clip.subtype} />
+                              <div className="truncate text-sm text-foreground/90">{preview}</div>
+                              {clip.is_pinned && (
+                                <Pin size={11} className="shrink-0 text-amber-400" />
+                              )}
+                              {clip.is_sensitive && (
+                                <ShieldAlert size={11} className="shrink-0 text-rose-400" />
+                              )}
+                            </div>
+                            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                              <span className="truncate">{clip.source_app ?? 'Unknown app'}</span>
+                              {clip.note && <span className="truncate italic">{clip.note}</span>}
+                            </div>
+                          </div>
+
+                          <div className="min-w-0 text-xs text-muted-foreground">
+                            <div className="truncate">{clipKindLabel(clip)}</div>
+                            <div className="truncate text-[10px]">
+                              {formatRelativeTime(clip.created_at)}
+                            </div>
+                          </div>
+
+                          <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                            <FolderIcon size={12} className="shrink-0" />
+                            <span className="truncate">{folderName}</span>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-0.5 opacity-40 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                            <button
+                              onClick={() => handleTogglePin(clip)}
+                              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                            >
+                              {clip.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                            </button>
+                            <button
+                              onClick={() => handleCopy(clip)}
+                              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              title="Copy"
+                            >
+                              <Copy size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete([clip.id])}
+                              className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              title="Delete"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                <div className="flex shrink-0 items-center justify-center border-t border-border p-3">
+                  {hasMore ? (
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={loading}
+                      className="btn btn-secondary h-8 text-xs"
+                    >
+                      {loading ? <Loader2 size={13} className="mr-1 animate-spin" /> : null}
+                      Load more
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">End</span>
+                  )}
+                </div>
               </div>
             </div>
           )}

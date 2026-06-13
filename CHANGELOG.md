@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.20] - 2026-06-13
+
+### Fixed
+- **Settings Library layout**: Clips & Images now uses a bounded internal table area with horizontal overflow protection, preventing cramped columns and the footer from visually crowding clip rows.
+
+---
+
 ## [1.10.19] - 2026-06-09
 
 ### Added
