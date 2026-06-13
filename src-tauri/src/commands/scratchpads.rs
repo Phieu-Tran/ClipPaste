@@ -215,7 +215,11 @@ pub async fn scratchpad_paste(
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         let restored = crate::clipboard::restore_prev_foreground();
         if !restored {
-            log::warn!("SCRATCHPAD: prev-foreground restore failed, Shift+Insert may miss target");
+            log::warn!(
+                "SCRATCHPAD: Skipped Shift+Insert because target focus could not be restored"
+            );
+            crate::clipboard::clear_prev_foreground();
+            return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
         let db_arc = db.inner().clone();
@@ -224,6 +228,7 @@ pub async fn scratchpad_paste(
         } else {
             crate::clipboard::send_paste_input();
         }
+        crate::clipboard::clear_prev_foreground();
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     }
     #[cfg(not(target_os = "windows"))]

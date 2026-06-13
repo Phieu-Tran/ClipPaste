@@ -262,8 +262,6 @@ pub fn run_app() {
                                  if moved_screens {
                                      // User clicked on another screen, move window there immediately
                                      position_window_at_bottom(&win);
-                                     let _ = win.show();
-                                     let _ = win.set_focus();
                                  } else {
                                      // Normal blur handling (hide)
                                      if win.is_visible().unwrap_or(false) {
@@ -331,8 +329,6 @@ pub fn run_app() {
                     } else if event.id.as_ref() == "show" {
                         if let Some(win) = app.get_webview_window("main") {
                             position_window_at_bottom(&win);
-                            let _ = win.show();
-                            let _ = win.set_focus();
                         }
                     }
                 })
@@ -340,8 +336,6 @@ pub fn run_app() {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         if let Some(win) = tray.app_handle().get_webview_window("main") {
                             position_window_at_bottom(&win);
-                            let _ = win.show();
-                            let _ = win.set_focus();
                         }
                     }
                 })
@@ -621,13 +615,7 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
             #[cfg(not(target_os = "windows"))]
             let skip_animation = false;
 
-            // Move to current virtual desktop before showing, so we don't jump desktops.
-            #[cfg(target_os = "windows")]
-            if let Ok(handle) = window.hwnd() {
-                move_window_to_current_virtual_desktop(windows::Win32::Foundation::HWND(
-                    handle.0 as _,
-                ));
-            }
+            ensure_window_on_current_virtual_desktop(&window);
 
             if skip_animation {
                 // Position directly at target — no slide animation
@@ -908,6 +896,16 @@ fn has_adjacent_monitor_below(
 /// Strategy: get the current desktop GUID via the foreground window (which is always
 /// on the current desktop), then call IVirtualDesktopManager::MoveWindowToDesktop.
 #[cfg(target_os = "windows")]
+pub fn ensure_window_on_current_virtual_desktop(window: &tauri::WebviewWindow) {
+    if let Ok(handle) = window.hwnd() {
+        move_window_to_current_virtual_desktop(windows::Win32::Foundation::HWND(handle.0 as _));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn ensure_window_on_current_virtual_desktop(_window: &tauri::WebviewWindow) {}
+
+#[cfg(target_os = "windows")]
 fn move_window_to_current_virtual_desktop(hwnd: windows::Win32::Foundation::HWND) {
     use windows::core::GUID;
     use windows::Win32::System::Com::{
@@ -936,28 +934,23 @@ fn move_window_to_current_virtual_desktop(hwnd: windows::Win32::Foundation::HWND
                 }
             };
 
-        // Skip if already on the current virtual desktop.
-        if mgr
-            .IsWindowOnCurrentVirtualDesktop(hwnd)
-            .map(|b| b.as_bool())
-            .unwrap_or(true)
-        {
-            return;
-        }
-
         // Get the current desktop GUID from the foreground window (always on current desktop).
         let fg = GetForegroundWindow();
         if fg.0.is_null() {
+            log::debug!("VD: Foreground window unavailable; leaving desktop unchanged");
             return;
         }
 
         let desktop_id = match mgr.GetWindowDesktopId(fg) {
             Ok(id) => id,
-            Err(_) => return,
+            Err(e) => {
+                log::debug!("VD: Failed to read foreground desktop id: {:?}", e);
+                return;
+            }
         };
 
         let _ = mgr.MoveWindowToDesktop(hwnd, &desktop_id);
-        log::info!("VD: Moved ClipPaste window to current virtual desktop");
+        log::debug!("VD: Ensured ClipPaste window is on current virtual desktop");
     }
 }
 

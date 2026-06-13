@@ -107,6 +107,11 @@ pub static IS_INCOGNITO: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 #[cfg(target_os = "windows")]
 pub static PREV_FOREGROUND_HWND: std::sync::atomic::AtomicIsize =
     std::sync::atomic::AtomicIsize::new(0);
+#[cfg(target_os = "windows")]
+static PREV_FOREGROUND_CAPTURED_AT_MS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(0);
+#[cfg(target_os = "windows")]
+const PREV_FOREGROUND_MAX_AGE_MS: i64 = 5 * 60 * 1000;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1077,19 +1082,33 @@ pub fn capture_prev_foreground() {
         // Skip our own windows — finding the scratchpad or settings window here means the
         // user was already inside ClipPaste, and restoring it isn't what they want.
         if hwnd.0.is_null() {
+            clear_prev_foreground();
             return;
         }
         let mut process_id = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut process_id));
         let own_pid = std::process::id();
         if process_id != own_pid {
-            PREV_FOREGROUND_HWND.store(hwnd.0 as isize, std::sync::atomic::Ordering::SeqCst);
+            PREV_FOREGROUND_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
+            PREV_FOREGROUND_CAPTURED_AT_MS
+                .store(chrono::Local::now().timestamp_millis(), Ordering::SeqCst);
+        } else {
+            clear_prev_foreground();
         }
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn capture_prev_foreground() {}
+
+#[cfg(target_os = "windows")]
+pub fn clear_prev_foreground() {
+    PREV_FOREGROUND_HWND.store(0, Ordering::SeqCst);
+    PREV_FOREGROUND_CAPTURED_AT_MS.store(0, Ordering::SeqCst);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clear_prev_foreground() {}
 
 /// Try to restore focus to the previously captured foreground window.
 /// Uses the standard Win32 focus-stealing bypass (attach input thread briefly).
@@ -1099,33 +1118,82 @@ pub fn restore_prev_foreground() -> bool {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, IsWindow, SetForegroundWindow,
+        BringWindowToTop, GetForegroundWindow, IsWindow, SetForegroundWindow, ShowWindow,
+        SW_RESTORE,
     };
 
-    let stored = PREV_FOREGROUND_HWND.load(std::sync::atomic::Ordering::SeqCst);
+    let stored = PREV_FOREGROUND_HWND.load(Ordering::SeqCst);
     if stored == 0 {
         return false;
     }
+    let captured_at = PREV_FOREGROUND_CAPTURED_AT_MS.load(Ordering::SeqCst);
+    let age_ms = chrono::Local::now()
+        .timestamp_millis()
+        .saturating_sub(captured_at);
+    if captured_at == 0 || age_ms > PREV_FOREGROUND_MAX_AGE_MS {
+        log::warn!(
+            "FOCUS: Previous foreground snapshot expired (age={}ms)",
+            age_ms
+        );
+        clear_prev_foreground();
+        return false;
+    }
+
     let hwnd = HWND(stored as *mut _);
 
     unsafe {
         if !IsWindow(Some(hwnd)).as_bool() {
+            clear_prev_foreground();
             return false;
         }
 
-        // AttachThreadInput trick: Windows blocks SetForegroundWindow from one thread to
-        // another unless their input queues are attached. We attach briefly, foreground
-        // the target, then detach.
-        let mut tid = 0u32;
-        GetWindowThreadProcessId(hwnd, Some(&mut tid));
-        let our_tid = GetCurrentThreadId();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(350);
+        loop {
+            if GetForegroundWindow().0 == hwnd.0 {
+                return true;
+            }
 
-        let _ = AttachThreadInput(our_tid, tid, true);
-        let _ = BringWindowToTop(hwnd);
-        let ok = SetForegroundWindow(hwnd).as_bool();
-        let _ = AttachThreadInput(our_tid, tid, false);
+            // AttachThreadInput trick: Windows blocks SetForegroundWindow from one thread to
+            // another unless their input queues are attached. Attach to both the target and
+            // current foreground queues briefly, then verify that focus actually moved.
+            let mut target_tid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut target_tid));
+            if target_tid == 0 {
+                clear_prev_foreground();
+                return false;
+            }
 
-        ok
+            let foreground = GetForegroundWindow();
+            let mut foreground_tid = 0u32;
+            if !foreground.0.is_null() {
+                GetWindowThreadProcessId(foreground, Some(&mut foreground_tid));
+            }
+
+            let our_tid = GetCurrentThreadId();
+            let _ = AttachThreadInput(our_tid, target_tid, true);
+            let attach_foreground = foreground_tid != 0 && foreground_tid != target_tid;
+            if attach_foreground {
+                let _ = AttachThreadInput(our_tid, foreground_tid, true);
+            }
+
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = BringWindowToTop(hwnd);
+            let ok = SetForegroundWindow(hwnd).as_bool();
+
+            if attach_foreground {
+                let _ = AttachThreadInput(our_tid, foreground_tid, false);
+            }
+            let _ = AttachThreadInput(our_tid, target_tid, false);
+
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            if ok && GetForegroundWindow().0 == hwnd.0 {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                log::warn!("FOCUS: Failed to restore previous foreground window");
+                return false;
+            }
+        }
     }
 }
 

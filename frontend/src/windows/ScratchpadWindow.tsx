@@ -277,7 +277,6 @@ export function ScratchpadWindow() {
         collapseTimerRef.current = null;
       }
       if (nextMode === 'list') {
-        cmd.capturePrevForeground().catch(() => {});
         setPinned(true);
       } else {
         setEditingId(null);

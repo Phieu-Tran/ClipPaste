@@ -565,7 +565,8 @@ fn get_or_create_scratchpad_window(app: &AppHandle) -> Result<(WebviewWindow, bo
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
-    .focused(true)
+    .visible(false)
+    .focused(false)
     .build()
     .map_err(|e| format!("Failed to create scratchpad window: {:?}", e))?;
 
@@ -625,8 +626,6 @@ pub fn register_app_shortcuts(
                     }
                     crate::clipboard::capture_prev_foreground();
                     crate::position_window_at_bottom(&win_clone);
-                    let _ = win_clone.show();
-                    let _ = win_clone.set_focus();
                 }
             }
         })
@@ -644,6 +643,7 @@ pub fn register_app_shortcuts(
                 crate::clipboard::capture_prev_foreground();
                 match get_or_create_scratchpad_window(&app_for_sp) {
                     Ok((sp_win, created)) => {
+                        crate::ensure_window_on_current_virtual_desktop(&sp_win);
                         let _ = sp_win.show();
                         if created {
                             let _ = sp_win.set_focus();

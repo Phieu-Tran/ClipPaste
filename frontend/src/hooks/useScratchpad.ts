@@ -13,7 +13,7 @@ export function useScratchpad() {
     const win = await WebviewWindow.getByLabel('scratchpad');
     if (win) {
       await cmd.capturePrevForeground();
-      await win.show();
+      await cmd.focusWindow('scratchpad').catch(() => win.show());
       await win.emit('scratchpad-toggle');
       return;
     }

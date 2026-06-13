@@ -224,17 +224,22 @@ pub fn check_auto_paste_and_hide(window: &tauri::WebviewWindow) {
                     // especially for apps like SecureCRT that don't always receive focus back
                     // on their own after a topmost window hides.
                     let restored = crate::clipboard::restore_prev_foreground();
-                    std::thread::sleep(std::time::Duration::from_millis(if restored {
-                        50
-                    } else {
-                        100
-                    }));
+                    if !restored {
+                        log::warn!(
+                            "PASTE: Skipped Shift+Insert because target focus could not be restored"
+                        );
+                        crate::clipboard::clear_prev_foreground();
+                        return;
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                     // Skip the keystroke if the target app is in the Ignored list.
                     if crate::clipboard::is_foreground_app_ignored(&db) {
                         log::info!("PASTE: Suppressed Shift+Insert (target app is ignored)");
                     } else {
                         crate::clipboard::send_paste_input();
                     }
+                    crate::clipboard::clear_prev_foreground();
                 }
                 let _ = &window_clone; // suppress unused warning on non-Windows
                 let _ = &db;

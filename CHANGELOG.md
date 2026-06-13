@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Scratchpad toggle lifecycle**: closing/collapsing Scratchpad no longer destroys the helper window, the global Scratchpad hotkey can create it when missing, and repeated toggles no longer drift because of stale mode state.
+- **Auto-paste focus routing**: paste targets are now timestamped, stale targets are cleared, and ClipPaste verifies Windows actually restored focus before sending `Shift+Insert`, reducing long-session paste misses and wrong-target paste attempts.
+- **Windows virtual desktop show flow**: main window, tray show, Settings focus, and Scratchpad show now move the window to the current virtual desktop before show/focus, avoiding occasional jumps back to the desktop where the window was last visible.
 
 ### Security
 - **Backup import hardening**: backup extraction now validates entry count, duplicate paths, allowed filenames, per-file limits, total uncompressed size, and canonicalized output paths, and streams extraction to avoid loading large zip entries into memory.
