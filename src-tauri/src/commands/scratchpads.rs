@@ -214,14 +214,22 @@ pub async fn scratchpad_paste(
     if auto_paste {
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         let restored = crate::clipboard::restore_prev_foreground();
-        if !restored {
+        if restored {
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        } else {
             log::warn!(
-                "SCRATCHPAD: Skipped Shift+Insert because target focus could not be restored"
+                "SCRATCHPAD: Previous target restore failed; trying current foreground fallback"
             );
-            crate::clipboard::clear_prev_foreground();
-            return Ok(());
+            tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+            if crate::clipboard::is_foreground_own_process() {
+                log::warn!(
+                    "SCRATCHPAD: Skipped Shift+Insert because fallback foreground is ClipPaste"
+                );
+                crate::clipboard::clear_prev_foreground();
+                return Ok(());
+            }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+
         let db_arc = db.inner().clone();
         if crate::clipboard::is_foreground_app_ignored(&db_arc) {
             log::info!("SCRATCHPAD: Suppressed Shift+Insert (target app is ignored)");

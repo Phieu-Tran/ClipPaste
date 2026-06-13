@@ -1110,6 +1110,25 @@ pub fn clear_prev_foreground() {
 #[cfg(not(target_os = "windows"))]
 pub fn clear_prev_foreground() {}
 
+#[cfg(target_os = "windows")]
+pub fn is_foreground_own_process() -> bool {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return false;
+        }
+
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        process_id == std::process::id()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_foreground_own_process() -> bool {
+    false
+}
+
 /// Try to restore focus to the previously captured foreground window.
 /// Uses the standard Win32 focus-stealing bypass (attach input thread briefly).
 /// Returns true if the restore succeeded.

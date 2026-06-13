@@ -5,6 +5,9 @@ import { cmd } from '../commands';
 
 const COLLAPSED_WIDTH = 16;
 const COLLAPSED_HEIGHT = 100;
+const FOCUS_SETTLE_MS = 90;
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 export function useScratchpad() {
   const [isVisible, setIsVisible] = useState(false);
@@ -46,8 +49,9 @@ export function useScratchpad() {
         return;
       }
 
-      await cmd.capturePrevForeground();
       await clipWindow.hide().catch(() => {});
+      await sleep(FOCUS_SETTLE_MS);
+      await cmd.capturePrevForeground();
       await cmd.focusWindow('scratchpad').catch(() => win.show());
       await win.emit('scratchpad-open');
       setIsVisible(true);
@@ -70,8 +74,9 @@ export function useScratchpad() {
       }
     } catch {}
 
-    await cmd.capturePrevForeground();
     await clipWindow.hide().catch(() => {});
+    await sleep(FOCUS_SETTLE_MS);
+    await cmd.capturePrevForeground();
 
     const scratchpadWin = new WebviewWindow('scratchpad', {
       url: 'index.html?window=scratchpad&open=1',
