@@ -1,16 +1,20 @@
 import { useCallback } from 'react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { currentMonitor } from '@tauri-apps/api/window';
+import { cmd } from '../commands';
 
 const COLLAPSED_WIDTH = 16;
 const COLLAPSED_HEIGHT = 100;
 
 export function useScratchpad() {
-  // Toggle: create if not exists, otherwise show/focus
+  // Toggle: create if not exists, otherwise ask the existing scratchpad window
+  // to switch between its side rail and expanded list.
   const toggle = useCallback(async () => {
     const win = await WebviewWindow.getByLabel('scratchpad');
     if (win) {
-      await win.close();
+      await cmd.capturePrevForeground();
+      await win.show();
+      await win.emit('scratchpad-toggle');
       return;
     }
 
@@ -30,7 +34,7 @@ export function useScratchpad() {
     } catch {}
 
     new WebviewWindow('scratchpad', {
-      url: 'index.html?window=scratchpad',
+      url: 'index.html?window=scratchpad&open=1',
       title: 'Scratchpad',
       width: COLLAPSED_WIDTH,
       height: COLLAPSED_HEIGHT,
@@ -40,7 +44,7 @@ export function useScratchpad() {
       decorations: false,
       alwaysOnTop: true,
       skipTaskbar: true,
-      focus: false,
+      focus: true,
     });
   }, []);
 

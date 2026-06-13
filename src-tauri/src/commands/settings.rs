@@ -2,7 +2,7 @@ use crate::database::Database;
 use dark_light::Mode;
 use std::str::FromStr;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 async fn save_setting_value(
@@ -333,20 +333,17 @@ pub async fn save_settings(
     }
 
     if let Some(hotkey) = settings.get("hotkey").and_then(|v| v.as_str()) {
-        // Validate hotkey format before saving
-        if Shortcut::from_str(hotkey).is_ok() {
-            let scratchpad_hotkey = db
-                .get_setting("scratchpad_hotkey")
-                .await
-                .map_err(|e| e.to_string())?
-                .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
-            if hotkey.eq_ignore_ascii_case(&scratchpad_hotkey) {
-                return Err("Main hotkey conflicts with scratchpad hotkey".to_string());
-            }
-            save_setting_value(pool, "hotkey", hotkey).await?;
-        } else {
-            return Err(format!("Invalid hotkey format: {}", hotkey));
+        // Validate hotkey format and strength before saving.
+        validate_global_hotkey(hotkey, "main hotkey")?;
+        let scratchpad_hotkey = db
+            .get_setting("scratchpad_hotkey")
+            .await
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+        if hotkey.eq_ignore_ascii_case(&scratchpad_hotkey) {
+            return Err("Main hotkey conflicts with scratchpad hotkey".to_string());
         }
+        save_setting_value(pool, "hotkey", hotkey).await?;
     }
 
     if let Some(auto_paste) = settings.get("auto_paste").and_then(|v| v.as_bool()) {
@@ -513,30 +510,92 @@ pub async fn remove_duplicate_clips(db: tauri::State<'_, Arc<Database>>) -> Resu
     Ok(result.rows_affected() as i64)
 }
 
+fn is_shortcut_modifier(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "ctrl"
+            | "control"
+            | "shift"
+            | "alt"
+            | "option"
+            | "super"
+            | "meta"
+            | "cmd"
+            | "command"
+            | "win"
+    )
+}
+
+fn validate_global_hotkey(hotkey: &str, label: &str) -> Result<Shortcut, String> {
+    let shortcut = Shortcut::from_str(hotkey).map_err(|e| format!("Invalid {}: {:?}", label, e))?;
+    let tokens: Vec<&str> = hotkey
+        .split('+')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .collect();
+    let modifier_count = tokens
+        .iter()
+        .filter(|token| is_shortcut_modifier(token))
+        .count();
+    let key_count = tokens.len().saturating_sub(modifier_count);
+
+    if modifier_count < 2 || key_count != 1 {
+        return Err(format!(
+            "{} must use at least two modifiers plus one key, for example Ctrl+Shift+V or Ctrl+Alt+V",
+            label
+        ));
+    }
+
+    Ok(shortcut)
+}
+
+fn get_or_create_scratchpad_window(app: &AppHandle) -> Result<(WebviewWindow, bool), String> {
+    if let Some(window) = app.get_webview_window("scratchpad") {
+        return Ok((window, false));
+    }
+
+    let window = WebviewWindowBuilder::new(
+        app,
+        "scratchpad",
+        WebviewUrl::App("index.html?window=scratchpad&open=1".into()),
+    )
+    .title("Scratchpad")
+    .inner_size(16.0, 100.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(true)
+    .build()
+    .map_err(|e| format!("Failed to create scratchpad window: {:?}", e))?;
+
+    Ok((window, true))
+}
+
 pub fn register_app_shortcuts(
     app: &AppHandle,
     db: Arc<Database>,
     main_hotkey: &str,
     scratchpad_hotkey: &str,
 ) -> Result<(), String> {
-    let main_shortcut =
-        Shortcut::from_str(main_hotkey).map_err(|e| format!("Invalid hotkey: {:?}", e))?;
-    let (scratchpad_hotkey, scratchpad_shortcut) = match Shortcut::from_str(scratchpad_hotkey) {
-        Ok(shortcut) => (scratchpad_hotkey.to_string(), shortcut),
-        Err(e) => {
-            log::warn!(
-                "Invalid scratchpad hotkey {:?}: {:?}; falling back to Ctrl+Shift+S",
-                scratchpad_hotkey,
-                e
-            );
-            (
-                "Ctrl+Shift+S".to_string(),
-                Shortcut::from_str("Ctrl+Shift+S").map_err(|fallback_err| {
-                    format!("Invalid fallback hotkey: {:?}", fallback_err)
-                })?,
-            )
-        }
-    };
+    let main_shortcut = validate_global_hotkey(main_hotkey, "main hotkey")?;
+    let (scratchpad_hotkey, scratchpad_shortcut) =
+        match validate_global_hotkey(scratchpad_hotkey, "scratchpad hotkey") {
+            Ok(shortcut) => (scratchpad_hotkey.to_string(), shortcut),
+            Err(e) => {
+                log::warn!(
+                    "Invalid scratchpad hotkey {:?}: {:?}; falling back to Ctrl+Shift+S",
+                    scratchpad_hotkey,
+                    e
+                );
+                (
+                    "Ctrl+Shift+S".to_string(),
+                    validate_global_hotkey("Ctrl+Shift+S", "fallback scratchpad hotkey").map_err(
+                        |fallback_err| format!("Invalid fallback hotkey: {:?}", fallback_err),
+                    )?,
+                )
+            }
+        };
 
     if main_hotkey.eq_ignore_ascii_case(&scratchpad_hotkey) {
         return Err("Main hotkey conflicts with scratchpad hotkey".to_string());
@@ -583,9 +642,16 @@ pub fn register_app_shortcuts(
                     return;
                 }
                 crate::clipboard::capture_prev_foreground();
-                if let Some(sp_win) = app_for_sp.get_webview_window("scratchpad") {
-                    let _ = sp_win.show();
-                    let _ = sp_win.emit("scratchpad-toggle", ());
+                match get_or_create_scratchpad_window(&app_for_sp) {
+                    Ok((sp_win, created)) => {
+                        let _ = sp_win.show();
+                        if created {
+                            let _ = sp_win.set_focus();
+                        } else {
+                            let _ = sp_win.emit("scratchpad-toggle", ());
+                        }
+                    }
+                    Err(e) => log::error!("HOTKEY: Failed to toggle scratchpad: {}", e),
                 }
             }
         })

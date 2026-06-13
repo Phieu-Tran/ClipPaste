@@ -829,7 +829,9 @@ export function GeneralTab({
         <div className="space-y-3">
           <label className="block">
             <span className="text-sm font-medium">Global Hotkey</span>
-            <p className="text-xs text-muted-foreground">Toggle the clipboard window</p>
+            <p className="text-xs text-muted-foreground">
+              Toggle the clipboard window. Use Ctrl+Shift or Ctrl+Alt plus one key.
+            </p>
           </label>
           {isRecordingMode ? (
             <div className="space-y-2">

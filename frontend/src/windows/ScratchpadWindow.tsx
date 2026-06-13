@@ -116,8 +116,17 @@ type ViewMode = 'collapsed' | 'list' | 'paste' | 'edit';
 
 export function ScratchpadWindow() {
   const [scratchpads, setScratchpads] = useState<ScratchpadItem[]>([]);
-  const [mode, setMode] = useState<ViewMode>('collapsed');
-  const [pinned, setPinned] = useState(false);
+  const initialMode = useMemo<ViewMode>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('open') === '1' ? 'list' : 'collapsed';
+  }, []);
+  const [mode, setModeState] = useState<ViewMode>(initialMode);
+  const modeRef = useRef<ViewMode>(initialMode);
+  const setMode = useCallback((nextMode: ViewMode) => {
+    modeRef.current = nextMode;
+    setModeState(nextMode);
+  }, []);
+  const [pinned, setPinned] = useState(initialMode === 'list');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Edit state
@@ -262,14 +271,27 @@ export function ScratchpadWindow() {
   // Global hotkey listener — toggle between collapsed and list mode.
   useEffect(() => {
     const unlistenP = listen('scratchpad-toggle', () => {
-      setMode((m) => (m === 'collapsed' ? 'list' : 'collapsed'));
-      setPinned((p) => (mode === 'collapsed' ? true : p));
+      const nextMode = modeRef.current === 'collapsed' ? 'list' : 'collapsed';
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
+      }
+      if (nextMode === 'list') {
+        cmd.capturePrevForeground().catch(() => {});
+        setPinned(true);
+      } else {
+        setEditingId(null);
+        setPastingId(null);
+        setSearchQuery('');
+        setShowSortMenu(false);
+        setPinned(false);
+      }
+      setMode(nextMode);
     });
     return () => {
       unlistenP.then((fn) => fn()).catch(() => {});
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setMode]);
 
   // Filter by search + color, then sort. Synced into filteredRef for keydown handler.
   const filtered = useMemo(() => {
@@ -416,7 +438,7 @@ export function ScratchpadWindow() {
     if (isResizingRef.current || pinned || mode !== 'list') return;
     cancelCollapse();
     collapseTimerRef.current = setTimeout(() => setMode('collapsed'), 600);
-  }, [pinned, mode, cancelCollapse]);
+  }, [pinned, mode, cancelCollapse, setMode]);
 
   const goBack = useCallback(() => {
     setEditingId(null);
@@ -426,8 +448,15 @@ export function ScratchpadWindow() {
   }, []);
 
   const handleClose = useCallback(() => {
-    appWindow.close().catch(() => {});
-  }, [appWindow]);
+    cancelCollapse();
+    setEditingId(null);
+    setPastingId(null);
+    setSearchQuery('');
+    setShowSortMenu(false);
+    setPinned(false);
+    setMode('collapsed');
+    appWindow.show().catch(() => {});
+  }, [appWindow, cancelCollapse, setMode]);
 
   const handlePanelClick = useCallback(() => {
     if (!pinned && mode === 'list') setPinned(true);

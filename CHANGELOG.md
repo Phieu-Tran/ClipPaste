@@ -16,8 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Theme picker UX**: the Appearance panel now shows a small quick-pick set plus a grouped dropdown for all presets, keeping extra themes available without turning Settings into a large wall of cards.
+- **Global hotkey validation**: shortcut recording now requires at least two modifier keys plus one normal key, so easy-to-hit combinations such as `Ctrl+G` are rejected instead of becoming app-wide shortcuts.
 - **Window vibrancy support detection**: bumped the custom `window-vibrancy` dependency to the latest `dev` rev, adding direct support-check APIs and more reliable Windows build fallback selection for Tabbed, Mica, Acrylic, Blur, and Clear.
 - **Backup import UX**: import results in the Backup tab now persist in-panel, with clearer messages for cancelled imports, missing `clipboard.db`, oversized backups, duplicate entries, unsafe paths, and unreadable zip files.
+
+### Fixed
+- **Scratchpad toggle lifecycle**: closing/collapsing Scratchpad no longer destroys the helper window, the global Scratchpad hotkey can create it when missing, and repeated toggles no longer drift because of stale mode state.
 
 ### Security
 - **Backup import hardening**: backup extraction now validates entry count, duplicate paths, allowed filenames, per-file limits, total uncompressed size, and canonicalized output paths, and streams extraction to avoid loading large zip entries into memory.

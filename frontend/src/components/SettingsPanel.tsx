@@ -153,7 +153,7 @@ export function SettingsPanel({
       }
       setSettings(prevSettings); // Rollback on failure
       setSaveStatus('error');
-      toast.error(`Failed to save settings`);
+      toast.error(`Failed to save settings: ${error}`);
       return; // Don't show success toast
     }
 
@@ -177,7 +177,7 @@ export function SettingsPanel({
     stopRecording: stopRecordingLib,
     clearLastRecording,
   } = useShortcutRecorder({
-    minModKeys: 1, // Require at least one modifier
+    minModKeys: 2, // Keep global shortcuts away from common Ctrl+letter app/browser commands.
   });
 
   // Start recording mode
