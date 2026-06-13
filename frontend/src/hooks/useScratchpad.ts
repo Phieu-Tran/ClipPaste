@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { currentMonitor } from '@tauri-apps/api/window';
+import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
 import { cmd } from '../commands';
 
 const COLLAPSED_WIDTH = 16;
@@ -10,6 +10,7 @@ export function useScratchpad() {
   const [isVisible, setIsVisible] = useState(false);
   const [feedback, setFeedback] = useState<'on' | 'off' | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clipWindow = useMemo(() => getCurrentWindow(), []);
 
   const flashFeedback = useCallback((next: 'on' | 'off') => {
     setFeedback(next);
@@ -48,6 +49,7 @@ export function useScratchpad() {
       await cmd.capturePrevForeground();
       await cmd.focusWindow('scratchpad').catch(() => win.show());
       await win.emit('scratchpad-open');
+      await clipWindow.hide().catch(() => {});
       setIsVisible(true);
       flashFeedback('on');
       return;
@@ -82,10 +84,11 @@ export function useScratchpad() {
       focus: true,
     });
     scratchpadWin.once('tauri://created', () => {
+      clipWindow.hide().catch(() => {});
       setIsVisible(true);
       flashFeedback('on');
     });
-  }, [flashFeedback]);
+  }, [clipWindow, flashFeedback]);
 
   return { toggle, isVisible, feedback };
 }
