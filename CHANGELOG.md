@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Theme picker UX**: the Appearance panel now shows a small quick-pick set plus a grouped dropdown for all presets, keeping extra themes available without turning Settings into a large wall of cards.
+- **Theme previews**: theme quick picks and the selected theme summary now render compact ClipPaste-style previews, making presets easier to compare without adding more theme controls.
 - **Global hotkey validation**: shortcut recording now requires at least two modifier keys plus one normal key, so easy-to-hit combinations such as `Ctrl+G` are rejected instead of becoming app-wide shortcuts.
 - **Window vibrancy support detection**: bumped the custom `window-vibrancy` dependency to the latest `dev` rev, adding direct support-check APIs and more reliable Windows build fallback selection for Tabbed, Mica, Acrylic, Blur, and Clear.
 - **Backup import UX**: import results in the Backup tab now persist in-panel, with clearer messages for cancelled imports, missing `clipboard.db`, oversized backups, duplicate entries, unsafe paths, and unreadable zip files.

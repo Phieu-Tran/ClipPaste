@@ -228,6 +228,72 @@ const THEME_GROUPS = [
     themeIds: ['graphite', 'mono', 'forest', 'circuit'],
   },
 ] as const;
+type InterfaceThemeOption = (typeof INTERFACE_THEMES)[number];
+
+function ThemeMiniPreview({
+  themeOption,
+  compact = false,
+}: {
+  themeOption: InterfaceThemeOption;
+  compact?: boolean;
+}) {
+  const [primary, accent, surface] = themeOption.swatches;
+  return (
+    <span
+      className={`block overflow-hidden rounded-md border border-border/60 ring-1 ring-white/5 ${
+        compact ? 'h-10' : 'h-[76px]'
+      }`}
+      style={{
+        background: `linear-gradient(135deg, ${surface}, ${accent}33 58%, ${primary}22)`,
+      }}
+      aria-hidden="true"
+    >
+      <span
+        className={`flex items-center gap-1 border-b px-1.5 ${compact ? 'h-3' : 'h-5'}`}
+        style={{ borderColor: `${primary}44`, backgroundColor: `${surface}cc` }}
+      >
+        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: primary }} />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent }} />
+        <span
+          className="ml-auto h-1 w-5 rounded-full"
+          style={{ backgroundColor: `${primary}88` }}
+        />
+      </span>
+      <span
+        className={`grid flex-1 gap-1 ${compact ? 'grid-cols-[0.7fr_1fr] p-1' : 'grid-cols-[0.64fr_1fr] p-1.5'}`}
+      >
+        <span className="space-y-1">
+          <span className="block h-1.5 rounded-full" style={{ backgroundColor: `${primary}dd` }} />
+          <span
+            className="block h-1.5 w-3/4 rounded-full"
+            style={{ backgroundColor: `${accent}aa` }}
+          />
+          {!compact && (
+            <span className="grid grid-cols-3 gap-0.5 pt-1">
+              {themeOption.swatches.map((swatch) => (
+                <span
+                  key={`${themeOption.id}-preview-${swatch}`}
+                  className="h-3 rounded-sm"
+                  style={{ backgroundColor: swatch }}
+                />
+              ))}
+            </span>
+          )}
+        </span>
+        <span className="space-y-1">
+          <span
+            className={`${compact ? 'h-3' : 'h-5'} block rounded border`}
+            style={{ borderColor: `${primary}66`, backgroundColor: `${primary}22` }}
+          />
+          <span
+            className={`${compact ? 'h-3' : 'h-5'} block rounded border`}
+            style={{ borderColor: `${accent}55`, backgroundColor: `${accent}1f` }}
+          />
+        </span>
+      </span>
+    </span>
+  );
+}
 const FONT_OPTIONS = [
   { id: 'system', label: 'System' },
   { id: 'rounded', label: 'Rounded' },
@@ -590,36 +656,16 @@ export function GeneralTab({
                           {themeOption.description}
                         </span>
                       </span>
-                      <span className="grid h-8 w-10 shrink-0 grid-cols-3 overflow-hidden rounded border border-border/70">
-                        {themeOption.swatches.map((swatch, index) => (
-                          <span
-                            key={`${themeOption.id}-${swatch}`}
-                            className={index === 2 ? 'col-span-3' : ''}
-                            style={{ backgroundColor: swatch }}
-                          />
-                        ))}
-                      </span>
                     </span>
-                    <span className="mt-2 flex items-center gap-1">
-                      <span
-                        className="h-1.5 flex-1 rounded-full"
-                        style={{ backgroundColor: themeOption.swatches[0] }}
-                      />
-                      <span
-                        className="h-1.5 flex-1 rounded-full opacity-80"
-                        style={{ backgroundColor: themeOption.swatches[1] }}
-                      />
-                      <span
-                        className="h-1.5 flex-1 rounded-full opacity-70"
-                        style={{ backgroundColor: themeOption.swatches[2] }}
-                      />
+                    <span className="mt-2 block">
+                      <ThemeMiniPreview themeOption={themeOption} compact />
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_260px]">
               <label className="block min-w-0">
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">
                   All themes
@@ -644,24 +690,25 @@ export function GeneralTab({
                 </select>
               </label>
 
-              <div className="flex min-h-[62px] items-center gap-3 rounded-md border border-border/70 bg-background/35 px-3 py-2">
-                <span className="grid h-9 w-12 shrink-0 grid-cols-3 overflow-hidden rounded border border-border/70">
-                  {selectedThemeOption.swatches.map((swatch, index) => (
-                    <span
-                      key={`${selectedThemeOption.id}-${swatch}`}
-                      className={index === 2 ? 'col-span-3' : ''}
-                      style={{ backgroundColor: swatch }}
-                    />
-                  ))}
-                </span>
-                <span className="min-w-0">
+              <div className="grid min-h-[92px] gap-2 rounded-md border border-border/70 bg-background/35 p-2 sm:grid-cols-[minmax(0,1fr)_118px]">
+                <span className="min-w-0 self-center">
                   <span className="block truncate text-sm font-semibold">
                     {selectedThemeOption.label}
                   </span>
                   <span className="block truncate text-[11px] text-muted-foreground">
                     {selectedThemeOption.category} - {selectedThemeOption.description}
                   </span>
+                  <span className="mt-2 flex items-center gap-1">
+                    {selectedThemeOption.swatches.map((swatch) => (
+                      <span
+                        key={`${selectedThemeOption.id}-${swatch}`}
+                        className="h-2 flex-1 rounded-full"
+                        style={{ backgroundColor: swatch }}
+                      />
+                    ))}
+                  </span>
                 </span>
+                <ThemeMiniPreview themeOption={selectedThemeOption} />
               </div>
             </div>
           </div>
