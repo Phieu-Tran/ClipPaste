@@ -111,6 +111,13 @@ impl Database {
     /// Uses batched SQL updates (500 per batch) instead of individual UPDATE per row.
     /// Returns (rows_updated, total_scanned).
     pub async fn rescan_sensitive(&self) -> (u64, usize) {
+        let detection_enabled = self
+            .get_setting("sensitive_detection")
+            .await
+            .unwrap_or(None)
+            .and_then(|value| value.parse::<bool>().ok())
+            .unwrap_or(true);
+
         let rows: Vec<(i64, String)> =
             sqlx::query_as("SELECT id, text_preview FROM clips WHERE clip_type = 'text'")
                 .fetch_all(&self.pool)
@@ -118,6 +125,21 @@ impl Database {
                 .unwrap_or_default();
 
         let total = rows.len();
+
+        if !detection_enabled {
+            let updated = sqlx::query("UPDATE clips SET is_sensitive = 0 WHERE is_sensitive = 1")
+                .execute(&self.pool)
+                .await
+                .map(|result| result.rows_affected())
+                .unwrap_or(0);
+            if updated > 0 {
+                log::info!(
+                    "RESCAN: Cleared is_sensitive on {} clips because detection is disabled",
+                    updated
+                );
+            }
+            return (updated, total);
+        }
 
         // Classify all clips first, then batch-update
         let mut to_sensitive: Vec<i64> = Vec::new();

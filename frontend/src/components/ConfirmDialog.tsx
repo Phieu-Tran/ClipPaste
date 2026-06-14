@@ -68,7 +68,7 @@ export function ConfirmDialog({
           {details && details.length > 0 && (
             <div className="mt-4 space-y-2 rounded-md border border-border bg-card/40 p-3">
               {details.map((detail) => (
-                <div key={detail} className="text-xs text-muted-foreground">
+                <div key={detail} className="break-words text-xs text-muted-foreground">
                   {detail}
                 </div>
               ))}

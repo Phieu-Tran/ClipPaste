@@ -39,6 +39,7 @@ export interface Settings {
   ui_density: string;
   mica_effect?: string;
   auto_paste: boolean;
+  sensitive_detection: boolean;
   ignore_ghost_clips: boolean;
   data_directory?: string;
 }
@@ -118,6 +119,21 @@ export type ImportBackupResult =
   | { status: 'success' }
   | { status: 'cancelled' }
   | { status: 'error'; error: string };
+
+export interface ImportBackupPreview {
+  path: string;
+  db_size: number;
+  image_count: number;
+  image_bytes: number;
+  total_uncompressed_bytes: number;
+  clip_count: number;
+  image_clip_count: number;
+  folder_count: number;
+  scratchpad_count: number;
+  settings_count: number;
+  oldest_clip_at: string | null;
+  newest_clip_at: string | null;
+}
 
 export interface ProcessMemoryInfo {
   pid: number;

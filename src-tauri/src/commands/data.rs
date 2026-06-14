@@ -24,6 +24,30 @@ const MAX_IMPORT_IMAGE_BYTES: u64 = 512 * 1024 * 1024;
 static DASHBOARD_STATS_CACHE: Lazy<parking_lot::Mutex<Option<(Instant, serde_json::Value)>>> =
     Lazy::new(|| parking_lot::Mutex::new(None));
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImportBackupPreview {
+    pub path: String,
+    pub db_size: u64,
+    pub image_count: u64,
+    pub image_bytes: u64,
+    pub total_uncompressed_bytes: u64,
+    pub clip_count: i64,
+    pub image_clip_count: i64,
+    pub folder_count: i64,
+    pub scratchpad_count: i64,
+    pub settings_count: i64,
+    pub oldest_clip_at: Option<String>,
+    pub newest_clip_at: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct BackupArchiveSummary {
+    db_size: u64,
+    image_count: u64,
+    image_bytes: u64,
+    total_uncompressed_bytes: u64,
+}
+
 fn is_hex_hash(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
@@ -588,6 +612,209 @@ pub async fn export_data(
     Ok(save_path)
 }
 
+async fn pick_import_zip_path() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Zip Archive (*.zip)|*.zip'; if ($f.ShowDialog() -eq 'OK') { $f.FileName } else { '' }"#;
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-STA", "-Command", ps_script])
+                .output()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Err("Import cancelled".to_string());
+        }
+        Ok(path)
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = tokio::task::spawn_blocking(|| {
+            std::process::Command::new("osascript")
+                .args(["-e", r#"POSIX path of (choose file of type {"zip"} with prompt "Import ClipPaste backup")"#])
+                .output()
+        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Err("Import cancelled".to_string());
+        }
+        Ok(path)
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let output = tokio::task::spawn_blocking(|| {
+            std::process::Command::new("zenity")
+                .args(["--file-selection", "--file-filter=*.zip"])
+                .output()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Err("Import cancelled".to_string());
+        }
+        Ok(path)
+    }
+}
+
+fn validate_backup_archive(zip_path: &Path) -> Result<BackupArchiveSummary, String> {
+    let file = std::fs::File::open(zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
+
+    if archive.len() > MAX_IMPORT_ENTRIES {
+        return Err(format!(
+            "Invalid backup: too many entries (max {})",
+            MAX_IMPORT_ENTRIES
+        ));
+    }
+
+    let mut summary = BackupArchiveSummary::default();
+    let mut has_db = false;
+    let mut seen_paths = HashSet::new();
+
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        if name.ends_with('/') {
+            continue;
+        }
+
+        let Some(rel_path) = import_entry_relative_path(&name) else {
+            log::warn!("Import: skipping unexpected entry: {}", name);
+            continue;
+        };
+
+        let path_key = rel_path.to_string_lossy().replace('\\', "/");
+        if !seen_paths.insert(path_key.clone()) {
+            return Err(format!("Invalid backup: duplicate entry {}", path_key));
+        }
+
+        let size = entry.size();
+        let file_limit = import_file_size_limit(&rel_path);
+        if size > file_limit {
+            return Err(format!(
+                "Invalid backup: {} is too large ({} MB, max {} MB)",
+                name,
+                size / 1024 / 1024,
+                file_limit / 1024 / 1024
+            ));
+        }
+
+        summary.total_uncompressed_bytes = summary
+            .total_uncompressed_bytes
+            .checked_add(size)
+            .ok_or_else(|| "Invalid backup: total extracted size overflow".to_string())?;
+        if summary.total_uncompressed_bytes > MAX_IMPORT_TOTAL_UNCOMPRESSED {
+            return Err(format!(
+                "Invalid backup: extracted data is too large (max {} GB)",
+                MAX_IMPORT_TOTAL_UNCOMPRESSED / 1024 / 1024 / 1024
+            ));
+        }
+
+        if rel_path == Path::new(DATA_DB_FILE) {
+            has_db = true;
+            summary.db_size = size;
+        } else if rel_path.starts_with("images") {
+            summary.image_count += 1;
+            summary.image_bytes = summary
+                .image_bytes
+                .checked_add(size)
+                .ok_or_else(|| "Invalid backup: image size overflow".to_string())?;
+        }
+    }
+
+    if !has_db {
+        return Err("Invalid backup: clipboard.db not found in zip".to_string());
+    }
+
+    Ok(summary)
+}
+
+fn extract_backup_archive(
+    zip_path: &Path,
+    temp_dir: &Path,
+) -> Result<BackupArchiveSummary, String> {
+    let summary = validate_backup_archive(zip_path)?;
+
+    let file = std::fs::File::open(zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
+
+    let _ = std::fs::remove_dir_all(temp_dir);
+    std::fs::create_dir_all(temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let temp_root = temp_dir
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve temp dir: {}", e))?;
+
+    let mut extracted_total = 0u64;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        if name.ends_with('/') {
+            continue;
+        }
+
+        let Some(rel_path) = import_entry_relative_path(&name) else {
+            continue;
+        };
+        let out_path = temp_root.join(&rel_path);
+
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create import directory: {}", e))?;
+            let parent = parent
+                .canonicalize()
+                .map_err(|e| format!("Failed to resolve import directory: {}", e))?;
+            if !parent.starts_with(&temp_root) {
+                return Err(format!("Invalid backup: path escapes import dir: {}", name));
+            }
+        } else {
+            return Err(format!("Invalid backup: missing parent for {}", name));
+        }
+
+        let declared_size = entry.size();
+        let file_limit = import_file_size_limit(&rel_path);
+        let mut out_file = std::fs::File::create(&out_path)
+            .map_err(|e| format!("Failed to create {}: {}", name, e))?;
+        let written = std::io::copy(&mut entry.by_ref().take(file_limit + 1), &mut out_file)
+            .map_err(|e| format!("Failed to extract {}: {}", name, e))?;
+        if written > file_limit {
+            let _ = std::fs::remove_file(&out_path);
+            return Err(format!(
+                "Invalid backup: {} exceeded size limit while extracting",
+                name
+            ));
+        }
+        if written != declared_size {
+            let _ = std::fs::remove_file(&out_path);
+            return Err(format!("Invalid backup: size mismatch for {}", name));
+        }
+
+        extracted_total = extracted_total
+            .checked_add(written)
+            .ok_or_else(|| "Invalid backup: total extracted size overflow".to_string())?;
+        if extracted_total > MAX_IMPORT_TOTAL_UNCOMPRESSED {
+            let _ = std::fs::remove_file(&out_path);
+            return Err(format!(
+                "Invalid backup: extracted data exceeded {} GB",
+                MAX_IMPORT_TOTAL_UNCOMPRESSED / 1024 / 1024 / 1024
+            ));
+        }
+    }
+
+    if !temp_dir.join(DATA_DB_FILE).exists() {
+        let _ = std::fs::remove_dir_all(temp_dir);
+        return Err("Import failed: extracted clipboard.db not found".to_string());
+    }
+
+    Ok(summary)
+}
+
 async fn verify_imported_db(path: &Path) -> Result<(), String> {
     let options = sqlx::sqlite::SqliteConnectOptions::new().filename(path);
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -608,57 +835,116 @@ async fn verify_imported_db(path: &Path) -> Result<(), String> {
     }
 }
 
+async fn imported_db_table_exists(pool: &sqlx::SqlitePool, table: &str) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+    )
+    .bind(table)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
+        > 0
+}
+
+async fn imported_db_count(pool: &sqlx::SqlitePool, table: &str) -> i64 {
+    if !imported_db_table_exists(pool, table).await {
+        return 0;
+    }
+
+    let sql = format!("SELECT COUNT(*) FROM {}", table);
+    sqlx::query_scalar::<_, i64>(&sql)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+}
+
+async fn summarize_imported_db(
+    db_path: &Path,
+    archive_summary: BackupArchiveSummary,
+    zip_path: String,
+) -> Result<ImportBackupPreview, String> {
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(db_path);
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await
+        .map_err(|e| format!("Imported DB cannot be opened: {}", e))?;
+
+    let clip_count = imported_db_count(&pool, "clips").await;
+    let image_clip_count = if imported_db_table_exists(&pool, "clips").await {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM clips WHERE clip_type = 'image'")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let folder_count = imported_db_count(&pool, "folders").await;
+    let scratchpad_count = imported_db_count(&pool, "scratchpads").await;
+    let settings_count = imported_db_count(&pool, "settings").await;
+    let (oldest_clip_at, newest_clip_at): (Option<String>, Option<String>) =
+        if imported_db_table_exists(&pool, "clips").await {
+            sqlx::query_as("SELECT MIN(created_at), MAX(created_at) FROM clips")
+                .fetch_one(&pool)
+                .await
+                .unwrap_or((None, None))
+        } else {
+            (None, None)
+        };
+
+    pool.close().await;
+
+    Ok(ImportBackupPreview {
+        path: zip_path,
+        db_size: archive_summary.db_size,
+        image_count: archive_summary.image_count,
+        image_bytes: archive_summary.image_bytes,
+        total_uncompressed_bytes: archive_summary.total_uncompressed_bytes,
+        clip_count,
+        image_clip_count,
+        folder_count,
+        scratchpad_count,
+        settings_count,
+        oldest_clip_at,
+        newest_clip_at,
+    })
+}
+
+#[tauri::command]
+pub async fn preview_import_backup() -> Result<ImportBackupPreview, String> {
+    let zip_path = pick_import_zip_path().await?;
+    let zip_path_buf = PathBuf::from(&zip_path);
+    let temp_dir =
+        std::env::temp_dir().join(format!("clippaste-import-preview-{}", uuid::Uuid::new_v4()));
+    let temp_dir_for_extract = temp_dir.clone();
+    let zip_path_for_extract = zip_path_buf.clone();
+
+    let archive_summary = tokio::task::spawn_blocking(move || {
+        extract_backup_archive(&zip_path_for_extract, &temp_dir_for_extract)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let db_path = temp_dir.join(DATA_DB_FILE);
+    let result = async {
+        verify_imported_db(&db_path).await?;
+        summarize_imported_db(&db_path, archive_summary, zip_path).await
+    }
+    .await;
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    result
+}
+
 #[tauri::command]
 pub async fn import_data(
+    zip_path: Option<String>,
     app: AppHandle,
     db: tauri::State<'_, Arc<Database>>,
 ) -> Result<(), String> {
-    // Let user pick zip file (spawn blocking to avoid Tokio stall)
-    #[cfg(target_os = "windows")]
-    let zip_path = {
-        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Zip Archive (*.zip)|*.zip'; if ($f.ShowDialog() -eq 'OK') { $f.FileName } else { '' }"#;
-        let output = tokio::task::spawn_blocking(move || {
-            std::process::Command::new("powershell")
-                .args(["-NoProfile", "-STA", "-Command", ps_script])
-                .output()
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            return Err("Import cancelled".to_string());
-        }
-        path
-    };
-    #[cfg(target_os = "macos")]
-    let zip_path = {
-        let output = tokio::task::spawn_blocking(|| {
-            std::process::Command::new("osascript")
-                .args(["-e", r#"POSIX path of (choose file of type {"zip"} with prompt "Import ClipPaste backup")"#])
-                .output()
-        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            return Err("Import cancelled".to_string());
-        }
-        path
-    };
-    #[cfg(target_os = "linux")]
-    let zip_path = {
-        let output = tokio::task::spawn_blocking(|| {
-            std::process::Command::new("zenity")
-                .args(["--file-selection", "--file-filter=*.zip"])
-                .output()
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            return Err("Import cancelled".to_string());
-        }
-        path
+    let zip_path = match zip_path {
+        Some(path) if !path.trim().is_empty() => path,
+        _ => pick_import_zip_path().await?,
     };
 
     let data_dir = db
@@ -670,145 +956,12 @@ pub async fn import_data(
     // Extract to a temp directory first to avoid overwriting the live DB
     let temp_dir = data_dir.join(".import_temp");
     let temp_dir_clone = temp_dir.clone();
+    let zip_path_buf = PathBuf::from(&zip_path);
 
-    let extract_result = tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let file =
-            std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
-        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
-
-        if archive.len() > MAX_IMPORT_ENTRIES {
-            return Err(format!(
-                "Invalid backup: too many entries (max {})",
-                MAX_IMPORT_ENTRIES
-            ));
-        }
-
-        let mut has_db = false;
-        let mut declared_total = 0u64;
-        let mut seen_paths = HashSet::new();
-        for i in 0..archive.len() {
-            let entry = archive.by_index(i).map_err(|e| e.to_string())?;
-            let name = entry.name().to_string();
-            if name.ends_with('/') {
-                continue;
-            }
-
-            let Some(rel_path) = import_entry_relative_path(&name) else {
-                log::warn!("Import: skipping unexpected entry: {}", name);
-                continue;
-            };
-
-            let path_key = rel_path.to_string_lossy().replace('\\', "/");
-            if !seen_paths.insert(path_key.clone()) {
-                return Err(format!("Invalid backup: duplicate entry {}", path_key));
-            }
-
-            let size = entry.size();
-            let file_limit = import_file_size_limit(&rel_path);
-            if size > file_limit {
-                return Err(format!(
-                    "Invalid backup: {} is too large ({} MB, max {} MB)",
-                    name,
-                    size / 1024 / 1024,
-                    file_limit / 1024 / 1024
-                ));
-            }
-
-            declared_total = declared_total
-                .checked_add(size)
-                .ok_or_else(|| "Invalid backup: total extracted size overflow".to_string())?;
-            if declared_total > MAX_IMPORT_TOTAL_UNCOMPRESSED {
-                return Err(format!(
-                    "Invalid backup: extracted data is too large (max {} GB)",
-                    MAX_IMPORT_TOTAL_UNCOMPRESSED / 1024 / 1024 / 1024
-                ));
-            }
-
-            if rel_path == Path::new(DATA_DB_FILE) {
-                has_db = true;
-            }
-        }
-
-        if !has_db {
-            return Err("Invalid backup: clipboard.db not found in zip".to_string());
-        }
-
-        // Clean and create temp dir
-        let _ = std::fs::remove_dir_all(&temp_dir_clone);
-        std::fs::create_dir_all(&temp_dir_clone)
-            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
-        let temp_root = temp_dir_clone
-            .canonicalize()
-            .map_err(|e| format!("Failed to resolve temp dir: {}", e))?;
-
-        // Extract safe backup entries only, streaming to disk so a large zip cannot
-        // allocate the full uncompressed entry in memory.
-        let mut extracted_total = 0u64;
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-            let name = entry.name().to_string();
-            if name.ends_with('/') {
-                continue;
-            }
-
-            let Some(rel_path) = import_entry_relative_path(&name) else {
-                continue;
-            };
-            let out_path = temp_root.join(&rel_path);
-
-            if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create import directory: {}", e))?;
-                let parent = parent
-                    .canonicalize()
-                    .map_err(|e| format!("Failed to resolve import directory: {}", e))?;
-                if !parent.starts_with(&temp_root) {
-                    return Err(format!("Invalid backup: path escapes import dir: {}", name));
-                }
-            } else {
-                return Err(format!("Invalid backup: missing parent for {}", name));
-            }
-
-            let declared_size = entry.size();
-            let file_limit = import_file_size_limit(&rel_path);
-            let mut out_file = std::fs::File::create(&out_path)
-                .map_err(|e| format!("Failed to create {}: {}", name, e))?;
-            let written = std::io::copy(&mut entry.by_ref().take(file_limit + 1), &mut out_file)
-                .map_err(|e| format!("Failed to extract {}: {}", name, e))?;
-            if written > file_limit {
-                let _ = std::fs::remove_file(&out_path);
-                return Err(format!(
-                    "Invalid backup: {} exceeded size limit while extracting",
-                    name
-                ));
-            }
-            if written != declared_size {
-                let _ = std::fs::remove_file(&out_path);
-                return Err(format!("Invalid backup: size mismatch for {}", name));
-            }
-
-            extracted_total = extracted_total
-                .checked_add(written)
-                .ok_or_else(|| "Invalid backup: total extracted size overflow".to_string())?;
-            if extracted_total > MAX_IMPORT_TOTAL_UNCOMPRESSED {
-                let _ = std::fs::remove_file(&out_path);
-                return Err(format!(
-                    "Invalid backup: extracted data exceeded {} GB",
-                    MAX_IMPORT_TOTAL_UNCOMPRESSED / 1024 / 1024 / 1024
-                ));
-            }
-        }
-
-        // Validate extracted DB exists
-        if !temp_dir_clone.join("clipboard.db").exists() {
-            let _ = std::fs::remove_dir_all(&temp_dir_clone);
-            return Err("Import failed: extracted clipboard.db not found".to_string());
-        }
-
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    let extract_result =
+        tokio::task::spawn_blocking(move || extract_backup_archive(&zip_path_buf, &temp_dir_clone))
+            .await
+            .map_err(|e| e.to_string())?;
 
     if let Err(e) = extract_result {
         let _ = std::fs::remove_dir_all(&temp_dir);

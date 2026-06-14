@@ -412,7 +412,7 @@ pnpm test
 pnpm tauri build
 
 # Release app without installer bundles/signing
-pnpm tauri build -- --no-bundle
+pnpm tauri build --no-bundle
 
 # Run Rust tests
 cd src-tauri && cargo test

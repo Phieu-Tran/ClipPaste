@@ -127,6 +127,7 @@ pub async fn get_settings(
         "ui_density": "comfortable",
         "mica_effect": "clear",
         "auto_paste": true,
+        "sensitive_detection": true,
         "ignore_ghost_clips": false,
         "image_auto_delete": false,
         "image_delete_days": 14
@@ -142,7 +143,10 @@ pub async fn get_settings(
                 | "ui_density" => {
                     settings[&key] = serde_json::json!(value);
                 }
-                "ignore_ghost_clips" | "auto_paste" | "image_auto_delete" => {
+                "ignore_ghost_clips"
+                | "auto_paste"
+                | "sensitive_detection"
+                | "image_auto_delete" => {
                     if let Ok(b) = value.parse::<bool>() {
                         settings[&key] = serde_json::json!(b);
                     }
@@ -348,6 +352,13 @@ pub async fn save_settings(
 
     if let Some(auto_paste) = settings.get("auto_paste").and_then(|v| v.as_bool()) {
         save_setting_value(pool, "auto_paste", auto_paste).await?;
+    }
+
+    if let Some(sensitive_detection) = settings
+        .get("sensitive_detection")
+        .and_then(|v| v.as_bool())
+    {
+        save_setting_value(pool, "sensitive_detection", sensitive_detection).await?;
     }
 
     if let Some(ignore_ghost) = settings.get("ignore_ghost_clips").and_then(|v| v.as_bool()) {

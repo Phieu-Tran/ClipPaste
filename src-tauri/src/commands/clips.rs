@@ -1779,6 +1779,29 @@ pub async fn update_note(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn set_clip_sensitive(
+    id: String,
+    sensitive: bool,
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<bool, String> {
+    let pool = &db.pool;
+    let result = sqlx::query(
+        "UPDATE clips SET is_sensitive = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?",
+    )
+    .bind(sensitive)
+    .bind(&id)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("Clip not found".to_string());
+    }
+
+    Ok(sensitive)
+}
+
 /// Re-scan all text clips and update is_sensitive flag based on current detection rules.
 /// Delegates to Database::rescan_sensitive() which uses batched SQL updates.
 #[tauri::command]

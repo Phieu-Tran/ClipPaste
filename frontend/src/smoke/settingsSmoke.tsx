@@ -16,6 +16,7 @@ const smokeSettings: Settings = {
   ui_density: 'comfortable',
   mica_effect: 'clear',
   auto_paste: true,
+  sensitive_detection: true,
   ignore_ghost_clips: true,
 };
 

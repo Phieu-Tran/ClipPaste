@@ -245,6 +245,22 @@ export function useClipActions(opts: UseClipActionsOpts) {
     [setClips, setNoteModalClipId]
   );
 
+  const handleSetSensitive = useCallback(
+    async (clipId: string, sensitive: boolean) => {
+      try {
+        const nextValue = await cmd.setClipSensitive(clipId, sensitive);
+        setClips((prev) =>
+          prev.map((clip) => (clip.id === clipId ? { ...clip, is_sensitive: nextValue } : clip))
+        );
+        toast.success(nextValue ? 'Marked sensitive' : 'Marked not sensitive');
+      } catch (error) {
+        console.error('Failed to update sensitive flag:', error);
+        toast.error('Failed to update sensitive flag');
+      }
+    },
+    [setClips]
+  );
+
   return {
     loadClips,
     loadGenRef,
@@ -257,5 +273,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
     handlePastePlainText,
     handleEditNote,
     handleSaveNote,
+    handleSetSensitive,
   };
 }

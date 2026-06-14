@@ -108,6 +108,7 @@ function App() {
     handlePastePlainText,
     handleEditNote,
     handleSaveNote,
+    handleSetSensitive,
   } = useClipActions({
     clips,
     setClips,
@@ -424,6 +425,38 @@ function App() {
     [handleCopy]
   );
 
+  const handleIgnoreSourceApp = useCallback(
+    async (appName: string | null) => {
+      const cleanName = appName?.trim();
+      if (!cleanName) return;
+      try {
+        await cmd.addIgnoredApp(cleanName);
+        await loadFolders();
+        await refreshTotalCount();
+        toast.success(`Ignoring future clips from ${cleanName}`, {
+          action: {
+            label: 'Undo',
+            onClick: async () => {
+              try {
+                await cmd.removeIgnoredApp(cleanName);
+                await loadFolders();
+                await refreshTotalCount();
+                toast.success(`Removed ${cleanName} from ignored apps`);
+              } catch (undoError) {
+                console.error('Failed to undo ignore app:', undoError);
+                toast.error(`Failed to remove ${cleanName}`);
+              }
+            },
+          },
+        });
+      } catch (error) {
+        console.error('Failed to ignore app:', error);
+        toast.error(`Failed to ignore ${cleanName}`);
+      }
+    },
+    [loadFolders, refreshTotalCount]
+  );
+
   // --- Render ---
   return (
     <div
@@ -496,6 +529,19 @@ function App() {
                             label: ctxClip.note ? 'Edit note' : 'Add note',
                             onClick: () => handleEditNote(contextMenu.itemId),
                           },
+                          {
+                            label: ctxClip.is_sensitive ? 'Mark not sensitive' : 'Mark sensitive',
+                            onClick: () =>
+                              handleSetSensitive(contextMenu.itemId, !ctxClip.is_sensitive),
+                          },
+                          ...(ctxClip.source_app?.trim()
+                            ? [
+                                {
+                                  label: `Ignore ${ctxClip.source_app}`,
+                                  onClick: () => handleIgnoreSourceApp(ctxClip.source_app),
+                                },
+                              ]
+                            : []),
                           {
                             label: 'Delete',
                             danger: true,

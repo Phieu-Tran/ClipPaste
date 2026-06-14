@@ -13,6 +13,7 @@ import type {
   SyncSettings,
   PickedApp,
   RuntimeDiagnostics,
+  ImportBackupPreview,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -69,6 +70,9 @@ export const cmd = {
   togglePin: (id: string) => invoke<boolean>('toggle_pin', { id }),
 
   updateNote: (id: string, note: string | null) => invoke<void>('update_note', { id, note }),
+
+  setClipSensitive: (id: string, sensitive: boolean) =>
+    invoke<boolean>('set_clip_sensitive', { id, sensitive }),
 
   pasteText: (content: string) => invoke<void>('paste_text', { content }),
 
@@ -159,7 +163,9 @@ export const cmd = {
 
   exportData: () => invoke<string>('export_data'),
 
-  importData: () => invoke<void>('import_data'),
+  previewImportBackup: () => invoke<ImportBackupPreview>('preview_import_backup'),
+
+  importData: (zipPath?: string) => invoke<void>('import_data', { zipPath: zipPath ?? null }),
 
   clearAllClips: () => invoke<void>('clear_all_clips'),
 

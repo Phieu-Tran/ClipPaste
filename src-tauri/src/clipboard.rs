@@ -852,8 +852,21 @@ async fn process_clipboard_change(
         }
     }
 
+    if let Some(ref app_name) = source_app {
+        if let Ok(true) = db.is_app_ignored(app_name).await {
+            log::info!(
+                "CLIPBOARD: Ignoring content from ignored app (name match): {}",
+                app_name
+            );
+            return;
+        }
+    }
+
     // DB Logic
     let pool = &db.pool;
+    let sensitive_detection_enabled = get_cached_setting("sensitive_detection")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true);
 
     let existing_uuid: Option<String> =
         sqlx::query_scalar::<_, String>(r#"SELECT uuid FROM clips WHERE content_hash = ?"#)
@@ -863,14 +876,9 @@ async fn process_clipboard_change(
             .unwrap_or(None);
 
     if let Some(existing_id) = existing_uuid {
-        // Bump created_at + re-evaluate is_sensitive (detection rules may have changed)
-        let is_sensitive = if clip_type == "text" {
-            detect_sensitive(&clip_preview).is_some()
-        } else {
-            false
-        };
-        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, is_sensitive = ? WHERE uuid = ?"#)
-            .bind(is_sensitive)
+        // Keep the existing sensitive flag so manual user overrides do not get
+        // undone when the same content is copied again. Reclassify handles rule changes.
+        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
             .bind(&existing_id)
             .execute(pool)
             .await
@@ -898,7 +906,7 @@ async fn process_clipboard_change(
         let clip_uuid = Uuid::new_v4().to_string();
 
         // Detect sensitive content in text clips
-        let is_sensitive = if clip_type == "text" {
+        let is_sensitive = if sensitive_detection_enabled && clip_type == "text" {
             detect_sensitive(&clip_preview).is_some()
         } else {
             false

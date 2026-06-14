@@ -17,6 +17,7 @@ import {
   Database,
   RefreshCw,
   Paintbrush,
+  ShieldAlert,
   Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -478,13 +479,45 @@ export function GeneralTab({
   const selectedThemeOption = getThemeById(selectedInterfaceTheme);
   const quickThemes = QUICK_THEME_IDS.map((themeId) => getThemeById(themeId));
 
-  const handleAddIgnoredApp = async () => {
-    if (!newIgnoredApp.trim()) return;
-    try {
-      await cmd.addIgnoredApp(newIgnoredApp.trim());
-      setIgnoredApps((prev) => [...prev, newIgnoredApp.trim()].sort());
+  const showIgnoredAppAddedToast = (app: string) => {
+    toast.success(`Ignoring future clips from ${app}`, {
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          try {
+            await cmd.removeIgnoredApp(app);
+            setIgnoredApps((prev) => prev.filter((existing) => existing !== app));
+            toast.success(`Removed ${app} from ignored apps`);
+          } catch (e) {
+            toast.error(`Failed to remove ignored app: ${e}`);
+            console.error(e);
+          }
+        },
+      },
+    });
+  };
+
+  const addIgnoredAppValue = async (rawValue: string) => {
+    const app = rawValue.trim();
+    if (!app) return;
+
+    if (ignoredApps.some((existing) => existing.toLowerCase() === app.toLowerCase())) {
       setNewIgnoredApp('');
-      toast.success(`Added ${newIgnoredApp.trim()} to ignored apps`);
+      toast.info(`${app} is already ignored`);
+      return;
+    }
+
+    await cmd.addIgnoredApp(app);
+    setIgnoredApps((prev) =>
+      [...prev.filter((existing) => existing.toLowerCase() !== app.toLowerCase()), app].sort()
+    );
+    setNewIgnoredApp('');
+    showIgnoredAppAddedToast(app);
+  };
+
+  const handleAddIgnoredApp = async () => {
+    try {
+      await addIgnoredAppValue(newIgnoredApp);
     } catch (e) {
       toast.error(`Failed to add ignored app: ${e}`);
       console.error(e);
@@ -494,11 +527,11 @@ export function GeneralTab({
   // Target mode: countdown that captures whichever app is focused when it expires.
   const [targetCountdown, setTargetCountdown] = useState<number | null>(null);
 
-  const handleTargetApp = async () => {
-    if (targetCountdown !== null) return;
+  const pickTargetApp = async () => {
+    if (targetCountdown !== null) return null;
     const DELAY_SEC = 4;
     setTargetCountdown(DELAY_SEC);
-    toast.info(`Switch to the app you want to block — capturing in ${DELAY_SEC}s`);
+    toast.info(`Switch to the app you want to block. Capturing in ${DELAY_SEC}s`);
 
     const tick = setInterval(() => {
       setTargetCountdown((v) => (v !== null && v > 1 ? v - 1 : v));
@@ -510,17 +543,36 @@ export function GeneralTab({
       const target = picked.exe_name || picked.app_name || '';
       if (!target || target.toLowerCase().includes('clippaste')) {
         toast.error(
-          'Could not capture a different app — try again and switch to the target app before the countdown ends.'
+          'Could not capture a different app. Try again and switch before the countdown ends.'
         );
+        return null;
       } else {
-        setNewIgnoredApp(target);
-        toast.success(`Captured: ${target} — click + to block`);
+        return target;
       }
     } catch (e) {
       toast.error(`Failed to capture app: ${e}`);
+      return null;
     } finally {
       clearInterval(tick);
       setTargetCountdown(null);
+    }
+  };
+
+  const handleTargetApp = async () => {
+    const target = await pickTargetApp();
+    if (!target) return;
+    setNewIgnoredApp(target);
+    toast.success(`Captured: ${target}`);
+  };
+
+  const handleTargetAndIgnoreApp = async () => {
+    const target = await pickTargetApp();
+    if (!target) return;
+    try {
+      await addIgnoredAppValue(target);
+    } catch (e) {
+      toast.error(`Failed to add ignored app: ${e}`);
+      console.error(e);
     }
   };
 
@@ -854,6 +906,26 @@ export function GeneralTab({
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-border bg-accent/20 p-3">
+          <div className="flex min-w-0 items-start gap-2">
+            <ShieldAlert size={15} className="mt-0.5 shrink-0 text-red-400" />
+            <div className="min-w-0">
+              <span className="text-sm font-medium">Sensitive Detection</span>
+              <p className="text-xs text-muted-foreground">
+                Auto-blur likely secrets. Turn off if it marks normal clips too often.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => updateSetting('sensitive_detection', !settings.sensitive_detection)}
+            className={`h-6 w-11 shrink-0 rounded-full transition-colors ${settings.sensitive_detection ? 'bg-primary' : 'bg-accent'}`}
+          >
+            <div
+              className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${settings.sensitive_detection ? 'translate-x-5' : 'translate-x-0.5'}`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-border bg-accent/20 p-3">
           <div>
             <span className="text-sm font-medium">Ignore Ghost Clips</span>
             <p className="text-xs text-muted-foreground">
@@ -929,6 +1001,22 @@ export function GeneralTab({
               Prevent recording from specific apps (filename or path).
             </p>
           </label>
+
+          <button
+            onClick={handleTargetAndIgnoreApp}
+            disabled={targetCountdown !== null}
+            className="btn btn-secondary w-full justify-center gap-2"
+            title="Capture the foreground app after the countdown and add it to ignored apps"
+          >
+            {targetCountdown !== null ? (
+              <span className="text-xs font-semibold">{targetCountdown}s</span>
+            ) : (
+              <>
+                <Crosshair size={16} />
+                <span>Pick &amp; Ignore active app</span>
+              </>
+            )}
+          </button>
 
           <div className="flex gap-2">
             <input

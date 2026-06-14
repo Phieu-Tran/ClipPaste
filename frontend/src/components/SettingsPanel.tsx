@@ -1,4 +1,11 @@
-import { Settings, FolderItem, DashClip, DashboardStats, ImportBackupResult } from '../types';
+import {
+  Settings,
+  FolderItem,
+  DashClip,
+  DashboardStats,
+  ImportBackupResult,
+  ImportBackupPreview,
+} from '../types';
 import {
   X,
   Maximize2,
@@ -74,6 +81,30 @@ type DataAction = 'directory' | 'export' | 'import' | 'duplicates' | 'clear' | n
 
 function toDateStr(d: Date): string {
   return d.toISOString().split('T')[0];
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function backupPreviewDetails(preview: ImportBackupPreview): string[] {
+  const dateRange =
+    preview.oldest_clip_at && preview.newest_clip_at
+      ? `Clip dates: ${preview.oldest_clip_at.slice(0, 10)} to ${preview.newest_clip_at.slice(0, 10)}.`
+      : 'Clip dates: not available.';
+
+  return [
+    `${preview.clip_count.toLocaleString()} clips (${preview.image_clip_count.toLocaleString()} image clips).`,
+    `${preview.folder_count.toLocaleString()} folders, ${preview.scratchpad_count.toLocaleString()} scratchpad notes.`,
+    `${preview.image_count.toLocaleString()} image files, ${formatBytes(preview.image_bytes)}.`,
+    `Database: ${formatBytes(preview.db_size)}. Total extracted size: ${formatBytes(preview.total_uncompressed_bytes)}.`,
+    `${preview.settings_count.toLocaleString()} settings rows.`,
+    dateRange,
+    `Backup file: ${preview.path}`,
+  ];
 }
 
 export function SettingsPanel({
@@ -508,14 +539,34 @@ export function SettingsPanel({
   };
 
   const handleImportBackup = async (onResult?: (result: ImportBackupResult) => void) => {
+    if (dataAction) return;
+    setDataAction('import');
+    const previewToast = toast.loading('Reading backup...');
+    let preview: ImportBackupPreview;
+    try {
+      preview = await cmd.previewImportBackup();
+    } catch (error) {
+      const message = String(error);
+      if (message === 'Import cancelled') {
+        onResult?.({ status: 'cancelled' });
+      } else {
+        onResult?.({ status: 'error', error: message });
+        toast.error(`Import preview failed: ${message}`);
+      }
+      return;
+    } finally {
+      toast.dismiss(previewToast);
+      setDataAction(null);
+    }
+
     requestConfirm({
       title: 'Import Backup',
       message:
-        'Importing a backup replaces the current database and image folder for this data directory. Create an export first if you need a rollback point.',
+        'Importing this backup replaces the current database and image folder for this data directory. Create an export first if you need a rollback point.',
       confirmText: 'Import Backup',
       variant: 'warning',
       details: [
-        'The app will ask you to choose a backup file.',
+        ...backupPreviewDetails(preview),
         'Restart ClipPaste after import so every window reads the imported data.',
       ],
       action: async () => {
@@ -523,7 +574,7 @@ export function SettingsPanel({
         setDataAction('import');
         const loadingToast = toast.loading('Importing backup...');
         try {
-          await cmd.importData();
+          await cmd.importData(preview.path);
           clearImageDataUrlCache();
           setImportRestartRequired(true);
           onResult?.({ status: 'success' });

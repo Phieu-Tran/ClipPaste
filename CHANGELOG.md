@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.21] - 2026-06-14
+
+### Added
+- **Backup preview before import**: importing a backup now scans the selected zip first and shows what it contains — clip count (and image-clip count), folders, scratchpad notes, image files and sizes, database size, settings rows, and the clip date range — in the confirmation dialog before anything is overwritten.
+- **Sensitive Detection toggle**: a new General setting to turn automatic secret/sensitive blurring on or off. When disabled, new clips are no longer auto-flagged and a re-scan clears the sensitive flag from existing clips.
+- **Mark sensitive manually**: right-click a clip to mark it sensitive or not sensitive. Manual overrides are now preserved when the same content is copied again.
+- **Ignore app from context menu**: right-click a clip to ignore future clips from its source app, with an Undo toast. Added a "Pick & Ignore active app" button that captures the foreground app and ignores it in one step.
+
+### Fixed
+- Sensitive flag was being reset on re-copy, undoing manual user changes — the existing flag is now kept.
+- Confirmation dialog detail lines now wrap long values (e.g. backup file paths) instead of overflowing.
+
+---
+
 ## [1.10.20] - 2026-06-13
 
 ### Fixed
