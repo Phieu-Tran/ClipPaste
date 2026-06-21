@@ -227,7 +227,7 @@ pub async fn scratchpad_paste(
         }
 
         let db_arc = db.inner().clone();
-        if crate::clipboard::is_foreground_app_ignored(&db_arc) {
+        if crate::clipboard::is_foreground_app_ignored_async(&db_arc).await {
             log::info!("SCRATCHPAD: Suppressed Shift+Insert (target app is ignored)");
         } else {
             crate::clipboard::send_paste_input();

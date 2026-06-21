@@ -1056,29 +1056,46 @@ pub fn is_foreground_app_ignored(db: &std::sync::Arc<crate::database::Database>)
         Err(_) => return false,
     };
     let db = db.clone();
-    rt.block_on(async move {
-        if let Some(ref path) = info.full_path {
-            if db.is_app_ignored(path).await.unwrap_or(false) {
+    rt.block_on(async move { is_foreground_app_info_ignored(&db, &info).await })
+}
+
+/// Async version for Tauri commands already running on Tokio. Calling the sync helper from
+/// those commands would panic by trying to `block_on` inside the active runtime.
+pub async fn is_foreground_app_ignored_async(
+    db: &std::sync::Arc<crate::database::Database>,
+) -> bool {
+    let info = match get_foreground_app_info() {
+        Some(i) => i,
+        None => return false,
+    };
+    is_foreground_app_info_ignored(db, &info).await
+}
+
+async fn is_foreground_app_info_ignored(
+    db: &std::sync::Arc<crate::database::Database>,
+    info: &crate::commands::settings::PickedApp,
+) -> bool {
+    if let Some(ref path) = info.full_path {
+        if db.is_app_ignored(path).await.unwrap_or(false) {
+            return true;
+        }
+        // Some apps (PUBG anti-cheat etc.) block GetModuleBaseNameW so exe_name is
+        // None — fall back to extracting the filename from the full path.
+        if let Some(name) = std::path::Path::new(path)
+            .file_name()
+            .and_then(|s| s.to_str())
+        {
+            if db.is_app_ignored(name).await.unwrap_or(false) {
                 return true;
             }
-            // Some apps (PUBG anti-cheat etc.) block GetModuleBaseNameW so exe_name is
-            // None — fall back to extracting the filename from the full path.
-            if let Some(name) = std::path::Path::new(path)
-                .file_name()
-                .and_then(|s| s.to_str())
-            {
-                if db.is_app_ignored(name).await.unwrap_or(false) {
-                    return true;
-                }
-            }
         }
-        if let Some(ref exe) = info.exe_name {
-            if db.is_app_ignored(exe).await.unwrap_or(false) {
-                return true;
-            }
+    }
+    if let Some(ref exe) = info.exe_name {
+        if db.is_app_ignored(exe).await.unwrap_or(false) {
+            return true;
         }
-        false
-    })
+    }
+    false
 }
 
 /// Snapshot the current foreground HWND. Called before a helper window steals focus
@@ -1087,8 +1104,9 @@ pub fn is_foreground_app_ignored(db: &std::sync::Arc<crate::database::Database>)
 pub fn capture_prev_foreground() {
     unsafe {
         let hwnd = GetForegroundWindow();
-        // Skip our own windows — finding the scratchpad or settings window here means the
-        // user was already inside ClipPaste, and restoring it isn't what they want.
+        // Skip our own windows without clearing the previous target. Frontend transitions
+        // can briefly leave ClipPaste focused while the main window hides before Scratchpad
+        // opens; clearing here loses the real app captured by the original global hotkey.
         if hwnd.0.is_null() {
             clear_prev_foreground();
             return;
@@ -1101,7 +1119,7 @@ pub fn capture_prev_foreground() {
             PREV_FOREGROUND_CAPTURED_AT_MS
                 .store(chrono::Local::now().timestamp_millis(), Ordering::SeqCst);
         } else {
-            clear_prev_foreground();
+            log::debug!("FOCUS: Ignored own foreground window while preserving previous target");
         }
     }
 }

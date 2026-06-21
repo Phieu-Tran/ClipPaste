@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { currentMonitor } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { ScratchpadItem, Settings } from '../types';
 import { useTheme } from '../hooks/useTheme';
@@ -139,6 +139,7 @@ export function ScratchpadWindow() {
   // Paste state
   const [pastingId, setPastingId] = useState<string | null>(null);
   const [pasteContent, setPasteContent] = useState('');
+  const [isPasting, setIsPasting] = useState(false);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -155,11 +156,15 @@ export function ScratchpadWindow() {
   const panelRef = useRef<HTMLDivElement>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isResizingRef = useRef(false);
+  const appWindow = useMemo(() => getCurrentWindow(), []);
 
   const hideMainWindow = useCallback(() => {
     WebviewWindow.getByLabel('main')
       .then((win) => win?.hide())
       .catch(() => {});
+  }, []);
+  const emitScratchpadVisibility = useCallback((visible: boolean) => {
+    emit('scratchpad-visibility-changed', { visible }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -177,6 +182,11 @@ export function ScratchpadWindow() {
   // handler once without forward-referencing hooks defined further down.
   const filteredRef = useRef<ScratchpadItem[]>([]);
   const selectedIdRef = useRef<string | null>(null);
+  const goBackRef = useRef<() => void>(() => {});
+  const handleCloseRef = useRef<() => void>(() => {});
+  const startPasteRef = useRef<(item: ScratchpadItem) => void>(() => {});
+  const startEditRef = useRef<(item: ScratchpadItem) => void>(() => {});
+  const handleDeleteRef = useRef<(id: string) => void>(() => {});
   selectedIdRef.current = selectedId;
 
   // Keyboard handler: ESC, arrows, Enter/E/Del/"/" in list mode.
@@ -184,12 +194,12 @@ export function ScratchpadWindow() {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (mode === 'paste' || mode === 'edit') {
-          goBack();
+          goBackRef.current();
         } else if (mode === 'list') {
           if (searchQuery) {
             setSearchQuery('');
           } else {
-            handleClose();
+            handleCloseRef.current();
           }
         }
         return;
@@ -224,12 +234,12 @@ export function ScratchpadWindow() {
         setSelectedId(list[next].id);
       } else if (e.key === 'Enter' && curSelected) {
         const item = list.find((s) => s.id === curSelected);
-        if (item) startPaste(item);
+        if (item) startPasteRef.current(item);
       } else if ((e.key === 'e' || e.key === 'E') && curSelected && !e.ctrlKey && !e.metaKey) {
         const item = list.find((s) => s.id === curSelected);
-        if (item) startEdit(item);
+        if (item) startEditRef.current(item);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && curSelected) {
-        handleDelete(curSelected);
+        handleDeleteRef.current(curSelected);
       }
     };
     document.addEventListener('keydown', handleKey);
@@ -290,13 +300,16 @@ export function ScratchpadWindow() {
       if (nextMode === 'list') {
         setPinned(true);
         hideMainWindow();
+        appWindow.setFocus().catch(() => {});
       } else {
         setEditingId(null);
         setPastingId(null);
+        setIsPasting(false);
         setSearchQuery('');
         setShowSortMenu(false);
         setPinned(false);
       }
+      emitScratchpadVisibility(true);
       setMode(nextMode);
     });
     const unlistenOpenP = listen('scratchpad-open', () => {
@@ -306,17 +319,20 @@ export function ScratchpadWindow() {
       }
       setEditingId(null);
       setPastingId(null);
+      setIsPasting(false);
       setSearchQuery('');
       setShowSortMenu(false);
       setPinned(true);
+      emitScratchpadVisibility(true);
       setMode('list');
       hideMainWindow();
+      appWindow.setFocus().catch(() => {});
     });
     return () => {
       unlistenP.then((fn) => fn()).catch(() => {});
       unlistenOpenP.then((fn) => fn()).catch(() => {});
     };
-  }, [hideMainWindow, setMode]);
+  }, [appWindow, emitScratchpadVisibility, hideMainWindow, setMode]);
 
   // Filter by search + color, then sort. Synced into filteredRef for keydown handler.
   const filtered = useMemo(() => {
@@ -346,11 +362,6 @@ export function ScratchpadWindow() {
   filteredRef.current = filtered;
 
   // ── Window positioning ──
-  // Memoize the window handle — getCurrentWindow() returns a fresh proxy on each call,
-  // which made the moveTo* callbacks unstable and caused the position useEffect to re-run
-  // on every render, producing a hide→resize→show flicker during typing.
-  const appWindow = useMemo(() => getCurrentWindow(), []);
-
   const moveToSide = useCallback(async () => {
     isResizingRef.current = true;
     try {
@@ -470,6 +481,7 @@ export function ScratchpadWindow() {
   const goBack = useCallback(() => {
     setEditingId(null);
     setPastingId(null);
+    setIsPasting(false);
     setPinned(true);
     setMode('list');
   }, []);
@@ -478,12 +490,15 @@ export function ScratchpadWindow() {
     cancelCollapse();
     setEditingId(null);
     setPastingId(null);
+    setIsPasting(false);
+    setSelectedId(null);
     setSearchQuery('');
     setShowSortMenu(false);
     setPinned(false);
     setMode('collapsed');
-    appWindow.show().catch(() => {});
-  }, [appWindow, cancelCollapse, setMode]);
+    emitScratchpadVisibility(false);
+    appWindow.hide().catch(() => {});
+  }, [appWindow, cancelCollapse, emitScratchpadVisibility, setMode]);
 
   const handlePanelClick = useCallback(() => {
     if (!pinned && mode === 'list') setPinned(true);
@@ -525,30 +540,48 @@ export function ScratchpadWindow() {
   // ── Paste ──
   const startPaste = useCallback((item: ScratchpadItem) => {
     setEditingId(null);
+    setIsPasting(false);
     setPastingId(item.id);
     setPasteContent(item.title ? `${item.title}\n${item.content}` : item.content);
     setMode('paste');
   }, []);
 
   const doPaste = useCallback(async () => {
-    if (!pastingId) return;
+    if (!pastingId || isPasting) return;
+    setIsPasting(true);
+    let completed = false;
     try {
       // Backend awaits the full restore→paste chain inline — the invoke only
       // resolves AFTER Shift+Insert has been delivered to the target app, so
       // it's safe to start re-showing the collapsed tab below.
       await cmd.scratchpadPaste(pasteContent);
-    } catch {
-      await navigator.clipboard.writeText(pasteContent);
-      await appWindow.hide().catch(() => {});
+      completed = true;
+    } catch (error) {
+      console.error('Scratchpad paste failed:', error);
+      try {
+        await navigator.clipboard.writeText(pasteContent);
+        await appWindow.hide().catch(() => {});
+        toast.warning('Paste failed; copied to clipboard');
+        completed = true;
+      } catch (fallbackError) {
+        console.error('Scratchpad paste fallback failed:', fallbackError);
+        toast.error('Paste failed');
+      }
+    } finally {
+      setIsPasting(false);
     }
+    if (!completed) return;
     setPastingId(null);
     setPinned(false);
     setMode('collapsed');
     // moveToCollapsed repositions the hidden window; show it after a tick.
     setTimeout(() => {
-      appWindow.show().catch(() => {});
+      appWindow
+        .show()
+        .then(() => emitScratchpadVisibility(true))
+        .catch(() => {});
     }, 200);
-  }, [pastingId, pasteContent, appWindow]);
+  }, [pastingId, isPasting, pasteContent, appWindow, emitScratchpadVisibility]);
 
   // ── CRUD ──
   const handleAdd = useCallback(async () => {
@@ -577,6 +610,7 @@ export function ScratchpadWindow() {
         }
         if (pastingId === id) {
           setPastingId(null);
+          setIsPasting(false);
           setMode('list');
         }
         if (selectedId === id) setSelectedId(null);
@@ -604,6 +638,14 @@ export function ScratchpadWindow() {
     },
     [scratchpads, editingId, pastingId, selectedId]
   );
+
+  useEffect(() => {
+    goBackRef.current = goBack;
+    handleCloseRef.current = handleClose;
+    startPasteRef.current = startPaste;
+    startEditRef.current = startEdit;
+    handleDeleteRef.current = handleDelete;
+  }, [goBack, handleClose, startPaste, startEdit, handleDelete]);
 
   const handleToggleNotePin = useCallback(async (id: string) => {
     try {
@@ -833,7 +875,11 @@ export function ScratchpadWindow() {
           {isPaste ? (
             <button
               onClick={doPaste}
-              className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80"
+              disabled={isPasting}
+              className={clsx(
+                'flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80',
+                isPasting && 'cursor-wait opacity-60'
+              )}
             >
               <ClipboardPaste size={14} /> Paste
             </button>
@@ -955,6 +1001,16 @@ export function ScratchpadWindow() {
               title="New note"
             >
               <Plus size={14} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClose();
+              }}
+              className="rounded-md p-1.5 text-muted-foreground/50 transition-all hover:bg-red-400/15 hover:text-red-400"
+              title="Hide"
+            >
+              <X size={14} />
             </button>
           </div>
         </div>

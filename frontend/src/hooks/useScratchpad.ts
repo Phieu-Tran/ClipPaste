@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
 import { cmd } from '../commands';
 
-const COLLAPSED_WIDTH = 16;
-const COLLAPSED_HEIGHT = 100;
+const EXPANDED_WIDTH = 320;
+const FALLBACK_EXPANDED_HEIGHT = 540;
+const EXPANDED_HEIGHT_RATIO = 0.75;
 const FOCUS_SETTLE_MS = 90;
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -37,6 +39,23 @@ export function useScratchpad() {
     };
   }, [refreshVisibility]);
 
+  useEffect(() => {
+    const unlistenVisibilityP = listen<{ visible: boolean }>(
+      'scratchpad-visibility-changed',
+      (event) => {
+        setIsVisible(event.payload.visible);
+      }
+    );
+    const unlistenFocusP = clipWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) refreshVisibility();
+    });
+
+    return () => {
+      unlistenVisibilityP.then((fn) => fn()).catch(() => {});
+      unlistenFocusP.then((fn) => fn()).catch(() => {});
+    };
+  }, [clipWindow, refreshVisibility]);
+
   // Toolbar toggle: create/show the side panel, or hide it completely if it is already visible.
   const toggle = useCallback(async () => {
     const win = await WebviewWindow.getByLabel('scratchpad');
@@ -59,8 +78,10 @@ export function useScratchpad() {
       return;
     }
 
+    let width = EXPANDED_WIDTH;
+    let height = FALLBACK_EXPANDED_HEIGHT;
     let x = 0;
-    let y = 400;
+    let y = 120;
     try {
       const monitor = await currentMonitor();
       if (monitor) {
@@ -69,8 +90,9 @@ export function useScratchpad() {
         const workH = monitor.size.height / scale;
         const workX = monitor.position.x / scale;
         const workY = monitor.position.y / scale;
-        x = workX + workW - COLLAPSED_WIDTH;
-        y = workY + Math.round((workH - COLLAPSED_HEIGHT) / 2);
+        height = Math.round(workH * EXPANDED_HEIGHT_RATIO);
+        x = workX + workW - width;
+        y = workY + Math.round((workH - height) / 2);
       }
     } catch {}
 
@@ -81,8 +103,8 @@ export function useScratchpad() {
     const scratchpadWin = new WebviewWindow('scratchpad', {
       url: 'index.html?window=scratchpad&open=1',
       title: 'Scratchpad',
-      width: COLLAPSED_WIDTH,
-      height: COLLAPSED_HEIGHT,
+      width,
+      height,
       x,
       y,
       resizable: false,

@@ -584,6 +584,26 @@ fn get_or_create_scratchpad_window(app: &AppHandle) -> Result<(WebviewWindow, bo
     Ok((window, true))
 }
 
+fn position_scratchpad_for_list(window: &WebviewWindow) {
+    const EXPANDED_WIDTH: f64 = 320.0;
+    const EXPANDED_HEIGHT_RATIO: f64 = 0.75;
+
+    if let Some(monitor) = crate::get_monitor_at_cursor(window) {
+        let scale = monitor.scale_factor();
+        let size = monitor.size();
+        let position = monitor.position();
+        let width = (EXPANDED_WIDTH * scale).round().max(1.0) as u32;
+        let height = ((size.height as f64) * EXPANDED_HEIGHT_RATIO)
+            .round()
+            .max(1.0) as u32;
+        let x = position.x + size.width as i32 - width as i32;
+        let y = position.y + ((size.height as i32 - height as i32) / 2);
+
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }));
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    }
+}
+
 pub fn register_app_shortcuts(
     app: &AppHandle,
     db: Arc<Database>,
@@ -668,10 +688,15 @@ pub fn register_app_shortcuts(
                 crate::clipboard::capture_prev_foreground();
                 match get_or_create_scratchpad_window(&app_for_sp) {
                     Ok((sp_win, created)) => {
+                        let was_visible = sp_win.is_visible().unwrap_or(false);
                         crate::ensure_window_on_current_virtual_desktop(&sp_win);
+                        if !was_visible {
+                            position_scratchpad_for_list(&sp_win);
+                        }
                         let _ = sp_win.show();
-                        if created {
+                        if created || !was_visible {
                             let _ = sp_win.set_focus();
+                            let _ = sp_win.emit("scratchpad-open", ());
                         } else {
                             let _ = sp_win.emit("scratchpad-toggle", ());
                         }

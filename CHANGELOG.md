@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.22] - 2026-06-21
+
+### Fixed
+- **Scratchpad paste hotfix**: Scratchpad paste no longer panics the Tauri runtime by calling a blocking runtime helper from inside the async paste command.
+- **Scratchpad target routing**: reopening Scratchpad now preserves the previously captured target app when ClipPaste briefly remains focused during window transitions.
+- **Scratchpad lifecycle**: toolbar and global-hotkey open paths now use the same list-view sizing and visibility state, reducing hidden/collapsed mode drift.
+- **Scratchpad paste fallback**: repeated Paste clicks are guarded, failed paste attempts copy the snippet to the clipboard, and the user gets a visible warning instead of a stuck paste state.
+
+---
+
 ## [1.10.21] - 2026-06-14
 
 ### Added
