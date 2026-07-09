@@ -8,14 +8,21 @@ import { cmd } from '../commands';
 interface UseWindowLifecycleOptions {
   searchInputRef: React.RefObject<HTMLInputElement>;
   selectedFolderRef: React.MutableRefObject<string | null>;
-  loadClipsRef: React.MutableRefObject<(...args: any[]) => void>;
+  loadClipsRef: React.MutableRefObject<
+    (
+      folderId: string | null,
+      append?: boolean,
+      searchOverride?: string,
+      typeFilter?: string | null
+    ) => void
+  >;
   debouncedFolderRefreshRef: React.MutableRefObject<() => void>;
   setClips: React.Dispatch<React.SetStateAction<AppClipboardItem[]>>;
   setHasMore: React.Dispatch<React.SetStateAction<boolean>>;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setSelectedClipId: React.Dispatch<React.SetStateAction<string | null>>;
   setSelectedClipIds: React.Dispatch<React.SetStateAction<Set<string>>>;
-  setPreviewFolder: (folder: any) => void;
+  setPreviewFolder: (folder: string | null | undefined) => void;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
   setInterfaceTheme: React.Dispatch<React.SetStateAction<string>>;
   setFontFamily: React.Dispatch<React.SetStateAction<string>>;
@@ -69,14 +76,14 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
     return () => {
       unlisten.then((f) => f());
     };
-  }, []);
+  }, [setFontFamily, setInterfaceTheme, setTheme, setUiDensity, setWindowEffect]);
 
   // Auto-show search bar when window opens
   useEffect(() => {
     setTimeout(() => {
       searchInputRef.current?.focus();
     }, 100);
-  }, []);
+  }, [searchInputRef]);
 
   // Reset selection, reload clips, and scroll to top every time the window is shown/focused
   // Debounced to avoid spam queries on rapid Alt+Tab toggles
@@ -123,7 +130,7 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
     if (windowFocusCount > 0) {
       searchInputRef.current?.focus();
     }
-  }, [windowFocusCount]);
+  }, [windowFocusCount, searchInputRef]);
 
   // Subscribe ONCE to clipboard-change — uses refs so the callback is always fresh without re-subscribing
   const refreshCurrentFolderRef = useRef<() => void>(() => {});
@@ -144,7 +151,7 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
         if (typeof unlisten === 'function') unlisten();
       });
     };
-  }, []);
+  }, [debouncedFolderRefreshRef]);
 
   return {
     windowFocusCount,

@@ -10,7 +10,7 @@ const CLIP_TYPE_KEYS = new Set(['text', 'image', 'html', 'rtf']);
 interface UseSearchOptions {
   clips: AppClipboardItem[];
   previewClips: AppClipboardItem[];
-  setPreviewFolder: (folder: any) => void;
+  setPreviewFolder: (folder: string | null | undefined) => void;
 }
 
 export function useSearch(opts: UseSearchOptions) {

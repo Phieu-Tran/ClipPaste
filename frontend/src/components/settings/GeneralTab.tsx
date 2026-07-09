@@ -23,6 +23,7 @@ import {
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
 import { clearImageDataUrlCache } from '../../imageQueue';
+import { formatBytes } from '../../utils/format';
 
 interface GeneralTabProps {
   settings: Settings;
@@ -405,13 +406,6 @@ const WINDOW_EFFECTS = [
     preview: 'from-lime-300/75 via-emerald-400/35 to-zinc-950/30',
   },
 ] as const;
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 export function GeneralTab({
   settings,

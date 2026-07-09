@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.23] - 2026-07-09
+
+### Changed
+- **Internal refactor (no behavior change)**: split the largest functions into focused units — `run_app` startup into 10 helpers, sync `apply_delta` into per-entity stages, `SettingsPanel` data/backup handlers into a `useSettingsDataActions` hook, and `ScratchpadWindow` into `ScratchpadModal`/`NoteCard` components plus theme/drag hooks with a unified `applyLayout` window-positioning helper.
+- **Deduplicated shared code**: `formatBytes`/`formatRelativeTime` moved to `frontend/src/utils/format.ts` (was copied in up to 5 components); sync `get_all_*`/`get_changed_*` query pairs merged into single `since`-parameterized functions; BackupTab clip/image cleanup flows share common preview/confirm helpers.
+
+### Added
+- **ESLint** (typescript-eslint + react-hooks) wired into `pnpm lint`, `scripts/test.ps1`, and CI; fixed all findings (unsafe `any` types, a dead assignment, and every `exhaustive-deps` warning).
+- **Renovate config** for weekly grouped dependency update PRs.
+
+---
+
 ## [1.10.22] - 2026-06-21
 
 ### Fixed

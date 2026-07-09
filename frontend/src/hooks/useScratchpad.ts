@@ -78,7 +78,7 @@ export function useScratchpad() {
       return;
     }
 
-    let width = EXPANDED_WIDTH;
+    const width = EXPANDED_WIDTH;
     let height = FALLBACK_EXPANDED_HEIGHT;
     let x = 0;
     let y = 120;

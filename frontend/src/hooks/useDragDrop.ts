@@ -58,7 +58,6 @@ export function useDragDrop(opts: UseDragDropOpts) {
       clipId: null,
       targetFolderId: 'NO_TARGET',
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleMoveClip]);
 
   return {

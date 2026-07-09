@@ -75,40 +75,8 @@ pub fn run_app() {
     let data_dir = get_data_dir();
     fs::create_dir_all(&data_dir).ok();
 
-    // Migrate existing DB from old ClipPaste location if present.
-    let old_data_dir = match dirs::data_dir() {
-        Some(path) => path.join("ClipPaste"),
-        None => std::env::current_dir()
-            .unwrap_or(std::path::PathBuf::from("."))
-            .join("ClipPaste"),
-    };
-    let old_db_path = old_data_dir.join("paste_paw.db");
-
     let db_path = data_dir.join("clipboard.db");
-    if old_db_path.exists() && !db_path.exists() {
-        if let Some(parent) = db_path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        match fs::rename(&old_db_path, &db_path) {
-            Ok(_) => log::info!("Migrated DB from {:?} to {:?}", old_db_path, db_path),
-            Err(e) => {
-                // fallback: try copy + remove
-                match fs::copy(&old_db_path, &db_path) {
-                    Ok(_) => {
-                        let _ = fs::remove_file(&old_db_path);
-                        log::info!("Copied old DB {:?} to {:?}", old_db_path, db_path);
-                    }
-                    Err(copy_err) => {
-                        log::error!(
-                            "Failed to migrate DB: rename error: {:?}, copy error: {:?}",
-                            e,
-                            copy_err
-                        );
-                    }
-                }
-            }
-        }
-    }
+    migrate_legacy_db(&db_path);
 
     let db_path_str = db_path.to_str().unwrap_or("clipboard.db").to_string();
 
@@ -133,173 +101,19 @@ pub fn run_app() {
 
     let db_arc = Arc::new(db);
 
-    let log_level = configured_log_level();
-    let mut log_builder = tauri_plugin_log::Builder::default()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "[{}][{}][{}] {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .level(log_level);
-
-    #[cfg(debug_assertions)]
-    {
-        log_builder = log_builder.targets([
-            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-        ]);
-    }
-
-    #[cfg(not(debug_assertions))]
-    {
-        log_builder = log_builder.targets([
-            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
-            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-        ]);
-    }
-
     builder
-        .plugin(log_builder.build())
+        .plugin(build_log_plugin().build())
         .plugin(tauri_plugin_clipboard_x::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(db_arc.clone())
-        .on_window_event(|window, event| {
-            match event {
-                tauri::WindowEvent::ThemeChanged(theme) => {
-                    log::info!("THEME:System theme changed to: {:?}, win.theme(): {:?}", theme, window.theme());
-                    let label = window.label().to_string();
-                    let app_handle = window.app_handle().clone();
-                    let db = window.state::<Arc<Database>>().inner().clone();
-                    let theme_ = *theme;
-
-                    tauri::async_runtime::spawn(async move {
-                        let current_theme = db.get_setting("theme").await.ok().flatten().unwrap_or_else(|| "system".to_string());
-                        let mica_effect = db.get_setting("mica_effect").await.ok().flatten().unwrap_or_else(|| "clear".to_string());
-
-                        log::info!("THEME:Re-applying window effect due to theme change. Current theme setting: {:?}, system theme: {:?}, mica_effect setting: {:?}", current_theme, theme_, mica_effect);
-                        // If app is set to follow system, we re-apply based on the NEW system theme
-                        if current_theme == "system" {
-                            if let Some(webview_win) = app_handle.get_webview_window(&label) {
-                                crate::apply_window_effect(&webview_win, &mica_effect, &theme_);
-                            }
-                        }
-                    });
-                }
-                tauri::WindowEvent::Focused(focused) => {
-                    // Apply window effect to settings window on first focus
-                    if *focused && window.label() == "settings" {
-                        let app_handle = window.app_handle().clone();
-                        let win = window.clone();
-                        let db = window.state::<Arc<Database>>().inner().clone();
-                        tauri::async_runtime::spawn(async move {
-                            let theme_str = db.get_setting("theme").await.ok().flatten().unwrap_or_else(|| "system".to_string());
-                            let mica_effect = db.get_setting("mica_effect").await.ok().flatten().unwrap_or_else(|| "clear".to_string());
-                            let current_theme = if theme_str == "light" {
-                                tauri::Theme::Light
-                            } else if theme_str == "dark" {
-                                tauri::Theme::Dark
-                            } else {
-                                win.theme().unwrap_or(tauri::Theme::Dark)
-                            };
-                            if let Some(settings_win) = app_handle.get_webview_window("settings") {
-                                crate::apply_window_effect(&settings_win, &mica_effect, &current_theme);
-                            }
-                        });
-                    }
-
-                    if !focused {
-                        let label = window.label();
-                        // Only auto-hide the main window
-                        if label == "main" {
-                            if window.app_handle().get_webview_window("settings").is_some() {
-                                // Settings window is open, keep main window visible
-                                return;
-                            }
-
-                            // Debounce: Ignore blur events immediately after showing (500ms grace period)
-                            let last_show = LAST_SHOW_TIME.load(Ordering::SeqCst);
-                            let now = chrono::Local::now().timestamp_millis();
-                            if now - last_show < 500 {
-                                return;
-                            }
-
-                        if let Some(win) = window.app_handle().get_webview_window(label) {
-                                 // Safety checks:
-                                 // 1. If we are already animating (e.g. hiding via hotkey), don't interfere.
-                                 if IS_ANIMATING.load(Ordering::SeqCst) {
-                                     return;
-                                 }
-                                 // 1b. If user is dragging a clip to an external app, don't hide.
-                                 if IS_DRAGGING.load(Ordering::SeqCst) {
-                                     return;
-                                 }
-                                 // 2. If the window is not visible (e.g. just hidden programmatically), don't try to move/show it.
-                                 if !win.is_visible().unwrap_or(false) {
-                                     return;
-                                 }
-
-                                 // Check if cursor is on a different monitor
-                                 let current_monitor = win.current_monitor().ok().flatten();
-                                 let cursor_monitor = get_monitor_at_cursor(&win);
-
-                                 let mut moved_screens = false;
-                                 if let (Some(cm), Some(crm)) = (&current_monitor, &cursor_monitor) {
-                                     // Compare monitor names or positions to see if they are different
-                                     // Position is usually unique enough
-                                     if cm.position().x != crm.position().x || cm.position().y != crm.position().y {
-                                         moved_screens = true;
-                                     }
-                                 }
-
-                                 if moved_screens {
-                                     // User clicked on another screen, move window there immediately
-                                     position_window_at_bottom(&win);
-                                 } else {
-                                     // Normal blur handling (hide)
-                                     if win.is_visible().unwrap_or(false) {
-                                         let win_clone = win.clone();
-                                         std::thread::spawn(move || {
-                                             crate::animate_window_hide(&win_clone, None);
-                                         });
-                                     }
-                                 }
-                            }
-                        }
-                    }
-                }
-                tauri::WindowEvent::Destroyed => {
-                    // When settings window is destroyed, check if main window should be hidden.
-                    // This handles the race condition where settings closes while main window's
-                    // blur event was suppressed (get_webview_window("settings") returned Some
-                    // during the brief destruction window).
-                    if window.label() == "settings" {
-                        let app_handle = window.app_handle().clone();
-                        std::thread::spawn(move || {
-                            // Small delay to let focus settle after settings window closes
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                            if let Some(main_win) = app_handle.get_webview_window("main") {
-                                if !IS_ANIMATING.load(Ordering::SeqCst)
-                                    && main_win.is_visible().unwrap_or(false)
-                                    && !main_win.is_focused().unwrap_or(true)
-                                {
-                                    log::info!("Settings closed: main window visible but not focused, hiding.");
-                                    crate::animate_window_hide(&main_win, None);
-                                }
-                            }
-                        });
-                    }
-                }
-                _ => {}
-            }
-        })
+        .on_window_event(handle_window_event)
         .setup(move |app| {
             log::info!("ClipPaste starting...");
             log::info!("Database path: {}", db_path_str);
@@ -309,163 +123,28 @@ pub fn run_app() {
             let handle = app.handle().clone();
             let db_for_clipboard = db_arc.clone();
 
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show ClipPaste", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
-
-            let icon_data = include_bytes!("../icons/tray.png");
-            let icon = Image::from_bytes(icon_data).map_err(|e| {
-                log::info!("Failed to load icon: {:?}", e);
-                e
-            })?;
-
-            let _tray = TrayIconBuilder::new()
-                .icon(icon)
-                .menu(&menu)
-                .tooltip("ClipPaste")
-                .on_menu_event(move |app, event| {
-                    if event.id.as_ref() == "quit" {
-                        app.exit(0);
-                    } else if event.id.as_ref() == "show" {
-                        hide_scratchpad_window(app);
-                        if let Some(win) = app.get_webview_window("main") {
-                            position_window_at_bottom(&win);
-                        }
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                        let app_handle = tray.app_handle();
-                        hide_scratchpad_window(app_handle);
-                        if let Some(win) = app_handle.get_webview_window("main") {
-                            position_window_at_bottom(&win);
-                        }
-                    }
-                })
-                .build(app)?;
+            setup_tray(app)?;
 
             let app_handle = handle.clone();
-            let win = app_handle.get_webview_window("main")
+            let win = app_handle
+                .get_webview_window("main")
                 .ok_or("Main window not found during setup")?;
 
             #[cfg(target_os = "windows")]
-            {
-                let db_for_mica = db_for_clipboard.clone();
-                let rt = get_runtime().expect("Tokio runtime not initialized for mica setup");
-                let (mica_effect, theme) = rt.block_on(async {
-                    let m = db_for_mica.get_setting("mica_effect").await.ok().flatten().unwrap_or_else(|| "clear".to_string());
-                    let t = db_for_mica.get_setting("theme").await.ok().flatten().unwrap_or_else(|| "system".to_string());
-                    (m, t)
-                });
-
-                // get current system theme
-                let current_theme = if theme == "light" {
-                    tauri::Theme::Light
-                } else if theme == "dark" {
-                    tauri::Theme::Dark
-                } else {
-                    win.theme().unwrap_or_else(|err| {
-                        log::error!("THEME:Failed to get system theme: {:?}, defaulting to Light", err);
-                        tauri::Theme::Light
-                    })
-                };
-
-                log::info!("THEME:Applying window effect: {} with theme: {:?} (setting:{:?}", mica_effect, current_theme, theme);
-
-                crate::apply_window_effect(&win, &mica_effect, &current_theme);
-            }
+            apply_startup_window_effect(&win, &db_for_clipboard);
 
             #[cfg(target_os = "macos")]
             let _ = apply_vibrancy(&win, NSVisualEffectMaterial::WindowBackground, None, None);
 
-            // Load saved hotkeys from database or use defaults, then register the complete
-            // shortcut set through the same path used by Settings.
-            let db_for_shortcuts = db_for_clipboard.clone();
-            let (saved_hotkey, scratchpad_hotkey) = get_runtime()
-                .expect("Tokio runtime not initialized for hotkey setup")
-                .block_on(async {
-                    let main = db_for_shortcuts
-                        .get_setting("hotkey")
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
-                    let scratchpad = db_for_shortcuts
-                        .get_setting("scratchpad_hotkey")
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
-                    (main, scratchpad)
-                });
+            register_startup_shortcuts(&app_handle, db_for_clipboard.clone());
 
-            if let Err(e) = commands::register_app_shortcuts(
-                &app_handle,
-                db_for_clipboard.clone(),
-                &saved_hotkey,
-                &scratchpad_hotkey,
-            ) {
-                log::error!("Failed to register global shortcuts: {}", e);
-            }
+            clipboard::init(&app_handle, db_for_clipboard.clone());
 
-            let handle_for_clip = app_handle.clone();
-            let db_for_clip = db_for_clipboard.clone();
-            clipboard::init(&handle_for_clip, db_for_clip);
-
-            // Load caches into memory for instant search + settings lookups.
-            // Cleanup scans (orphan images, max_items, auto_delete) are deferred so the UI is
-            // interactive ASAP — they run on a lower-priority background task after caches load.
-            let db_for_cache = db_for_clipboard.clone();
-            tauri::async_runtime::spawn(async move {
-                clipboard::load_search_cache(&db_for_cache.pool).await;
-                clipboard::load_settings_cache(&db_for_cache.pool).await;
-                clipboard::load_app_icons_cache(&db_for_cache.pool).await;
-
-                // Defer cleanup scans so they don't block the first render.
-                let db_for_cleanup = db_for_cache.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    db_for_cleanup.enforce_max_items().await;
-                    db_for_cleanup.enforce_auto_delete().await;
-                    db_for_cleanup.enforce_image_auto_delete().await;
-                    db_for_cleanup.cleanup_orphan_images().await;
-                });
-                // Rescan only when detection rules bumped — saves a full-table scan every launch.
-                let stored_version: i64 = db_for_cache
-                    .get_setting("detection_rules_version").await.ok().flatten()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0);
-                if stored_version < clipboard::DETECTION_RULES_VERSION {
-                    log::info!("RESCAN: detection_rules v{} < v{}, running full rescan",
-                        stored_version, clipboard::DETECTION_RULES_VERSION);
-                    db_for_cache.rescan_sensitive().await;
-                    db_for_cache.rescan_subtypes().await;
-                    let _ = sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES ('detection_rules_version', ?)")
-                        .bind(clipboard::DETECTION_RULES_VERSION.to_string())
-                        .execute(&db_for_cache.pool).await;
-                    // Refresh cache so in-memory setting reflects the new version.
-                    clipboard::load_settings_cache(&db_for_cache.pool).await;
-                } else {
-                    log::debug!("RESCAN: detection_rules v{} up to date, skipping", stored_version);
-                }
-            });
-
-            // Periodic WAL checkpoint every 5 minutes — reduces data loss window on crash/force-kill
-            let db_for_wal = db_arc.clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-                    if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
-                        .execute(&db_for_wal.pool).await
-                    {
-                        log::warn!("Periodic WAL checkpoint failed: {}", e);
-                    }
-                }
-            });
+            spawn_cache_loading(db_for_clipboard);
+            spawn_wal_checkpoint(db_arc.clone());
 
             // Start background auto-sync task
-            let db_for_sync = db_arc.clone();
-            sync::start_auto_sync(db_for_sync);
+            sync::start_auto_sync(db_arc.clone());
 
             Ok(())
         })
@@ -563,6 +242,422 @@ pub fn run_app() {
                 }
             }
         });
+}
+
+/// Migrate an existing DB from the legacy ClipPaste location if present.
+fn migrate_legacy_db(db_path: &std::path::Path) {
+    let old_data_dir = match dirs::data_dir() {
+        Some(path) => path.join("ClipPaste"),
+        None => std::env::current_dir()
+            .unwrap_or(std::path::PathBuf::from("."))
+            .join("ClipPaste"),
+    };
+    let old_db_path = old_data_dir.join("paste_paw.db");
+
+    if old_db_path.exists() && !db_path.exists() {
+        if let Some(parent) = db_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        match fs::rename(&old_db_path, db_path) {
+            Ok(_) => log::info!("Migrated DB from {:?} to {:?}", old_db_path, db_path),
+            Err(e) => {
+                // fallback: try copy + remove
+                match fs::copy(&old_db_path, db_path) {
+                    Ok(_) => {
+                        let _ = fs::remove_file(&old_db_path);
+                        log::info!("Copied old DB {:?} to {:?}", old_db_path, db_path);
+                    }
+                    Err(copy_err) => {
+                        log::error!(
+                            "Failed to migrate DB: rename error: {:?}, copy error: {:?}",
+                            e,
+                            copy_err
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Configure the log plugin: timestamped format, level from settings, and
+/// per-build-type output targets.
+fn build_log_plugin() -> tauri_plugin_log::Builder {
+    #[allow(unused_mut)]
+    let mut log_builder = tauri_plugin_log::Builder::default()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{}][{}][{}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(configured_log_level());
+
+    #[cfg(debug_assertions)]
+    {
+        log_builder = log_builder.targets([
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+        ]);
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        log_builder = log_builder.targets([
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+        ]);
+    }
+
+    log_builder
+}
+
+fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    match event {
+        tauri::WindowEvent::ThemeChanged(theme) => handle_theme_changed(window, *theme),
+        tauri::WindowEvent::Focused(focused) => handle_focus_changed(window, *focused),
+        tauri::WindowEvent::Destroyed => handle_window_destroyed(window),
+        _ => {}
+    }
+}
+
+/// Re-apply the window effect when the OS theme changes and the app follows "system".
+fn handle_theme_changed(window: &tauri::Window, theme: tauri::Theme) {
+    log::info!(
+        "THEME:System theme changed to: {:?}, win.theme(): {:?}",
+        theme,
+        window.theme()
+    );
+    let label = window.label().to_string();
+    let app_handle = window.app_handle().clone();
+    let db = window.state::<Arc<Database>>().inner().clone();
+
+    tauri::async_runtime::spawn(async move {
+        let current_theme = db
+            .get_setting("theme")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "system".to_string());
+        let mica_effect = db
+            .get_setting("mica_effect")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "clear".to_string());
+
+        log::info!("THEME:Re-applying window effect due to theme change. Current theme setting: {:?}, system theme: {:?}, mica_effect setting: {:?}", current_theme, theme, mica_effect);
+        // If app is set to follow system, we re-apply based on the NEW system theme
+        if current_theme == "system" {
+            if let Some(webview_win) = app_handle.get_webview_window(&label) {
+                crate::apply_window_effect(&webview_win, &mica_effect, &theme);
+            }
+        }
+    });
+}
+
+fn handle_focus_changed(window: &tauri::Window, focused: bool) {
+    // Apply window effect to settings window on first focus
+    if focused && window.label() == "settings" {
+        let app_handle = window.app_handle().clone();
+        let win = window.clone();
+        let db = window.state::<Arc<Database>>().inner().clone();
+        tauri::async_runtime::spawn(async move {
+            let theme_str = db
+                .get_setting("theme")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "system".to_string());
+            let mica_effect = db
+                .get_setting("mica_effect")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "clear".to_string());
+            let current_theme = if theme_str == "light" {
+                tauri::Theme::Light
+            } else if theme_str == "dark" {
+                tauri::Theme::Dark
+            } else {
+                win.theme().unwrap_or(tauri::Theme::Dark)
+            };
+            if let Some(settings_win) = app_handle.get_webview_window("settings") {
+                crate::apply_window_effect(&settings_win, &mica_effect, &current_theme);
+            }
+        });
+    }
+
+    // Only auto-hide the main window
+    if !focused && window.label() == "main" {
+        handle_main_window_blur(window);
+    }
+}
+
+/// Auto-hide (or move to the cursor's monitor) the main window when it loses focus.
+fn handle_main_window_blur(window: &tauri::Window) {
+    if window.app_handle().get_webview_window("settings").is_some() {
+        // Settings window is open, keep main window visible
+        return;
+    }
+
+    // Debounce: Ignore blur events immediately after showing (500ms grace period)
+    let last_show = LAST_SHOW_TIME.load(Ordering::SeqCst);
+    let now = chrono::Local::now().timestamp_millis();
+    if now - last_show < 500 {
+        return;
+    }
+
+    let Some(win) = window.app_handle().get_webview_window(window.label()) else {
+        return;
+    };
+    // Safety checks:
+    // 1. If we are already animating (e.g. hiding via hotkey), don't interfere.
+    if IS_ANIMATING.load(Ordering::SeqCst) {
+        return;
+    }
+    // 1b. If user is dragging a clip to an external app, don't hide.
+    if IS_DRAGGING.load(Ordering::SeqCst) {
+        return;
+    }
+    // 2. If the window is not visible (e.g. just hidden programmatically), don't try to move/show it.
+    if !win.is_visible().unwrap_or(false) {
+        return;
+    }
+
+    // Check if cursor is on a different monitor
+    let current_monitor = win.current_monitor().ok().flatten();
+    let cursor_monitor = get_monitor_at_cursor(&win);
+
+    let mut moved_screens = false;
+    if let (Some(cm), Some(crm)) = (&current_monitor, &cursor_monitor) {
+        // Compare monitor names or positions to see if they are different
+        // Position is usually unique enough
+        if cm.position().x != crm.position().x || cm.position().y != crm.position().y {
+            moved_screens = true;
+        }
+    }
+
+    if moved_screens {
+        // User clicked on another screen, move window there immediately
+        position_window_at_bottom(&win);
+    } else {
+        // Normal blur handling (hide)
+        if win.is_visible().unwrap_or(false) {
+            let win_clone = win.clone();
+            std::thread::spawn(move || {
+                crate::animate_window_hide(&win_clone, None);
+            });
+        }
+    }
+}
+
+/// When settings window is destroyed, check if main window should be hidden.
+/// This handles the race condition where settings closes while main window's
+/// blur event was suppressed (get_webview_window("settings") returned Some
+/// during the brief destruction window).
+fn handle_window_destroyed(window: &tauri::Window) {
+    if window.label() != "settings" {
+        return;
+    }
+    let app_handle = window.app_handle().clone();
+    std::thread::spawn(move || {
+        // Small delay to let focus settle after settings window closes
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Some(main_win) = app_handle.get_webview_window("main") {
+            if !IS_ANIMATING.load(Ordering::SeqCst)
+                && main_win.is_visible().unwrap_or(false)
+                && !main_win.is_focused().unwrap_or(true)
+            {
+                log::info!("Settings closed: main window visible but not focused, hiding.");
+                crate::animate_window_hide(&main_win, None);
+            }
+        }
+    });
+}
+
+/// Build the tray icon with its Show/Quit menu.
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let show_i = MenuItem::with_id(app, "show", "Show ClipPaste", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+    let icon_data = include_bytes!("../icons/tray.png");
+    let icon = Image::from_bytes(icon_data).map_err(|e| {
+        log::info!("Failed to load icon: {:?}", e);
+        e
+    })?;
+
+    let _tray = TrayIconBuilder::new()
+        .icon(icon)
+        .menu(&menu)
+        .tooltip("ClipPaste")
+        .on_menu_event(move |app, event| {
+            if event.id.as_ref() == "quit" {
+                app.exit(0);
+            } else if event.id.as_ref() == "show" {
+                hide_scratchpad_window(app);
+                if let Some(win) = app.get_webview_window("main") {
+                    position_window_at_bottom(&win);
+                }
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                ..
+            } = event
+            {
+                let app_handle = tray.app_handle();
+                hide_scratchpad_window(app_handle);
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    position_window_at_bottom(&win);
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+/// Apply the saved mica/theme window effect at startup (Windows only).
+#[cfg(target_os = "windows")]
+fn apply_startup_window_effect(win: &tauri::WebviewWindow, db: &Arc<Database>) {
+    let db_for_mica = db.clone();
+    let rt = get_runtime().expect("Tokio runtime not initialized for mica setup");
+    let (mica_effect, theme) = rt.block_on(async {
+        let m = db_for_mica
+            .get_setting("mica_effect")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "clear".to_string());
+        let t = db_for_mica
+            .get_setting("theme")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "system".to_string());
+        (m, t)
+    });
+
+    // get current system theme
+    let current_theme = if theme == "light" {
+        tauri::Theme::Light
+    } else if theme == "dark" {
+        tauri::Theme::Dark
+    } else {
+        win.theme().unwrap_or_else(|err| {
+            log::error!(
+                "THEME:Failed to get system theme: {:?}, defaulting to Light",
+                err
+            );
+            tauri::Theme::Light
+        })
+    };
+
+    log::info!(
+        "THEME:Applying window effect: {} with theme: {:?} (setting:{:?}",
+        mica_effect,
+        current_theme,
+        theme
+    );
+
+    crate::apply_window_effect(win, &mica_effect, &current_theme);
+}
+
+/// Load saved hotkeys from database or use defaults, then register the complete
+/// shortcut set through the same path used by Settings.
+fn register_startup_shortcuts(app_handle: &tauri::AppHandle, db: Arc<Database>) {
+    let db_for_shortcuts = db.clone();
+    let (saved_hotkey, scratchpad_hotkey) = get_runtime()
+        .expect("Tokio runtime not initialized for hotkey setup")
+        .block_on(async {
+            let main = db_for_shortcuts
+                .get_setting("hotkey")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
+            let scratchpad = db_for_shortcuts
+                .get_setting("scratchpad_hotkey")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "Ctrl+Shift+S".to_string());
+            (main, scratchpad)
+        });
+
+    if let Err(e) =
+        commands::register_app_shortcuts(app_handle, db, &saved_hotkey, &scratchpad_hotkey)
+    {
+        log::error!("Failed to register global shortcuts: {}", e);
+    }
+}
+
+/// Load caches into memory for instant search + settings lookups.
+/// Cleanup scans (orphan images, max_items, auto_delete) are deferred so the UI is
+/// interactive ASAP — they run on a lower-priority background task after caches load.
+fn spawn_cache_loading(db: Arc<Database>) {
+    tauri::async_runtime::spawn(async move {
+        clipboard::load_search_cache(&db.pool).await;
+        clipboard::load_settings_cache(&db.pool).await;
+        clipboard::load_app_icons_cache(&db.pool).await;
+
+        // Defer cleanup scans so they don't block the first render.
+        let db_for_cleanup = db.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            db_for_cleanup.enforce_max_items().await;
+            db_for_cleanup.enforce_auto_delete().await;
+            db_for_cleanup.enforce_image_auto_delete().await;
+            db_for_cleanup.cleanup_orphan_images().await;
+        });
+        // Rescan only when detection rules bumped — saves a full-table scan every launch.
+        let stored_version: i64 = db
+            .get_setting("detection_rules_version")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        if stored_version < clipboard::DETECTION_RULES_VERSION {
+            log::info!(
+                "RESCAN: detection_rules v{} < v{}, running full rescan",
+                stored_version,
+                clipboard::DETECTION_RULES_VERSION
+            );
+            db.rescan_sensitive().await;
+            db.rescan_subtypes().await;
+            let _ = sqlx::query("INSERT OR REPLACE INTO settings (key, value) VALUES ('detection_rules_version', ?)")
+                .bind(clipboard::DETECTION_RULES_VERSION.to_string())
+                .execute(&db.pool).await;
+            // Refresh cache so in-memory setting reflects the new version.
+            clipboard::load_settings_cache(&db.pool).await;
+        } else {
+            log::debug!(
+                "RESCAN: detection_rules v{} up to date, skipping",
+                stored_version
+            );
+        }
+    });
+}
+
+/// Periodic WAL checkpoint every 5 minutes — reduces data loss window on crash/force-kill.
+fn spawn_wal_checkpoint(db: Arc<Database>) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
+                .execute(&db.pool)
+                .await
+            {
+                log::warn!("Periodic WAL checkpoint failed: {}", e);
+            }
+        }
+    });
 }
 
 pub fn position_window_at_bottom(window: &tauri::WebviewWindow) {

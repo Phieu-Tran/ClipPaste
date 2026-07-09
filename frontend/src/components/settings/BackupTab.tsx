@@ -16,6 +16,7 @@ import {
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
 import { clearImageDataUrlCache } from '../../imageQueue';
+import { formatBytes } from '../../utils/format';
 import {
   ClipCleanupPreview,
   DashboardStats,
@@ -48,13 +49,6 @@ interface BackupTabProps {
     details?: string[];
     action: () => Promise<void>;
   }) => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 type ImportNoticeTone = 'success' | 'warning' | 'danger';
@@ -189,97 +183,122 @@ export function BackupTab({
     void handleImportBackup(setImportResult);
   };
 
-  const previewOldImages = async () => {
-    const days = Math.max(1, imageCleanupDays);
-    setImagePreviewLoading(true);
+  const previewCleanup = async <T,>(opts: {
+    days: number;
+    setLoading: (v: boolean) => void;
+    fetch: (days: number) => Promise<T>;
+    setPreview: (p: T) => void;
+    errorLabel: string;
+  }) => {
+    const days = Math.max(1, opts.days);
+    opts.setLoading(true);
     try {
-      const preview = await cmd.previewOldImageCleanup(days);
-      setImageCleanupPreview(preview);
+      opts.setPreview(await opts.fetch(days));
     } catch (error) {
-      toast.error(`Failed to preview old images: ${error}`);
+      toast.error(`Failed to preview ${opts.errorLabel}: ${error}`);
     } finally {
-      setImagePreviewLoading(false);
+      opts.setLoading(false);
     }
   };
 
-  const cleanupOldImages = async () => {
-    const days = imageCleanupPreview?.days ?? Math.max(1, imageCleanupDays);
-    const count = imageCleanupPreview?.count ?? 0;
-    const bytes = imageCleanupPreview?.bytes ?? 0;
+  const confirmCleanup = (opts: {
+    preview: ImageCleanupPreview | ClipCleanupPreview | null;
+    fallbackDays: number;
+    title: string;
+    message: (count: string, days: number) => string;
+    confirmText: string;
+    details: (bytes: number, protectedCount: string) => string[];
+    setRunning: (v: boolean) => void;
+    execute: (days: number) => Promise<number>;
+    onDeleted?: () => void;
+    clearPreview: () => void;
+    successLabel: string;
+    errorLabel: string;
+  }) => {
+    const days = opts.preview?.days ?? Math.max(1, opts.fallbackDays);
+    const count = opts.preview?.count ?? 0;
+    const bytes = opts.preview?.bytes ?? 0;
 
     requestConfirm({
-      title: 'Delete old images',
-      message: `Delete ${count.toLocaleString()} unpinned image clips older than ${days} days?`,
-      confirmText: 'Delete Images',
+      title: opts.title,
+      message: opts.message(count.toLocaleString(), days),
+      confirmText: opts.confirmText,
       variant: 'danger',
-      details: [
-        `${formatBytes(bytes)} estimated reclaimable storage.`,
-        `${(imageCleanupPreview?.protected_count ?? 0).toLocaleString()} old images are protected because they are pinned or in folders.`,
-      ],
+      details: opts.details(bytes, (opts.preview?.protected_count ?? 0).toLocaleString()),
       action: async () => {
-        setImageCleanupRunning(true);
+        opts.setRunning(true);
         try {
-          const deleted = await cmd.cleanupOldImageClips(days);
-          clearImageDataUrlCache();
+          const deleted = await opts.execute(days);
+          opts.onDeleted?.();
           const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
-          setImageCleanupPreview(null);
+          opts.clearPreview();
           await refreshDashboardStats(true);
-          toast.success(`Deleted ${deleted.toLocaleString()} old image clips`);
+          toast.success(`Deleted ${deleted.toLocaleString()} ${opts.successLabel}`);
         } catch (error) {
-          toast.error(`Failed to clean old images: ${error}`);
+          toast.error(`Failed to clean ${opts.errorLabel}: ${error}`);
         } finally {
-          setImageCleanupRunning(false);
+          opts.setRunning(false);
         }
       },
     });
   };
 
-  const previewOldClips = async () => {
-    const days = Math.max(1, clipCleanupDays);
-    setClipPreviewLoading(true);
-    try {
-      const preview = await cmd.previewOldClipCleanup(days);
-      setClipCleanupPreview(preview);
-    } catch (error) {
-      toast.error(`Failed to preview old clips: ${error}`);
-    } finally {
-      setClipPreviewLoading(false);
-    }
-  };
+  const previewOldImages = () =>
+    previewCleanup({
+      days: imageCleanupDays,
+      setLoading: setImagePreviewLoading,
+      fetch: cmd.previewOldImageCleanup,
+      setPreview: setImageCleanupPreview,
+      errorLabel: 'old images',
+    });
 
-  const cleanupOldClips = async () => {
-    const days = clipCleanupPreview?.days ?? Math.max(1, clipCleanupDays);
-    const count = clipCleanupPreview?.count ?? 0;
-    const bytes = clipCleanupPreview?.bytes ?? 0;
+  const cleanupOldImages = () =>
+    confirmCleanup({
+      preview: imageCleanupPreview,
+      fallbackDays: imageCleanupDays,
+      title: 'Delete old images',
+      message: (count, days) => `Delete ${count} unpinned image clips older than ${days} days?`,
+      confirmText: 'Delete Images',
+      details: (bytes, protectedCount) => [
+        `${formatBytes(bytes)} estimated reclaimable storage.`,
+        `${protectedCount} old images are protected because they are pinned or in folders.`,
+      ],
+      setRunning: setImageCleanupRunning,
+      execute: cmd.cleanupOldImageClips,
+      onDeleted: clearImageDataUrlCache,
+      clearPreview: () => setImageCleanupPreview(null),
+      successLabel: 'old image clips',
+      errorLabel: 'old images',
+    });
 
-    requestConfirm({
+  const previewOldClips = () =>
+    previewCleanup({
+      days: clipCleanupDays,
+      setLoading: setClipPreviewLoading,
+      fetch: cmd.previewOldClipCleanup,
+      setPreview: setClipCleanupPreview,
+      errorLabel: 'old clips',
+    });
+
+  const cleanupOldClips = () =>
+    confirmCleanup({
+      preview: clipCleanupPreview,
+      fallbackDays: clipCleanupDays,
       title: 'Delete old clips',
-      message: `Delete ${count.toLocaleString()} unpinned non-image clips older than ${days} days?`,
+      message: (count, days) => `Delete ${count} unpinned non-image clips older than ${days} days?`,
       confirmText: 'Delete Clips',
-      variant: 'danger',
-      details: [
+      details: (bytes, protectedCount) => [
         `${formatBytes(bytes)} estimated database payload.`,
-        `${(clipCleanupPreview?.protected_count ?? 0).toLocaleString()} old clips are protected because they are pinned or in folders.`,
+        `${protectedCount} old clips are protected because they are pinned or in folders.`,
         'Image clips are handled by Image cleanup.',
       ],
-      action: async () => {
-        setClipCleanupRunning(true);
-        try {
-          const deleted = await cmd.cleanupOldClips(days);
-          const newSize = await cmd.getClipboardHistorySize();
-          setHistorySize(newSize);
-          setClipCleanupPreview(null);
-          await refreshDashboardStats(true);
-          toast.success(`Deleted ${deleted.toLocaleString()} old clips`);
-        } catch (error) {
-          toast.error(`Failed to clean old clips: ${error}`);
-        } finally {
-          setClipCleanupRunning(false);
-        }
-      },
+      setRunning: setClipCleanupRunning,
+      execute: cmd.cleanupOldClips,
+      clearPreview: () => setClipCleanupPreview(null),
+      successLabel: 'old clips',
+      errorLabel: 'old clips',
     });
-  };
 
   return (
     <section className="space-y-5">

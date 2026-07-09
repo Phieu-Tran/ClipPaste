@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { cmd } from '../../commands';
 import { evictClipImageDataUrl, loadClipImageDataUrl } from '../../imageQueue';
 import { ClipboardItem, DashboardStats, FolderItem } from '../../types';
+import { formatBytes, formatRelativeTime } from '../../utils/format';
 
 const PAGE_SIZE = 80;
 const IMAGE_CARD_MIN_WIDTH = 158;
@@ -95,25 +96,6 @@ interface LibraryTabProps {
   folders: FolderItem[];
   onDataChanged: () => Promise<void>;
   requestConfirm: (options: ConfirmOptions) => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const diff = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (diff < 60) return `${diff}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
-  if (diff < 2592000) return `${Math.floor(diff / 604800)}w`;
-  return `${Math.floor(diff / 2592000)}mo`;
 }
 
 function getImageSizeFromMeta(metadata: string | null): string | null {

@@ -114,7 +114,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
         }
       }
     },
-    [setClips, setIsLoading, setHasMore, setSelectedClipId]
+    [setClips, setIsLoading, setHasMore]
   );
 
   const doDelete = async (clipId: string) => {

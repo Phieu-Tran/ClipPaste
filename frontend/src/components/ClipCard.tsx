@@ -413,7 +413,7 @@ export const ClipCard = memo(function ClipCard({
         </span>
       </pre>
     );
-  }, [clip.clip_type, clip.content, clip.thumbnail, clip.subtype, searchQuery]);
+  }, [clip.id, clip.clip_type, clip.content, clip.thumbnail, clip.subtype, searchQuery]);
 
   // Generate distinct color based on source app name
   const getAppGradient = (name: string) => {

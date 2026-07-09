@@ -570,10 +570,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         {allCategories.map((cat) => {
           const isActive = selectedFolder === cat.id;
 
-          let colorClass =
-            theme === 'light'
-              ? 'bg-slate-400 text-white hover:bg-slate-500 hover:text-white shadow-sm'
-              : 'bg-secondary text-white hover:bg-secondary/80 hover:text-white shadow-sm';
+          // Every branch below assigns — no default needed.
+          let colorClass: string;
 
           if (cat.id === null) {
             if (theme === 'light') {

@@ -66,6 +66,9 @@ jobs:
       - name: Prettier check
         run: pnpm format:check
 
+      - name: ESLint
+        run: pnpm lint
+
       # Produces ../dist, which tauri's generate_context! embeds at compile time.
       # The Rust steps below fail without it.
       - name: Type-check & build frontend
