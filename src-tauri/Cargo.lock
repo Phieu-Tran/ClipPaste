@@ -853,7 +853,7 @@ dependencies = [
 
 [[package]]
 name = "clippaste"
-version = "1.10.23"
+version = "1.10.24"
 dependencies = [
  "argon2",
  "base64 0.22.1",

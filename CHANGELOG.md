@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.10.24] - 2026-08-22
+
+### Added
+
+- **Vietnamese interface**: the UI now ships in English and Vietnamese (585 strings each). Pick a language under Settings → General; it applies to every window immediately, without restarting. `tests/unit/i18nKeys.test.ts` fails the build if either locale is missing a key, since i18next renders the raw key rather than throwing.
+
+### Fixed
+
+- **Keyboard focus was invisible on 10 controls** — six had no focus indicator at all, four showed only a faint 1px border tint. All now draw a focus ring.
+- **Dropdown menus stayed black on light themes**: five controls pinned a dark colour scheme by hand, so the native dropdown ignored all 19 light presets. The colour scheme is now declared once per theme.
+- **The context menu, confirm dialog, batch bar and search field appeared with no animation.** They used utility classes from `tailwindcss-animate`, a plugin the project never installed, so the classes did nothing. Replaced with local keyframes — no new dependency.
+- **Dashboard weekday labels were hard-coded Vietnamese abbreviations** shown inside the English interface; they now follow the active locale.
 
 ### Changed
 
+- **Clip window shows one frame instead of two**: the window shell was a rounded, outlined panel holding rounded, outlined cards, so every card read as a box inside a box. Removing the outer frame also let the window height drop from 330px to 298px, so the strip covers less of the screen.
+- **Clip card typography tightened**: six arbitrary font sizes reduced to three, and seven text greys to two. No information was removed and no accent colour changed.
+- **Settings controls unified**: 22 hand-written class strings for a single input folded into shared `.field` and `.btn` classes.
 - **Internal refactor (no behavior change)**: split the remaining oversized frontend files — `FoldersTab` into `FolderSidebarItem`/`FolderClipRow`/`MoveClipPopover`/`FolderVisuals` (1,003 → ~640 lines), `GeneralTab` theme/effect catalogs into `generalTabOptions` and the Privacy Exceptions section into `IgnoredAppsSection` (1,373 → ~830 lines), and `ScratchpadWindow` helpers/hooks/`ScratchpadModal`/`NoteCard` into `windows/scratchpad/` (1,394 → ~820 lines). Backend `save_settings` rewritten table-driven (INT/BOOL/STRING spec tables) — adding a new setting is now a one-line change.
 - **Removed dead code**: `GeneralTab` no longer declares unused `updateProgress`/`handleCheckUpdate`/`appVersion` props.
 - **Dependencies**: date-fns 2 → 4, sqlx 0.7 → 0.8 (no code changes required).
