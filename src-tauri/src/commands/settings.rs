@@ -123,6 +123,7 @@ pub async fn get_settings(
         "hotkey": "Ctrl+Shift+V",
         "theme": "dark",
         "interface_theme": "default",
+        "language": "en",
         "font_family": "system",
         "ui_density": "comfortable",
         "mica_effect": "clear",
@@ -140,7 +141,7 @@ pub async fn get_settings(
         for (key, value) in rows {
             match key.as_str() {
                 "mica_effect" | "theme" | "hotkey" | "interface_theme" | "font_family"
-                | "ui_density" => {
+                | "language" | "ui_density" => {
                     settings[&key] = serde_json::json!(value);
                 }
                 "ignore_ghost_clips"
@@ -172,6 +173,74 @@ pub async fn get_settings(
     Ok(settings)
 }
 
+/// Integer settings: (key, min, max). A value <= 0 is stored as 0 (disabled/unlimited),
+/// anything else is clamped into [min, max].
+const INT_SETTINGS: &[(&str, i64, i64)] = &[
+    ("max_items", 10, 100_000),
+    ("auto_delete_days", 1, 3650),
+    ("image_delete_days", 1, 3650),
+];
+
+/// Boolean settings saved verbatim.
+const BOOL_SETTINGS: &[&str] = &[
+    "image_auto_delete",
+    "auto_paste",
+    "sensitive_detection",
+    "ignore_ghost_clips",
+];
+
+/// Enum-style string settings: (key, allowed values).
+const STRING_SETTINGS: &[(&str, &[&str])] = &[
+    ("theme", &["light", "dark", "system"]),
+    (
+        "interface_theme",
+        &[
+            "default",
+            "glass",
+            "graphite",
+            "ember",
+            "mint",
+            "mono",
+            "aurora",
+            "cobalt",
+            "rose",
+            "solar",
+            "forest",
+            "circuit",
+            "cyber",
+            "synthwave",
+            "candy",
+            "ocean",
+            "sunset",
+            "royal",
+            "ice",
+            "bloom",
+        ],
+    ),
+    ("font_family", &["system", "rounded", "mono", "readable"]),
+    ("ui_density", &["comfortable", "compact"]),
+    ("language", &["en", "vi"]),
+    (
+        "mica_effect",
+        &[
+            "best",
+            "best_glow",
+            "clear",
+            "clear_focus",
+            "clear_neon",
+            "mica",
+            "mica_soft",
+            "mica_alt",
+            "mica_alt_luxe",
+            "acrylic",
+            "acrylic_frost",
+            "acrylic_tint",
+            "blur",
+            "blur_vivid",
+        ],
+    ),
+];
+
 #[tauri::command]
 pub async fn save_settings(
     app: AppHandle,
@@ -181,106 +250,25 @@ pub async fn save_settings(
     use tauri_plugin_autostart::ManagerExt;
     let pool = &db.pool;
 
-    if let Some(max_items) = settings.get("max_items").and_then(|v| v.as_i64()) {
-        // 0 = unlimited, otherwise clamp to 10..100_000
-        let max_items = if max_items <= 0 {
-            0
-        } else {
-            max_items.clamp(10, 100_000)
-        };
-        save_setting_value(pool, "max_items", max_items).await?;
-    }
-
-    if let Some(days) = settings.get("auto_delete_days").and_then(|v| v.as_i64()) {
-        // 0 = disabled, otherwise clamp to 1..3650
-        let days = if days <= 0 { 0 } else { days.clamp(1, 3650) };
-        save_setting_value(pool, "auto_delete_days", days).await?;
-    }
-
-    if let Some(enabled) = settings.get("image_auto_delete").and_then(|v| v.as_bool()) {
-        save_setting_value(pool, "image_auto_delete", enabled).await?;
-    }
-
-    if let Some(days) = settings.get("image_delete_days").and_then(|v| v.as_i64()) {
-        let days = if days <= 0 { 0 } else { days.clamp(1, 3650) };
-        save_setting_value(pool, "image_delete_days", days).await?;
-    }
-
-    if let Some(theme) = settings.get("theme").and_then(|v| v.as_str()) {
-        if matches!(theme, "light" | "dark" | "system") {
-            save_setting_value(pool, "theme", theme).await?;
-        } else {
-            return Err(format!("Invalid theme: {}", theme));
+    for &(key, min, max) in INT_SETTINGS {
+        if let Some(value) = settings.get(key).and_then(|v| v.as_i64()) {
+            let value = if value <= 0 { 0 } else { value.clamp(min, max) };
+            save_setting_value(pool, key, value).await?;
         }
     }
 
-    if let Some(interface_theme) = settings.get("interface_theme").and_then(|v| v.as_str()) {
-        if matches!(
-            interface_theme,
-            "default"
-                | "glass"
-                | "graphite"
-                | "ember"
-                | "mint"
-                | "mono"
-                | "aurora"
-                | "cobalt"
-                | "rose"
-                | "solar"
-                | "forest"
-                | "circuit"
-                | "cyber"
-                | "synthwave"
-                | "candy"
-                | "ocean"
-                | "sunset"
-                | "royal"
-                | "ice"
-                | "bloom"
-        ) {
-            save_setting_value(pool, "interface_theme", interface_theme).await?;
-        } else {
-            return Err(format!("Invalid interface_theme: {}", interface_theme));
+    for &key in BOOL_SETTINGS {
+        if let Some(value) = settings.get(key).and_then(|v| v.as_bool()) {
+            save_setting_value(pool, key, value).await?;
         }
     }
 
-    if let Some(font_family) = settings.get("font_family").and_then(|v| v.as_str()) {
-        if matches!(font_family, "system" | "rounded" | "mono" | "readable") {
-            save_setting_value(pool, "font_family", font_family).await?;
-        } else {
-            return Err(format!("Invalid font_family: {}", font_family));
-        }
-    }
-
-    if let Some(ui_density) = settings.get("ui_density").and_then(|v| v.as_str()) {
-        if matches!(ui_density, "comfortable" | "compact") {
-            save_setting_value(pool, "ui_density", ui_density).await?;
-        } else {
-            return Err(format!("Invalid ui_density: {}", ui_density));
-        }
-    }
-
-    if let Some(mica_effect) = settings.get("mica_effect").and_then(|v| v.as_str()) {
-        if matches!(
-            mica_effect,
-            "best"
-                | "best_glow"
-                | "clear"
-                | "clear_focus"
-                | "clear_neon"
-                | "mica"
-                | "mica_soft"
-                | "mica_alt"
-                | "mica_alt_luxe"
-                | "acrylic"
-                | "acrylic_frost"
-                | "acrylic_tint"
-                | "blur"
-                | "blur_vivid"
-        ) {
-            save_setting_value(pool, "mica_effect", mica_effect).await?;
-        } else {
-            return Err(format!("Invalid mica_effect: {}", mica_effect));
+    for &(key, allowed) in STRING_SETTINGS {
+        if let Some(value) = settings.get(key).and_then(|v| v.as_str()) {
+            if !allowed.contains(&value) {
+                return Err(format!("Invalid {}: {}", key, value));
+            }
+            save_setting_value(pool, key, value).await?;
         }
     }
 
@@ -348,21 +336,6 @@ pub async fn save_settings(
             return Err("Main hotkey conflicts with scratchpad hotkey".to_string());
         }
         save_setting_value(pool, "hotkey", hotkey).await?;
-    }
-
-    if let Some(auto_paste) = settings.get("auto_paste").and_then(|v| v.as_bool()) {
-        save_setting_value(pool, "auto_paste", auto_paste).await?;
-    }
-
-    if let Some(sensitive_detection) = settings
-        .get("sensitive_detection")
-        .and_then(|v| v.as_bool())
-    {
-        save_setting_value(pool, "sensitive_detection", sensitive_detection).await?;
-    }
-
-    if let Some(ignore_ghost) = settings.get("ignore_ghost_clips").and_then(|v| v.as_bool()) {
-        save_setting_value(pool, "ignore_ghost_clips", ignore_ghost).await?;
     }
 
     if let Some(startup) = settings

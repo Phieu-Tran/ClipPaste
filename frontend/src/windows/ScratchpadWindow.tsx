@@ -1,259 +1,32 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { ScratchpadItem, Settings } from '../types';
-import { useTheme } from '../hooks/useTheme';
-import {
-  X,
-  Plus,
-  Trash2,
-  StickyNote,
-  Copy,
-  Check,
-  Pin,
-  PinOff,
-  ClipboardPaste,
-  Pencil,
-  ChevronLeft,
-  Search,
-  ArrowUpDown,
-} from 'lucide-react';
+import { ScratchpadItem } from '../types';
+import { X, Plus, StickyNote, Pin, PinOff, Search, ArrowUpDown } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Toaster, toast } from 'sonner';
 import { cmd } from '../commands';
-
-type SortMode = 'manual' | 'alpha' | 'recent';
-
-/**
- * Render simple markdown inline: **bold**, *italic*, `code`, and leading "- " or "* " bullets.
- * Deliberately minimal — no full parser, no links or headings.
- */
-function renderInlineMarkdown(text: string): React.ReactNode[] {
-  const out: React.ReactNode[] = [];
-  const pattern = /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/g;
-  let match: RegExpExecArray | null;
-  let last = 0;
-  let key = 0;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > last) out.push(text.slice(last, match.index));
-    const tok = match[0];
-    if (tok.startsWith('**') && tok.endsWith('**')) {
-      out.push(
-        <strong key={`b${key++}`} className="font-semibold text-foreground/90">
-          {tok.slice(2, -2)}
-        </strong>
-      );
-    } else if (tok.startsWith('`') && tok.endsWith('`')) {
-      out.push(
-        <code key={`c${key++}`} className="rounded bg-white/10 px-1 font-mono text-[10px]">
-          {tok.slice(1, -1)}
-        </code>
-      );
-    } else {
-      out.push(
-        <em key={`i${key++}`} className="italic">
-          {tok.slice(1, -1)}
-        </em>
-      );
-    }
-    last = match.index + tok.length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out.length > 0 ? out : [text];
-}
-
-function renderMarkdownPreview(content: string): React.ReactNode {
-  // Split by newlines, apply bullet formatting per line
-  const lines = content.split('\n');
-  return lines.map((line, idx) => {
-    const bullet = /^\s*[-*]\s+/.exec(line);
-    if (bullet) {
-      const rest = line.slice(bullet[0].length);
-      return (
-        <span key={idx} className="block">
-          <span className="text-primary/70">• </span>
-          {renderInlineMarkdown(rest)}
-        </span>
-      );
-    }
-    return (
-      <span key={idx} className="block">
-        {renderInlineMarkdown(line)}
-      </span>
-    );
-  });
-}
-
-const NOTE_COLORS: { key: string; dot: string; rgb: string }[] = [
-  { key: 'red', dot: 'bg-red-400', rgb: '248,113,113' },
-  { key: 'orange', dot: 'bg-orange-400', rgb: '251,146,60' },
-  { key: 'amber', dot: 'bg-amber-400', rgb: '251,191,36' },
-  { key: 'green', dot: 'bg-green-400', rgb: '74,222,128' },
-  { key: 'teal', dot: 'bg-teal-400', rgb: '45,212,191' },
-  { key: 'blue', dot: 'bg-blue-400', rgb: '96,165,250' },
-  { key: 'violet', dot: 'bg-violet-400', rgb: '167,139,250' },
-  { key: 'pink', dot: 'bg-pink-400', rgb: '244,114,182' },
-];
-
-function getNoteColorStyle(color: string | null): React.CSSProperties {
-  if (!color) return {};
-  const c = NOTE_COLORS.find((n) => n.key === color);
-  if (!c) return {};
-  return {
-    background: `linear-gradient(135deg, rgba(${c.rgb},0.12), rgba(${c.rgb},0.04))`,
-    borderLeft: `5px solid rgba(${c.rgb},0.7)`,
-  };
-}
-
-const COLLAPSED_WIDTH = 16;
-const COLLAPSED_HEIGHT = 100;
-const EXPANDED_WIDTH = 320;
-const MODAL_WIDTH = 680;
-const MODAL_HEIGHT = 520;
-
-type ViewMode = 'collapsed' | 'list' | 'paste' | 'edit';
-
-/** Window layouts: side panel, centered modal, or collapsed hover tab. */
-type WindowLayout = 'side' | 'center' | 'collapsed';
-
-/** Load theme-related settings, apply them, and keep them in sync with the settings window. */
-function useScratchpadTheme() {
-  const [themeSetting, setThemeSetting] = useState('system');
-  const [interfaceTheme, setInterfaceTheme] = useState('default');
-  const [fontFamily, setFontFamily] = useState('system');
-  const [uiDensity, setUiDensity] = useState('comfortable');
-  const [windowEffect, setWindowEffect] = useState('clear');
-  useEffect(() => {
-    const applySettings = (s: Settings) => {
-      if (s.theme) setThemeSetting(s.theme);
-      if (s.interface_theme) setInterfaceTheme(s.interface_theme);
-      if (s.font_family) setFontFamily(s.font_family);
-      if (s.ui_density) setUiDensity(s.ui_density);
-      if (s.mica_effect) setWindowEffect(s.mica_effect);
-    };
-
-    cmd
-      .getSettings()
-      .then(applySettings)
-      .catch(() => {});
-
-    const unlisten = listen<Settings>('settings-changed', (event) => {
-      applySettings(event.payload);
-    });
-
-    return () => {
-      unlisten.then((fn) => fn()).catch(() => {});
-    };
-  }, []);
-  useTheme(themeSetting, interfaceTheme, fontFamily, uiDensity, windowEffect);
-}
-
-/** Drag & drop: dropping external text creates a note; dragging cards reorders them. */
-function useScratchpadDrag({
-  scratchpads,
-  setScratchpads,
-  setPinned,
-  mode,
-  setMode,
-  panelRef,
-}: {
-  scratchpads: ScratchpadItem[];
-  setScratchpads: React.Dispatch<React.SetStateAction<ScratchpadItem[]>>;
-  setPinned: (v: boolean) => void;
-  mode: ViewMode;
-  setMode: (m: ViewMode) => void;
-  panelRef: React.RefObject<HTMLDivElement>;
-}) {
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const dragItemRef = useRef<string | null>(null);
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(false);
-      const text = e.dataTransfer.getData('text/plain');
-      if (text) {
-        try {
-          const lines = text.split('\n');
-          const title = lines[0].slice(0, 80);
-          const content = lines.length > 1 ? lines.slice(1).join('\n') : '';
-          const item = await cmd.createScratchpad(title, content);
-          setScratchpads((prev) => [...prev, item]);
-          setPinned(true);
-        } catch {}
-      }
-    },
-    [setPinned, setScratchpads]
-  );
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      setIsDragOver(true);
-      if (mode === 'collapsed') setMode('list');
-    },
-    [mode, setMode]
-  );
-  const handleDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.relatedTarget as Node))
-        setIsDragOver(false);
-    },
-    [panelRef]
-  );
-  const handleItemDragStart = useCallback((id: string) => {
-    dragItemRef.current = id;
-  }, []);
-  const handleItemDragOver = useCallback((e: React.DragEvent, i: number) => {
-    e.preventDefault();
-    if (dragItemRef.current) setDragOverIndex(i);
-  }, []);
-  const handleItemDrop = useCallback(
-    async (index: number) => {
-      const dragId = dragItemRef.current;
-      if (!dragId) return;
-      const ids = scratchpads.map((s) => s.id);
-      const di = ids.indexOf(dragId);
-      if (di === -1 || di === index) {
-        dragItemRef.current = null;
-        setDragOverIndex(null);
-        return;
-      }
-      const r = [...ids];
-      const [m] = r.splice(di, 1);
-      r.splice(index, 0, m);
-      const map = new Map(scratchpads.map((s) => [s.id, s]));
-      setScratchpads(r.map((id) => map.get(id)!).filter(Boolean));
-      await cmd.reorderScratchpads(r).catch(() => {});
-      dragItemRef.current = null;
-      setDragOverIndex(null);
-    },
-    [scratchpads, setScratchpads]
-  );
-  const handleItemDragEnd = useCallback(() => {
-    dragItemRef.current = null;
-    setDragOverIndex(null);
-  }, []);
-
-  return {
-    isDragOver,
-    dragOverIndex,
-    dragItemRef,
-    handleDrop,
-    handleDragOver,
-    handleDragLeave,
-    handleItemDragStart,
-    handleItemDragOver,
-    handleItemDrop,
-    handleItemDragEnd,
-  };
-}
+import {
+  SortMode,
+  ViewMode,
+  WindowLayout,
+  NOTE_COLORS,
+  COLLAPSED_WIDTH,
+  COLLAPSED_HEIGHT,
+  EXPANDED_WIDTH,
+  MODAL_WIDTH,
+  MODAL_HEIGHT,
+} from './scratchpad/scratchpadShared';
+import { useScratchpadTheme } from './scratchpad/useScratchpadTheme';
+import { useScratchpadDrag } from './scratchpad/useScratchpadDrag';
+import { ScratchpadModal } from './scratchpad/ScratchpadModal';
+import { NoteCard } from './scratchpad/NoteCard';
 
 export function ScratchpadWindow() {
+  const { t } = useTranslation();
   const [scratchpads, setScratchpads] = useState<ScratchpadItem[]>([]);
   const initialMode = useMemo<ViewMode>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -638,11 +411,11 @@ export function ScratchpadWindow() {
       try {
         await navigator.clipboard.writeText(pasteContent);
         await appWindow.hide().catch(() => {});
-        toast.warning('Paste failed; copied to clipboard');
+        toast.warning(t('scratchpad.pasteFallback'));
         completed = true;
       } catch (fallbackError) {
         console.error('Scratchpad paste fallback failed:', fallbackError);
-        toast.error('Paste failed');
+        toast.error(t('scratchpad.pasteFailed'));
       }
     } finally {
       setIsPasting(false);
@@ -658,7 +431,7 @@ export function ScratchpadWindow() {
         .then(() => emitScratchpadVisibility(true))
         .catch(() => {});
     }, 200);
-  }, [pastingId, isPasting, pasteContent, appWindow, emitScratchpadVisibility, setMode]);
+  }, [pastingId, isPasting, pasteContent, appWindow, emitScratchpadVisibility, setMode, t]);
 
   // ── CRUD ──
   const handleAdd = useCallback(async () => {
@@ -692,28 +465,33 @@ export function ScratchpadWindow() {
         }
         if (selectedId === id) setSelectedId(null);
         // Offer undo for 5s — recreates the note (new uuid/id, same content/title/color).
-        toast(`Deleted "${victim.title || victim.content.slice(0, 40) || 'note'}"`, {
-          duration: 5000,
-          action: {
-            label: 'Undo',
-            onClick: async () => {
-              try {
-                const restored = await cmd.createScratchpad(victim.title, victim.content);
-                // Restore color in a second call (create_scratchpad doesn't take color).
-                if (victim.color) {
-                  await cmd.updateScratchpad({ id: restored.id, color: victim.color });
-                  restored.color = victim.color;
+        toast(
+          t('scratchpad.deleted', {
+            name: victim.title || victim.content.slice(0, 40) || t('scratchpad.note'),
+          }),
+          {
+            duration: 5000,
+            action: {
+              label: t('common.undo'),
+              onClick: async () => {
+                try {
+                  const restored = await cmd.createScratchpad(victim.title, victim.content);
+                  // Restore color in a second call (create_scratchpad doesn't take color).
+                  if (victim.color) {
+                    await cmd.updateScratchpad({ id: restored.id, color: victim.color });
+                    restored.color = victim.color;
+                  }
+                  setScratchpads((prev) => [...prev, restored]);
+                } catch (e) {
+                  console.error('Undo delete failed:', e);
                 }
-                setScratchpads((prev) => [...prev, restored]);
-              } catch (e) {
-                console.error('Undo delete failed:', e);
-              }
+              },
             },
-          },
-        });
+          }
+        );
       } catch {}
     },
-    [scratchpads, editingId, pastingId, selectedId, setMode]
+    [scratchpads, editingId, pastingId, selectedId, setMode, t]
   );
 
   useEffect(() => {
@@ -771,7 +549,7 @@ export function ScratchpadWindow() {
           borderLeft: '2px solid hsl(var(--primary) / 0.5)',
           boxShadow: 'inset 1px 0 0 hsl(var(--primary) / 0.25)',
         }}
-        title="Scratchpad — hover to open"
+        title={t('scratchpad.edgeHint')}
       >
         {/* Minimal grip — 3 dots centered vertically, subtle primary tint */}
         <div className="flex flex-col gap-1 opacity-60">
@@ -842,7 +620,9 @@ export function ScratchpadWindow() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <StickyNote size={14} className="text-amber-400 drop-shadow-sm" />
-            <span className="text-xs font-bold tracking-wide text-foreground/90">Scratchpad</span>
+            <span className="text-xs font-bold tracking-wide text-foreground/90">
+              {t('scratchpad.title')}
+            </span>
             <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
               {scratchpads.length}
             </span>
@@ -859,7 +639,7 @@ export function ScratchpadWindow() {
                   ? 'bg-primary/20 text-primary'
                   : 'text-muted-foreground/50 hover:bg-white/[0.08] hover:text-foreground/80'
               )}
-              title={`Sort: ${sortMode}`}
+              title={t('scratchpad.sortBy', { mode: sortMode })}
             >
               <ArrowUpDown size={13} />
             </button>
@@ -882,7 +662,11 @@ export function ScratchpadWindow() {
                         : 'text-foreground/80 hover:bg-white/[0.08]'
                     )}
                   >
-                    {m === 'alpha' ? 'A–Z' : m === 'recent' ? 'Recent' : 'Manual'}
+                    {m === 'alpha'
+                      ? 'A–Z'
+                      : m === 'recent'
+                        ? t('scratchpad.sortRecent')
+                        : t('scratchpad.sortManual')}
                   </button>
                 ))}
               </div>
@@ -898,7 +682,7 @@ export function ScratchpadWindow() {
                   ? 'bg-amber-400/15 text-amber-400'
                   : 'text-muted-foreground/50 hover:bg-white/[0.08] hover:text-foreground/80'
               )}
-              title={pinned ? 'Unpin' : 'Pin open'}
+              title={t(pinned ? 'common.unpin' : 'scratchpad.pinOpen')}
             >
               {pinned ? <Pin size={13} /> : <PinOff size={13} />}
             </button>
@@ -908,7 +692,7 @@ export function ScratchpadWindow() {
                 handleAdd();
               }}
               className="rounded-md p-1.5 text-emerald-400/80 transition-all hover:bg-emerald-400/15 hover:text-emerald-400"
-              title="New note"
+              title={t('scratchpad.newNote')}
             >
               <Plus size={14} />
             </button>
@@ -918,7 +702,7 @@ export function ScratchpadWindow() {
                 handleClose();
               }}
               className="rounded-md p-1.5 text-muted-foreground/50 transition-all hover:bg-red-400/15 hover:text-red-400"
-              title="Hide"
+              title={t('scratchpad.hide')}
             >
               <X size={14} />
             </button>
@@ -940,9 +724,9 @@ export function ScratchpadWindow() {
                 ? 'border-foreground/50 bg-white/10'
                 : 'border-transparent text-muted-foreground/50 hover:bg-white/[0.08]'
             )}
-            title="All colors"
+            title={t('scratchpad.allColors')}
           >
-            <span className="text-[8px]">All</span>
+            <span className="text-[8px]">{t('common.all')}</span>
           </button>
           {NOTE_COLORS.filter((c) => scratchpads.some((s) => s.color === c.key)).map((c) => (
             <button
@@ -972,7 +756,7 @@ export function ScratchpadWindow() {
             ref={searchRef}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search..."
+            placeholder={t('scratchpad.searchPlaceholder')}
             className="flex-1 border-none bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/40"
           />
           {searchQuery && (
@@ -994,13 +778,15 @@ export function ScratchpadWindow() {
               <StickyNote size={24} className="text-muted-foreground/40" />
             </div>
             <p className="text-xs text-muted-foreground/60">
-              {searchQuery ? 'No matching notes' : 'Drag clips here or click +'}
+              {searchQuery ? t('scratchpad.noMatches') : t('scratchpad.emptyHint')}
             </p>
           </div>
         )}
         {isDragOver && filtered.length === 0 && (
           <div className="m-2 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/30 bg-primary/[0.05] p-10">
-            <span className="text-xs font-medium text-primary/60">Drop clip here</span>
+            <span className="text-xs font-medium text-primary/60">
+              {t('scratchpad.dropClipHere')}
+            </span>
           </div>
         )}
 
@@ -1031,7 +817,9 @@ export function ScratchpadWindow() {
 
         {isDragOver && filtered.length > 0 && (
           <div className="mt-1 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/20 bg-primary/[0.03] p-4">
-            <span className="text-[11px] font-medium text-primary/50">Drop to add</span>
+            <span className="text-[11px] font-medium text-primary/50">
+              {t('scratchpad.dropToAdd')}
+            </span>
           </div>
         )}
       </div>
@@ -1041,354 +829,6 @@ export function ScratchpadWindow() {
         theme="dark"
         toastOptions={{ style: { fontSize: '12px' } }}
       />
-    </div>
-  );
-}
-
-// ── Centered modal (paste or edit) ──
-interface ScratchpadModalProps {
-  isPaste: boolean;
-  itemTitle: string;
-  goBack: () => void;
-  pasteTextareaRef: React.RefObject<HTMLTextAreaElement>;
-  pasteContent: string;
-  setPasteContent: (v: string) => void;
-  doPaste: () => void;
-  isPasting: boolean;
-  titleRef: React.RefObject<HTMLInputElement>;
-  editTitle: string;
-  setEditTitle: (v: string) => void;
-  editColor: string | null;
-  setEditColor: (v: string | null) => void;
-  editContent: string;
-  setEditContent: (v: string) => void;
-  saveEdit: () => void;
-}
-
-function ScratchpadModal({
-  isPaste,
-  itemTitle,
-  goBack,
-  pasteTextareaRef,
-  pasteContent,
-  setPasteContent,
-  doPaste,
-  isPasting,
-  titleRef,
-  editTitle,
-  setEditTitle,
-  editColor,
-  setEditColor,
-  editContent,
-  setEditContent,
-  saveEdit,
-}: ScratchpadModalProps) {
-  return (
-    <div
-      data-scratchpad-shell
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl"
-    >
-      {/* Header */}
-      <div
-        className="flex items-center gap-2 border-b border-border/30 px-3 py-2"
-        data-tauri-drag-region
-      >
-        <button
-          onClick={goBack}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Back"
-        >
-          <ChevronLeft size={15} />
-        </button>
-        {isPaste ? (
-          <ClipboardPaste size={14} className="text-primary" />
-        ) : (
-          <Pencil size={14} className="text-amber-400" />
-        )}
-        <span className="flex-1 truncate text-sm font-semibold text-foreground/90">
-          {isPaste ? itemTitle || 'Paste snippet' : 'Edit note'}
-        </span>
-      </div>
-
-      {/* Content */}
-      <div className="flex flex-1 flex-col overflow-y-auto p-3">
-        {isPaste ? (
-          <textarea
-            ref={pasteTextareaRef}
-            value={pasteContent}
-            onChange={(e) => setPasteContent(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') goBack();
-              if (e.key === 'Enter' && e.ctrlKey) doPaste();
-            }}
-            className="h-full w-full flex-1 resize-none rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:border-primary/50"
-          />
-        ) : (
-          <>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              Title
-            </label>
-            <input
-              ref={titleRef}
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') goBack();
-              }}
-              className="mb-2.5 w-full rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] font-semibold text-foreground outline-none focus:border-primary/50"
-              placeholder="Title..."
-            />
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              Color
-            </label>
-            <div className="mb-2.5 flex items-center gap-1.5">
-              <button
-                onClick={() => setEditColor(null)}
-                className={clsx(
-                  'rounded-full border-2 p-1',
-                  !editColor ? 'border-foreground/60' : 'border-transparent'
-                )}
-                title="No color"
-              >
-                <X size={10} className="text-muted-foreground/60" />
-              </button>
-              {NOTE_COLORS.map((c) => (
-                <button
-                  key={c.key}
-                  onClick={() => setEditColor(c.key)}
-                  className={clsx(
-                    'h-5 w-5 rounded-full border-2 transition-transform',
-                    c.dot,
-                    editColor === c.key
-                      ? 'scale-110 border-foreground/70'
-                      : 'border-transparent hover:scale-110'
-                  )}
-                  title={c.key}
-                />
-              ))}
-            </div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              Content
-            </label>
-            <textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') goBack();
-                if (e.key === 'Enter' && e.ctrlKey) saveEdit();
-              }}
-              className="w-full flex-1 resize-none rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:border-primary/50"
-              rows={10}
-              placeholder="Content..."
-            />
-          </>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center justify-between border-t border-border/30 px-3 py-2">
-        <span className="text-[10px] text-muted-foreground/60">
-          {isPaste ? 'Ctrl+Enter to paste · Esc to cancel' : 'Ctrl+Enter to save · Esc to cancel'}
-        </span>
-        {isPaste ? (
-          <button
-            onClick={doPaste}
-            disabled={isPasting}
-            className={clsx(
-              'flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80',
-              isPasting && 'cursor-wait opacity-60'
-            )}
-          >
-            <ClipboardPaste size={14} /> Paste
-          </button>
-        ) : (
-          <div className="flex gap-2">
-            <button
-              onClick={goBack}
-              className="rounded-md px-3.5 py-1.5 text-xs text-muted-foreground hover:bg-accent"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={saveEdit}
-              className="rounded-md bg-primary/20 px-3.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/30"
-            >
-              Save
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Single note card in the list view ──
-interface NoteCardProps {
-  item: ScratchpadItem;
-  isSelected: boolean;
-  showPinnedDivider: boolean;
-  isDragTarget: boolean;
-  copied: boolean;
-  onSelect: (id: string) => void;
-  onDragStartItem: (id: string) => void;
-  onDragOverItem: (e: React.DragEvent) => void;
-  onDropItem: () => void;
-  onDragEndItem: () => void;
-  onPaste: (item: ScratchpadItem) => void;
-  onEdit: (item: ScratchpadItem) => void;
-  onTogglePin: (id: string) => void;
-  onCopy: (text: string, id: string) => void;
-  onDelete: (id: string) => void;
-}
-
-function NoteCard({
-  item,
-  isSelected,
-  showPinnedDivider,
-  isDragTarget,
-  copied,
-  onSelect,
-  onDragStartItem,
-  onDragOverItem,
-  onDropItem,
-  onDragEndItem,
-  onPaste,
-  onEdit,
-  onTogglePin,
-  onCopy,
-  onDelete,
-}: NoteCardProps) {
-  const colorStyle = getNoteColorStyle(item.color);
-  const hasColor = !!item.color;
-  const charCount = item.content.length;
-  return (
-    <div>
-      {showPinnedDivider && (
-        <div className="my-2 flex items-center gap-2 px-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/40">
-          <div className="h-px flex-1 bg-white/[0.06]" />
-          <span>Others</span>
-          <div className="h-px flex-1 bg-white/[0.06]" />
-        </div>
-      )}
-      <div
-        draggable
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect(item.id);
-        }}
-        onDragStart={(e) => {
-          const text = item.title ? `${item.title}\n${item.content}` : item.content;
-          e.dataTransfer.setData('text/plain', text);
-          e.dataTransfer.effectAllowed = 'copyMove';
-          onDragStartItem(item.id);
-        }}
-        onDragOver={onDragOverItem}
-        onDrop={onDropItem}
-        onDragEnd={onDragEndItem}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          onPaste(item);
-        }}
-        className={clsx(
-          'group relative mb-2 flex overflow-hidden rounded-xl border transition-all duration-200 ease-out',
-          item.is_pinned ? 'border-amber-400/30' : 'border-white/[0.08]',
-          isSelected
-            ? 'ring-2 ring-primary/50'
-            : 'hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10',
-          isDragTarget && 'ring-1 ring-primary/30'
-        )}
-        style={{
-          ...colorStyle,
-          ...(!hasColor ? { background: 'hsl(var(--card) / 0.5)' } : {}),
-        }}
-      >
-        {/* Left paste strip */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPaste(item);
-          }}
-          className="flex w-7 flex-shrink-0 items-center justify-center border-r border-white/[0.06] text-muted-foreground/60 transition-colors hover:bg-primary/15 hover:text-primary"
-          title="Paste"
-        >
-          <ClipboardPaste size={12} />
-        </button>
-
-        {/* Content */}
-        <div className="min-w-0 flex-1 px-2.5 py-2">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-              {item.is_pinned && <Pin size={10} className="flex-shrink-0 text-amber-400" />}
-              {item.title ? (
-                <span className="truncate text-xs font-semibold text-foreground/95">
-                  {item.title}
-                </span>
-              ) : (
-                <span className="text-[11px] italic text-muted-foreground/50">Untitled</span>
-              )}
-            </div>
-            <div className="flex flex-shrink-0 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm ring-1 ring-border/30 backdrop-blur-sm transition-all group-hover:opacity-100">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTogglePin(item.id);
-                }}
-                className={clsx(
-                  'rounded p-1.5 transition-colors',
-                  item.is_pinned
-                    ? 'text-amber-400'
-                    : 'text-muted-foreground/70 hover:bg-amber-400/15 hover:text-amber-400'
-                )}
-                title={item.is_pinned ? 'Unpin' : 'Pin'}
-              >
-                <Pin size={12} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(item);
-                }}
-                className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-amber-400/15 hover:text-amber-400"
-                title="Edit"
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCopy(item.title ? `${item.title}\n${item.content}` : item.content, item.id);
-                }}
-                className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-white/[0.08] hover:text-foreground/90"
-                title="Copy"
-              >
-                {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-              </button>
-              <div className="mx-0.5 h-4 w-px bg-border/40" />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(item.id);
-                }}
-                className="rounded p-1.5 text-muted-foreground/70 transition-colors hover:bg-red-400/15 hover:text-red-400"
-                title="Delete"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </div>
-          {item.content ? (
-            <div className="line-clamp-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground/70">
-              {renderMarkdownPreview(item.content)}
-            </div>
-          ) : null}
-          {/* Char counter — subtle, shows on hover only */}
-          {charCount > 0 && (
-            <div className="mt-1 text-right text-[9px] font-medium text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100">
-              {charCount >= 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} chars
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

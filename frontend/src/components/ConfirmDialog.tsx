@@ -1,5 +1,6 @@
 import { X, AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
 interface ConfirmDialogProps {
@@ -18,13 +19,14 @@ export function ConfirmDialog({
   isOpen,
   title,
   message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText,
+  cancelText,
   onConfirm,
   onCancel,
   variant = 'danger',
   details,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
@@ -38,8 +40,8 @@ export function ConfirmDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm duration-200">
-      <div className="animate-in zoom-in-95 w-full max-w-md scale-100 rounded-lg border border-border bg-background shadow-xl duration-200">
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="animate-fade-in w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
         <div className="px-6 pb-6 pt-5">
           <div className="mb-4 flex items-start justify-between">
             <div className="flex items-center gap-2">
@@ -58,6 +60,7 @@ export function ConfirmDialog({
             </div>
             <button
               onClick={onCancel}
+              aria-label={t('common.close')}
               className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <X size={18} />
@@ -81,7 +84,7 @@ export function ConfirmDialog({
             onClick={onCancel}
             className="rounded-md border border-input bg-transparent px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
           >
-            {cancelText}
+            {cancelText ?? t('common.cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -92,7 +95,7 @@ export function ConfirmDialog({
                 : 'bg-primary hover:bg-primary/90'
             )}
           >
-            {confirmText}
+            {confirmText ?? t('common.confirm')}
           </button>
         </div>
       </div>

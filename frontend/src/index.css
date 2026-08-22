@@ -4,6 +4,10 @@
 
 @layer base {
   :root {
+    /* Drives the OS rendering of native controls — the <select> popup list,
+       scrollbars, date pickers. Set here so every theme preset inherits it and
+       call sites stop pinning style={{ colorScheme: 'dark' }} by hand. */
+    color-scheme: light;
     --background: 210 20% 98%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -30,7 +34,7 @@
   }
 
   .dark {
-    --background: 240 10% 3.9%; /* #0a0a0b roughly, keeping close to #1E1E1E-ish feel or darker */
+    color-scheme: dark;
     --background: 220 8% 10%; /* #171a1e — darker with slight blue tint */
     --foreground: 0 0% 98%;
     --card: 220 5% 18%; /* #2b2d30 — noticeably brighter than bg, slight blue tint for depth */
@@ -1036,12 +1040,27 @@
     @apply bg-accent text-accent-foreground;
   }
 
-  .search-input {
-    @apply w-full rounded-lg border border-border bg-input px-4 py-2 text-foreground placeholder-muted-foreground transition-all duration-200 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring;
+  /* One look for every text input, select and textarea. Call sites used to
+     hand-roll this and drifted apart — three paddings, focus:ring-1 vs ring-2,
+     and one select with outline-none and no ring at all. */
+  /* Width is left to the call site (w-full, w-28, flex-1) so a utility never
+     has to fight a width baked into the component class. */
+  .field {
+    @apply rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder-muted-foreground transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* Compact variant for toolbars and inline filters. */
+  .field-sm {
+    @apply px-2 py-1.5 text-xs;
   }
 
   .btn {
     @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  /* Most buttons in this app are toolbar-sized, not the .btn default. */
+  .btn-sm {
+    @apply rounded-md px-3 py-1.5 text-xs;
   }
 
   .btn-primary {
@@ -1056,8 +1075,11 @@
     @apply hover:bg-accent hover:text-accent-foreground;
   }
 
+  /* Destructive actions here are soft-tinted, not solid fills. The solid
+     version this class used to hold had zero call sites — every delete button
+     hand-rolled the tinted style below instead. */
   .btn-destructive {
-    @apply bg-destructive text-destructive-foreground hover:bg-destructive/90;
+    @apply border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20;
   }
 
   .icon-button {
@@ -1574,6 +1596,39 @@
 
   .animate-fade-in {
     animation: fade-in 0.15s ease-out both;
+  }
+
+  /* Entrance for the floating batch bar — travels in from the bottom edge it
+     is anchored to, so the motion points back at where the bar lives. */
+  @keyframes slide-up-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up-in {
+    animation: slide-up-in 0.2s ease-out both;
+  }
+
+  /* Entrance for the search field unfolding out of the toolbar to its left. */
+  @keyframes slide-right-in {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-slide-right-in {
+    animation: slide-right-in 0.25s ease-out both;
   }
 
   /* Copy pulse ring animation */

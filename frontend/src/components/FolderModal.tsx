@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   Briefcase,
@@ -162,6 +163,7 @@ export function FolderModal({
   onClose,
   onSubmit,
 }: FolderModalProps) {
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string | null>(initialColor ?? null);
@@ -197,14 +199,14 @@ export function FolderModal({
     <div className="fixed inset-0 z-[9999] overflow-y-auto bg-black/50 p-4">
       <div className="mx-auto w-80 rounded-xl border border-border bg-card p-4 shadow-2xl">
         <h3 className="mb-2 text-sm font-semibold text-foreground">
-          {mode === 'create' ? 'Create New Folder' : 'Rename Folder'}
+          {mode === 'create' ? t('folderModal.createTitle') : t('folderModal.renameTitle')}
         </h3>
         <input
           ref={inputRef}
           type="text"
-          placeholder="Folder Name"
+          placeholder={t('folderModal.namePlaceholder')}
           defaultValue={initialName}
-          className="mb-2 w-full rounded-md border border-input bg-input px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="field mb-2 w-full"
           onKeyDown={(e) => {
             if (e.key === 'Enter') handleSubmit();
             else if (e.key === 'Escape') onClose();
@@ -213,11 +215,11 @@ export function FolderModal({
 
         {/* Icon Picker */}
         <div className="mb-2">
-          <p className="mb-1 text-xs text-muted-foreground">Icon</p>
+          <p className="mb-1 text-xs text-muted-foreground">{t('folderModal.icon')}</p>
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => setSelectedIcon(null)}
-              title="None"
+              title={t('folderModal.noIcon')}
               className={clsx(
                 'flex h-7 w-7 items-center justify-center rounded-md border transition-all',
                 selectedIcon === null
@@ -248,11 +250,11 @@ export function FolderModal({
 
         {/* Color Picker */}
         <div className="mb-2">
-          <p className="mb-1 text-xs text-muted-foreground">Color</p>
+          <p className="mb-1 text-xs text-muted-foreground">{t('folderModal.color')}</p>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSelectedColor(null)}
-              title="Auto"
+              title={t('folderModal.autoColor')}
               className={clsx(
                 'h-5 w-5 rounded-full border-2 bg-gradient-to-br from-gray-300 to-gray-500 transition-all',
                 selectedColor === null ? 'scale-125 border-white' : 'border-transparent'
@@ -279,14 +281,14 @@ export function FolderModal({
             disabled={isSubmitting}
             className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create' : 'Save'}
+          <button onClick={handleSubmit} disabled={isSubmitting} className="btn btn-primary btn-sm">
+            {isSubmitting
+              ? t('common.saving')
+              : mode === 'create'
+                ? t('common.create')
+                : t('common.save')}
           </button>
         </div>
       </div>

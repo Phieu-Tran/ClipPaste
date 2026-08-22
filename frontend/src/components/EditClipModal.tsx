@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ClipboardItem } from '../types';
 
 interface EditClipModalProps {
@@ -8,6 +9,7 @@ interface EditClipModalProps {
 }
 
 export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const textRef = useRef(text);
@@ -54,27 +56,22 @@ export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
       }}
     >
       <div className="flex w-[90%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">
-        <p className="text-xs text-muted-foreground">
-          Edit before paste · Enter to paste · Shift+Enter for new line · Esc to cancel
-        </p>
+        <p className="text-xs text-muted-foreground">{t('editClipModal.hint')}</p>
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          className="h-28 w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+          className="field h-28 w-full resize-none"
         />
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
             className="rounded-md px-3 py-1 text-sm text-muted-foreground hover:bg-accent"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
-          <button
-            onClick={() => onPaste(text)}
-            className="rounded-md bg-primary px-3 py-1 text-sm text-primary-foreground hover:opacity-90"
-          >
-            Paste
+          <button onClick={() => onPaste(text)} className="btn btn-primary btn-sm">
+            {t('common.paste')}
           </button>
         </div>
       </div>

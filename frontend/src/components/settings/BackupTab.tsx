@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
 import {
   AlertTriangle,
@@ -60,18 +62,18 @@ interface ImportNotice {
   error?: string;
 }
 
-function describeBackupImportError(error: string): string {
+function describeBackupImportError(error: string, t: TFunction): string {
   const message = error.trim();
   const lower = message.toLowerCase();
 
   if (lower.includes('clipboard.db not found')) {
-    return 'This zip is missing clipboard.db, so it does not look like a ClipPaste backup.';
+    return t('importError.missingDb');
   }
   if (lower.includes('too many entries')) {
-    return 'This backup contains more files than ClipPaste accepts. Export a fresh ClipPaste backup and import that zip.';
+    return t('importError.tooManyEntries');
   }
   if (lower.includes('duplicate entry')) {
-    return 'This backup contains duplicate file paths. ClipPaste blocked it to avoid importing ambiguous data.';
+    return t('importError.duplicateEntry');
   }
   if (
     lower.includes('too large') ||
@@ -79,45 +81,45 @@ function describeBackupImportError(error: string): string {
     lower.includes('extracted data exceeded') ||
     lower.includes('size mismatch')
   ) {
-    return 'This backup is too large or changed size while extracting. ClipPaste only imports normal exported backups.';
+    return t('importError.tooLarge');
   }
   if (
     lower.includes('path escapes') ||
     lower.includes('missing parent') ||
     lower.includes('invalid backup path')
   ) {
-    return 'This backup contains unsafe file paths. ClipPaste blocked the import before changing current data.';
+    return t('importError.unsafePath');
   }
   if (lower.includes('invalid zip')) {
-    return 'The selected file is not a readable zip backup.';
+    return t('importError.invalidZip');
   }
   if (lower.includes('failed to open zip')) {
-    return 'ClipPaste could not open the selected backup file.';
+    return t('importError.openFailed');
   }
 
-  return message.replace(/^Invalid backup:\s*/i, '') || 'ClipPaste could not import this backup.';
+  return message.replace(/^Invalid backup:\s*/i, '') || t('importError.generic');
 }
 
-function getImportNotice(result: ImportBackupResult): ImportNotice {
+function getImportNotice(result: ImportBackupResult, t: TFunction): ImportNotice {
   if (result.status === 'success') {
     return {
       tone: 'success',
-      title: 'Backup imported',
-      message: 'Restart ClipPaste so every window reads the imported data.',
+      title: t('settings.backupImported'),
+      message: t('backup.importRestartHint'),
     };
   }
   if (result.status === 'cancelled') {
     return {
       tone: 'warning',
-      title: 'Import cancelled',
-      message: 'No backup data was changed.',
+      title: t('backup.importCancelled'),
+      message: t('backup.importCancelledHint'),
     };
   }
 
   return {
     tone: 'danger',
-    title: 'Import blocked',
-    message: describeBackupImportError(result.error),
+    title: t('backup.importBlocked'),
+    message: describeBackupImportError(result.error, t),
     error: result.error,
   };
 }
@@ -163,6 +165,7 @@ export function BackupTab({
   setHistorySize,
   requestConfirm,
 }: BackupTabProps) {
+  const { t } = useTranslation();
   const [imageCleanupDays, setImageCleanupDays] = useState(settings.image_delete_days || 14);
   const [imageCleanupPreview, setImageCleanupPreview] = useState<ImageCleanupPreview | null>(null);
   const [imagePreviewLoading, setImagePreviewLoading] = useState(false);
@@ -176,7 +179,7 @@ export function BackupTab({
   const totalStorage = dashStats ? dashStats.db_size + dashStats.images_size : 0;
   const storageWarning = totalStorage >= 500 * 1024 * 1024;
   const cleanupRunning = imageCleanupRunning || clipCleanupRunning;
-  const importNotice = importResult ? getImportNotice(importResult) : null;
+  const importNotice = importResult ? getImportNotice(importResult, t) : null;
 
   const runImportBackup = () => {
     setImportResult(null);
@@ -195,7 +198,9 @@ export function BackupTab({
     try {
       opts.setPreview(await opts.fetch(days));
     } catch (error) {
-      toast.error(`Failed to preview ${opts.errorLabel}: ${error}`);
+      toast.error(
+        t('backup.previewCleanupFailed', { label: opts.errorLabel, error: String(error) })
+      );
     } finally {
       opts.setLoading(false);
     }
@@ -234,9 +239,11 @@ export function BackupTab({
           setHistorySize(newSize);
           opts.clearPreview();
           await refreshDashboardStats(true);
-          toast.success(`Deleted ${deleted.toLocaleString()} ${opts.successLabel}`);
+          toast.success(
+            t('backup.cleanupDone', { count: deleted.toLocaleString(), label: opts.successLabel })
+          );
         } catch (error) {
-          toast.error(`Failed to clean ${opts.errorLabel}: ${error}`);
+          toast.error(t('backup.cleanupFailed', { label: opts.errorLabel, error: String(error) }));
         } finally {
           opts.setRunning(false);
         }
@@ -250,26 +257,26 @@ export function BackupTab({
       setLoading: setImagePreviewLoading,
       fetch: cmd.previewOldImageCleanup,
       setPreview: setImageCleanupPreview,
-      errorLabel: 'old images',
+      errorLabel: t('backup.oldImages'),
     });
 
   const cleanupOldImages = () =>
     confirmCleanup({
       preview: imageCleanupPreview,
       fallbackDays: imageCleanupDays,
-      title: 'Delete old images',
-      message: (count, days) => `Delete ${count} unpinned image clips older than ${days} days?`,
-      confirmText: 'Delete Images',
+      title: t('backup.deleteOldImagesTitle'),
+      message: (count, days) => t('backup.deleteOldImagesMessage', { count, days }),
+      confirmText: t('backup.deleteImages'),
       details: (bytes, protectedCount) => [
-        `${formatBytes(bytes)} estimated reclaimable storage.`,
-        `${protectedCount} old images are protected because they are pinned or in folders.`,
+        t('backup.reclaimable', { size: formatBytes(bytes) }),
+        t('backup.protectedImages', { count: protectedCount }),
       ],
       setRunning: setImageCleanupRunning,
       execute: cmd.cleanupOldImageClips,
       onDeleted: clearImageDataUrlCache,
       clearPreview: () => setImageCleanupPreview(null),
-      successLabel: 'old image clips',
-      errorLabel: 'old images',
+      successLabel: t('backup.oldImageClips'),
+      errorLabel: t('backup.oldImages'),
     });
 
   const previewOldClips = () =>
@@ -278,38 +285,40 @@ export function BackupTab({
       setLoading: setClipPreviewLoading,
       fetch: cmd.previewOldClipCleanup,
       setPreview: setClipCleanupPreview,
-      errorLabel: 'old clips',
+      errorLabel: t('backup.oldClips'),
     });
 
   const cleanupOldClips = () =>
     confirmCleanup({
       preview: clipCleanupPreview,
       fallbackDays: clipCleanupDays,
-      title: 'Delete old clips',
-      message: (count, days) => `Delete ${count} unpinned non-image clips older than ${days} days?`,
-      confirmText: 'Delete Clips',
+      title: t('backup.deleteOldClipsTitle'),
+      message: (count, days) => t('backup.deleteOldClipsMessage', { count, days }),
+      confirmText: t('backup.deleteClips'),
       details: (bytes, protectedCount) => [
-        `${formatBytes(bytes)} estimated database payload.`,
-        `${protectedCount} old clips are protected because they are pinned or in folders.`,
-        'Image clips are handled by Image cleanup.',
+        t('backup.dbPayload', { size: formatBytes(bytes) }),
+        t('backup.protectedClips', { count: protectedCount }),
+        t('backup.imageClipsSeparate'),
       ],
       setRunning: setClipCleanupRunning,
       execute: cmd.cleanupOldClips,
       clearPreview: () => setClipCleanupPreview(null),
-      successLabel: 'old clips',
-      errorLabel: 'old clips',
+      successLabel: t('backup.oldClips'),
+      errorLabel: t('backup.oldClips'),
     });
 
   return (
     <section className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground">Backup & Storage</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Export, import, verify, and clean local clipboard data.
-          </p>
+          <h3 className="text-sm font-medium text-muted-foreground">{t('backup.title')}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{t('backup.subtitle')}</p>
         </div>
-        <button onClick={() => refreshDashboardStats(true)} className="icon-button" title="Refresh">
+        <button
+          onClick={() => refreshDashboardStats(true)}
+          className="icon-button"
+          title={t('diagnostics.refresh')}
+        >
           <RefreshCw size={15} />
         </button>
       </div>
@@ -317,25 +326,25 @@ export function BackupTab({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric
           icon={Database}
-          label="Database"
+          label={t('backup.database')}
           value={dashStats ? formatBytes(dashStats.db_size) : '-'}
           tone="text-indigo-400"
         />
         <Metric
           icon={ImageOff}
-          label="Image files"
+          label={t('backup.imageFiles')}
           value={dashStats ? formatBytes(dashStats.images_size) : '-'}
           tone="text-cyan-400"
         />
         <Metric
           icon={HardDrive}
-          label="Total storage"
+          label={t('backup.totalStorage')}
           value={dashStats ? formatBytes(totalStorage) : '-'}
           tone="text-emerald-400"
         />
         <Metric
           icon={Archive}
-          label="Clips"
+          label={t('backup.clips')}
           value={dashStats ? dashStats.total.toLocaleString() : '-'}
           tone="text-amber-400"
         />
@@ -345,22 +354,22 @@ export function BackupTab({
         <div className="flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-300" />
           <div>
-            <div className="text-sm font-medium text-amber-200">Storage is getting large</div>
+            <div className="text-sm font-medium text-amber-200">{t('backup.storageWarning')}</div>
             <div className="mt-1 text-xs leading-5 text-muted-foreground">
-              Current data is {formatBytes(totalStorage)}. Export a backup before cleanup.
+              {t('backup.storageWarningHint', { size: formatBytes(totalStorage) })}
             </div>
           </div>
         </div>
       )}
 
       <div className="rounded-lg border border-border bg-card/40 p-3">
-        <div className="mb-2 text-sm font-medium">Data directory</div>
+        <div className="mb-2 text-sm font-medium">{t('backup.dataDirectory')}</div>
         <div className="flex gap-2">
           <input
             value={dataDirectory}
             readOnly
-            className="min-w-0 flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm text-muted-foreground outline-none"
-            placeholder="Default location"
+            className="field min-w-0 flex-1 text-muted-foreground"
+            placeholder={t('backup.defaultLocation')}
           />
           <button
             onClick={handleSelectDataDirectory}
@@ -368,14 +377,14 @@ export function BackupTab({
             className="btn btn-secondary shrink-0 px-3"
           >
             <FolderOpen size={15} className="mr-2" />
-            {dataAction === 'directory' ? 'Preparing...' : 'Choose'}
+            {dataAction === 'directory' ? t('backup.preparing') : t('backup.choose')}
           </button>
         </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="space-y-3 rounded-lg border border-border bg-card/40 p-3">
-          <div className="text-sm font-medium">Backup</div>
+          <div className="text-sm font-medium">{t('backup.section')}</div>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={handleExportBackup}
@@ -383,7 +392,7 @@ export function BackupTab({
               className="btn btn-secondary text-xs disabled:opacity-50"
             >
               <Archive size={15} className="mr-2" />
-              {dataAction === 'export' ? 'Exporting...' : 'Export'}
+              {dataAction === 'export' ? t('backup.exportingShort') : t('backup.export')}
             </button>
             <button
               onClick={runImportBackup}
@@ -391,7 +400,7 @@ export function BackupTab({
               className="btn btn-secondary text-xs disabled:opacity-50"
             >
               <Upload size={15} className="mr-2" />
-              {dataAction === 'import' ? 'Importing...' : 'Import'}
+              {dataAction === 'import' ? t('backup.importingShort') : t('backup.import')}
             </button>
             <button
               onClick={handleCheckDbIntegrity}
@@ -399,7 +408,7 @@ export function BackupTab({
               className="btn btn-secondary text-xs disabled:opacity-50"
             >
               <ShieldCheck size={15} className="mr-2" />
-              Check DB
+              {t('backup.checkDb')}
             </button>
             <button
               onClick={handleRemoveDuplicates}
@@ -407,7 +416,7 @@ export function BackupTab({
               className="btn btn-secondary text-xs disabled:opacity-50"
             >
               <RefreshCw size={15} className="mr-2" />
-              {dataAction === 'duplicates' ? 'Removing...' : 'Duplicates'}
+              {dataAction === 'duplicates' ? t('backup.removing') : t('backup.duplicates')}
             </button>
           </div>
           {importNotice && (
@@ -439,7 +448,7 @@ export function BackupTab({
         <div className="space-y-3 rounded-lg border border-border bg-card/40 p-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <ImageOff size={15} className="text-cyan-400" />
-            Image cleanup
+            {t('backup.imageCleanup')}
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -451,37 +460,40 @@ export function BackupTab({
                 setImageCleanupDays(Math.max(1, Number(event.target.value) || 1));
                 setImageCleanupPreview(null);
               }}
-              className="h-9 w-24 rounded-md border border-border bg-input px-2 text-sm outline-none"
+              className="field h-9 w-24 px-2"
             />
-            <span className="text-xs text-muted-foreground">days</span>
+            <span className="text-xs text-muted-foreground">{t('backup.days')}</span>
             <button
               onClick={previewOldImages}
               disabled={imagePreviewLoading || cleanupRunning}
               className="btn btn-secondary ml-auto h-9 text-xs disabled:opacity-50"
             >
               {imagePreviewLoading ? <Loader2 size={13} className="mr-2 animate-spin" /> : null}
-              Preview
+              {t('backup.preview')}
             </button>
           </div>
           <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
             {imageCleanupPreview
-              ? `${imageCleanupPreview.count.toLocaleString()} images, ${formatBytes(
-                  imageCleanupPreview.bytes
-                )} reclaimable`
-              : 'Preview old unpinned image clips.'}
+              ? t('backup.imagePreviewResult', {
+                  count: imageCleanupPreview.count.toLocaleString(),
+                  size: formatBytes(imageCleanupPreview.bytes),
+                })
+              : t('backup.imagePreviewHint')}
             {imageCleanupPreview && imageCleanupPreview.protected_count > 0 ? (
               <div className="mt-1 text-[11px]">
-                {imageCleanupPreview.protected_count.toLocaleString()} protected
+                {t('backup.protectedCount', {
+                  count: imageCleanupPreview.protected_count.toLocaleString(),
+                })}
               </div>
             ) : null}
           </div>
           <button
             onClick={cleanupOldImages}
             disabled={!imageCleanupPreview || imageCleanupPreview.count === 0 || cleanupRunning}
-            className="btn w-full border border-destructive/20 bg-destructive/10 text-xs text-destructive hover:bg-destructive/20 disabled:opacity-50"
+            className="btn btn-destructive w-full text-xs disabled:opacity-50"
           >
             <ImageOff size={14} className="mr-2" />
-            {imageCleanupRunning ? 'Deleting...' : 'Delete Images'}
+            {imageCleanupRunning ? t('backup.deleting') : t('backup.deleteImages')}
           </button>
         </div>
       </div>
@@ -490,7 +502,7 @@ export function BackupTab({
         <div className="space-y-3 rounded-lg border border-border bg-card/40 p-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <ClipboardList size={15} className="text-amber-400" />
-            Clip cleanup
+            {t('backup.clipCleanup')}
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -502,60 +514,62 @@ export function BackupTab({
                 setClipCleanupDays(Math.max(1, Number(event.target.value) || 1));
                 setClipCleanupPreview(null);
               }}
-              className="h-9 w-24 rounded-md border border-border bg-input px-2 text-sm outline-none"
+              className="field h-9 w-24 px-2"
             />
-            <span className="text-xs text-muted-foreground">days</span>
+            <span className="text-xs text-muted-foreground">{t('backup.days')}</span>
             <button
               onClick={previewOldClips}
               disabled={clipPreviewLoading || cleanupRunning}
               className="btn btn-secondary ml-auto h-9 text-xs disabled:opacity-50"
             >
               {clipPreviewLoading ? <Loader2 size={13} className="mr-2 animate-spin" /> : null}
-              Preview
+              {t('backup.preview')}
             </button>
           </div>
           <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
             {clipCleanupPreview
-              ? `${clipCleanupPreview.count.toLocaleString()} clips, ${formatBytes(
-                  clipCleanupPreview.bytes
-                )} database payload`
-              : 'Preview old unpinned non-image clips.'}
+              ? t('backup.clipPreviewResult', {
+                  count: clipCleanupPreview.count.toLocaleString(),
+                  size: formatBytes(clipCleanupPreview.bytes),
+                })
+              : t('backup.clipPreviewHint')}
             {clipCleanupPreview && clipCleanupPreview.protected_count > 0 ? (
               <div className="mt-1 text-[11px]">
-                {clipCleanupPreview.protected_count.toLocaleString()} protected
+                {t('backup.protectedCount', {
+                  count: clipCleanupPreview.protected_count.toLocaleString(),
+                })}
               </div>
             ) : null}
           </div>
           <button
             onClick={cleanupOldClips}
             disabled={!clipCleanupPreview || clipCleanupPreview.count === 0 || cleanupRunning}
-            className="btn w-full border border-destructive/20 bg-destructive/10 text-xs text-destructive hover:bg-destructive/20 disabled:opacity-50"
+            className="btn btn-destructive w-full text-xs disabled:opacity-50"
           >
             <ClipboardList size={14} className="mr-2" />
-            {clipCleanupRunning ? 'Deleting...' : 'Delete Clips'}
+            {clipCleanupRunning ? t('backup.deleting') : t('backup.deleteClips')}
           </button>
         </div>
 
         <div className="space-y-3 rounded-lg border border-border bg-card/40 p-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Trash2 size={15} className="text-destructive" />
-            History cleanup
+            {t('backup.historyCleanup')}
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            Clear all unpinned clips that are not in folders. Pinned and folder clips are kept.
+            {t('backup.historyCleanupHint')}
           </p>
           <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
-            Use the image or clip cleanup cards for age-based cleanup before clearing the full
-            unprotected history.
+            {t('backup.historyCleanupNote')}
           </div>
           <div>
             <button
               onClick={confirmClearHistory}
               disabled={!!dataAction || cleanupRunning}
-              className="btn w-full border border-destructive/20 bg-destructive/10 text-xs text-destructive hover:bg-destructive/20 disabled:opacity-50"
+              className="btn btn-destructive w-full text-xs disabled:opacity-50"
             >
               <Trash2 size={14} className="mr-2" />
-              {dataAction === 'clear' ? 'Clearing...' : 'Clear History'}
+              {dataAction === 'clear' ? t('backup.clearing') : t('backup.clearHistoryTitle')}
             </button>
           </div>
         </div>

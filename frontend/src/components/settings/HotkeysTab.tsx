@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Keyboard } from 'lucide-react';
 
 interface Shortcut {
@@ -23,40 +24,41 @@ function parseHotkey(hotkey: string): string[] {
 }
 
 export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
+  const { t } = useTranslation();
   const globalKeys = currentHotkey ? parseHotkey(currentHotkey) : ['Ctrl', 'Shift', 'V'];
 
   const shortcuts: { section: string; items: Shortcut[] }[] = [
     {
-      section: 'General',
+      section: t('hotkeys.sectionGeneral'),
       items: [
-        { keys: globalKeys, description: 'Open / Close ClipPaste (global)', configurable: true },
-        { keys: ['Ctrl', 'Shift', 'S'], description: 'Toggle Scratchpad (global)' },
-        { keys: ['Esc'], description: 'Close window' },
-        { keys: ['Ctrl', 'F'], description: 'Focus search bar' },
+        { keys: globalKeys, description: t('hotkeys.toggleApp'), configurable: true },
+        { keys: ['Ctrl', 'Shift', 'S'], description: t('hotkeys.toggleScratchpad') },
+        { keys: ['Esc'], description: t('hotkeys.closeWindow') },
+        { keys: ['Ctrl', 'F'], description: t('hotkeys.focusSearchBar') },
       ],
     },
     {
-      section: 'Clipboard list',
+      section: t('hotkeys.sectionClipList'),
       items: [
-        { keys: ['↑'], description: 'Select previous clip' },
-        { keys: ['↓'], description: 'Select next clip' },
-        { keys: ['Enter'], description: 'Paste selected clip' },
-        { keys: ['E'], description: 'Edit before paste (text only)' },
-        { keys: ['P'], description: 'Pin / Unpin selected clip' },
-        { keys: ['Ctrl', 'Delete'], description: 'Delete selected clip' },
+        { keys: ['↑'], description: t('hotkeys.prevClip') },
+        { keys: ['↓'], description: t('hotkeys.nextClip') },
+        { keys: ['Enter'], description: t('hotkeys.pasteClip') },
+        { keys: ['E'], description: t('hotkeys.editBeforePaste') },
+        { keys: ['P'], description: t('hotkeys.togglePin') },
+        { keys: ['Ctrl', 'Delete'], description: t('hotkeys.deleteClip') },
       ],
     },
     {
-      section: 'Scratchpad',
+      section: t('hotkeys.sectionScratchpad'),
       items: [
-        { keys: ['↑'], description: 'Select previous note' },
-        { keys: ['↓'], description: 'Select next note' },
-        { keys: ['Enter'], description: 'Open paste modal for selected note' },
-        { keys: ['E'], description: 'Edit selected note' },
-        { keys: ['Delete'], description: 'Delete selected note (with Undo)' },
-        { keys: ['/'], description: 'Focus search' },
-        { keys: ['Ctrl', 'Enter'], description: 'Save edit / confirm paste (in modal)' },
-        { keys: ['Esc'], description: 'Cancel / collapse' },
+        { keys: ['↑'], description: t('hotkeys.prevNote') },
+        { keys: ['↓'], description: t('hotkeys.nextNote') },
+        { keys: ['Enter'], description: t('hotkeys.openNoteModal') },
+        { keys: ['E'], description: t('hotkeys.editNote') },
+        { keys: ['Delete'], description: t('hotkeys.deleteNote') },
+        { keys: ['/'], description: t('hotkeys.focusSearch') },
+        { keys: ['Ctrl', 'Enter'], description: t('hotkeys.saveOrConfirm') },
+        { keys: ['Esc'], description: t('hotkeys.cancelCollapse') },
       ],
     },
   ];
@@ -65,7 +67,7 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Keyboard size={20} className="text-muted-foreground" />
-        <h3 className="text-base font-semibold">Keyboard Shortcuts</h3>
+        <h3 className="text-base font-semibold">{t('hotkeys.title')}</h3>
       </div>
 
       {shortcuts.map((group) => (
@@ -99,11 +101,7 @@ export function HotkeysTab({ currentHotkey }: HotkeysTabProps) {
         </div>
       ))}
 
-      <p className="text-xs text-muted-foreground">
-        The main global shortcut can be changed in{' '}
-        <span className="font-medium text-foreground">General</span> settings. Single-key shortcuts
-        (E, P, /) only work when no input is focused.
-      </p>
+      <p className="text-xs text-muted-foreground">{t('hotkeys.footnote')}</p>
     </div>
   );
 }

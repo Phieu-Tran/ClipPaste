@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -50,36 +52,38 @@ type LibraryPinFilter = 'all' | 'pinned' | 'unpinned';
 type LibraryDateFilter = 'all' | 'today' | '7d' | '30d';
 type LibrarySort = 'newest' | 'oldest' | 'largest' | 'most_used' | 'smart';
 
-const TYPE_FILTER_OPTIONS: { value: LibraryTypeFilter; label: string }[] = [
-  { value: 'all', label: 'All kinds' },
-  { value: 'text', label: 'Text' },
-  { value: 'url', label: 'Links' },
-  { value: 'code', label: 'Code' },
-  { value: 'json', label: 'JSON' },
-  { value: 'file', label: 'Files' },
-  { value: 'html', label: 'HTML' },
-  { value: 'rtf', label: 'RTF' },
+// Option lists carry keys, not literals: they are module-level, so `t` only
+// exists once a component renders.
+const TYPE_FILTER_OPTIONS: { value: LibraryTypeFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'library.allKinds' },
+  { value: 'text', labelKey: 'subtype.text' },
+  { value: 'url', labelKey: 'dashboard.links' },
+  { value: 'code', labelKey: 'subtype.code' },
+  { value: 'json', labelKey: 'subtype.json' },
+  { value: 'file', labelKey: 'library.files' },
+  { value: 'html', labelKey: 'library.html' },
+  { value: 'rtf', labelKey: 'library.rtf' },
 ];
 
-const PIN_FILTER_OPTIONS: { value: LibraryPinFilter; label: string }[] = [
-  { value: 'all', label: 'All pins' },
-  { value: 'pinned', label: 'Pinned' },
-  { value: 'unpinned', label: 'Unpinned' },
+const PIN_FILTER_OPTIONS: { value: LibraryPinFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'library.allPins' },
+  { value: 'pinned', labelKey: 'folders.pinned' },
+  { value: 'unpinned', labelKey: 'library.unpinned' },
 ];
 
-const DATE_FILTER_OPTIONS: { value: LibraryDateFilter; label: string }[] = [
-  { value: 'all', label: 'Any date' },
-  { value: 'today', label: 'Today' },
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
+const DATE_FILTER_OPTIONS: { value: LibraryDateFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'library.anyDate' },
+  { value: 'today', labelKey: 'dashboard.today' },
+  { value: '7d', labelKey: 'library.days7' },
+  { value: '30d', labelKey: 'library.days30' },
 ];
 
-const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-  { value: 'largest', label: 'Largest' },
-  { value: 'most_used', label: 'Most used' },
-  { value: 'smart', label: 'Smart' },
+const SORT_OPTIONS: { value: LibrarySort; labelKey: string }[] = [
+  { value: 'newest', labelKey: 'library.newest' },
+  { value: 'oldest', labelKey: 'library.oldest' },
+  { value: 'largest', labelKey: 'library.largest' },
+  { value: 'most_used', labelKey: 'library.mostUsed' },
+  { value: 'smart', labelKey: 'controlBar.smart' },
 ];
 
 interface ConfirmOptions {
@@ -119,8 +123,8 @@ function ClipTypeIcon({ type, subtype }: { type: string; subtype: string | null 
   return <FileText size={15} className={className} />;
 }
 
-function clipKindLabel(clip: ClipboardItem): string {
-  if (clip.clip_type === 'image') return getImageSizeFromMeta(clip.metadata) ?? 'Image';
+function clipKindLabel(clip: ClipboardItem, t: TFunction): string {
+  if (clip.clip_type === 'image') return getImageSizeFromMeta(clip.metadata) ?? t('subtype.image');
   if (clip.subtype) return clip.subtype.toUpperCase();
   return clip.clip_type.toUpperCase();
 }
@@ -136,6 +140,7 @@ function LibraryThumb({
   className?: string;
   iconSize?: number;
 }) {
+  const { t } = useTranslation();
   const [src, setSrc] = useState('');
 
   useEffect(() => {
@@ -179,7 +184,7 @@ function LibraryThumb({
         'flex shrink-0 items-center justify-center overflow-hidden border border-border bg-background/50 transition-colors hover:border-cyan-400/50',
         className
       )}
-      title="Preview image"
+      title={t('library.previewImage')}
     >
       {src ? (
         <img src={src} alt="" className="h-full w-full object-cover" />
@@ -201,6 +206,7 @@ function ImagePreviewModal({
   onSelectClip: (clip: ClipboardItem) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [src, setSrc] = useState('');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -245,12 +251,12 @@ function ImagePreviewModal({
         if (!cancelled) setSrc(dataUrl);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(`Failed to load image: ${e}`);
+        if (!cancelled) toast.error(t('library.imageLoadFailed', { error: String(e) }));
       });
     return () => {
       cancelled = true;
     };
-  }, [clip.id]);
+  }, [clip.id, t]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -283,10 +289,10 @@ function ImagePreviewModal({
   const handleSaveImage = async () => {
     try {
       const path = await cmd.saveClipImageAs(clip.id);
-      toast.success(`Saved to ${path}`);
+      toast.success(t('library.savedTo', { path }));
     } catch (e) {
       if (String(e) !== 'Save cancelled') {
-        toast.error(`Failed to save: ${e}`);
+        toast.error(t('library.saveFailed', { error: String(e) }));
       }
     }
   };
@@ -301,9 +307,11 @@ function ImagePreviewModal({
       <div className="flex h-[min(92vh,900px)] w-[min(96vw,1280px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-background shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium">{clip.source_app ?? 'Image clip'}</div>
+            <div className="truncate text-sm font-medium">
+              {clip.source_app ?? t('library.imageClip')}
+            </div>
             <div className="text-xs text-muted-foreground">
-              {clipKindLabel(clip)} - {formatRelativeTime(clip.created_at)}
+              {clipKindLabel(clip, t)} - {formatRelativeTime(clip.created_at)}
               {activeIndex >= 0 && imageClips.length > 1
                 ? ` - ${activeIndex + 1}/${imageClips.length}`
                 : ''}
@@ -314,7 +322,7 @@ function ImagePreviewModal({
               onClick={() => goToImage(-1)}
               disabled={!canGoPrev}
               className="icon-button disabled:opacity-40"
-              title="Previous image"
+              title={t('library.previousImage')}
             >
               <ChevronLeft size={16} />
             </button>
@@ -322,7 +330,7 @@ function ImagePreviewModal({
               onClick={() => goToImage(1)}
               disabled={!canGoNext}
               className="icon-button disabled:opacity-40"
-              title="Next image"
+              title={t('library.nextImage')}
             >
               <ChevronRight size={16} />
             </button>
@@ -330,7 +338,7 @@ function ImagePreviewModal({
             <button
               onClick={() => setClampedZoom(zoom - 0.25)}
               className="icon-button"
-              title="Zoom out"
+              title={t('library.zoomOut')}
             >
               <ZoomOut size={15} />
             </button>
@@ -340,11 +348,11 @@ function ImagePreviewModal({
             <button
               onClick={() => setClampedZoom(zoom + 0.25)}
               className="icon-button"
-              title="Zoom in"
+              title={t('library.zoomIn')}
             >
               <ZoomIn size={15} />
             </button>
-            <button onClick={fitImage} className="icon-button" title="Fit">
+            <button onClick={fitImage} className="icon-button" title={t('library.fit')}>
               <Maximize2 size={15} />
             </button>
             <button onClick={showActualSize} className="icon-button" title="100%">
@@ -355,18 +363,18 @@ function ImagePreviewModal({
               onClick={() => {
                 cmd
                   .copyClip(clip.id)
-                  .then(() => toast.success('Copied'))
-                  .catch((e) => toast.error(`Failed: ${e}`));
+                  .then(() => toast.success(t('library.copied')))
+                  .catch((e) => toast.error(t('folders.actionFailed', { error: String(e) })));
               }}
               className="icon-button"
-              title="Copy"
+              title={t('scratchpad.copy')}
             >
               <Copy size={15} />
             </button>
-            <button onClick={handleSaveImage} className="icon-button" title="Save as">
+            <button onClick={handleSaveImage} className="icon-button" title={t('library.saveAs')}>
               <Download size={15} />
             </button>
-            <button onClick={onClose} className="icon-button" title="Close">
+            <button onClick={onClose} className="icon-button" title={t('common.close')}>
               <X size={16} />
             </button>
           </div>
@@ -410,7 +418,7 @@ function ImagePreviewModal({
           )}
         </div>
         <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate">{clip.preview || 'Image clip'}</span>
+          <span className="min-w-0 truncate">{clip.preview || t('library.imageClip')}</span>
           <span className="shrink-0 tabular-nums">{clip.created_at}</span>
         </div>
       </div>
@@ -453,6 +461,7 @@ function StatTile({
 }
 
 export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTabProps) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<LibraryMode>('clips');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<LibraryTypeFilter>('all');
@@ -552,7 +561,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
         return true;
       } catch (e) {
         if (loadSeq !== loadSeqRef.current) return false;
-        toast.error(`Failed to load clips: ${e}`);
+        toast.error(t('folders.loadClipsFailed', { error: String(e) }));
         return false;
       } finally {
         if (loadSeq === loadSeqRef.current) {
@@ -561,7 +570,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
         }
       }
     },
-    [dateFilter, debouncedQuery, folderId, mode, pinFilter, sortOrder, typeFilter]
+    [dateFilter, debouncedQuery, folderId, mode, pinFilter, sortOrder, typeFilter, t]
   );
 
   const reload = useCallback(async () => {
@@ -641,10 +650,10 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
     if (selectedIds.size === 0) return;
     try {
       const count = await cmd.bulkSetPin(Array.from(selectedIds), pinned);
-      toast.success(pinned ? `Pinned ${count} clips` : `Unpinned ${count} clips`);
+      toast.success(t(pinned ? 'folders.pinnedClips' : 'folders.unpinnedClips', { count }));
       await reload();
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -653,35 +662,32 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
     const target = moveFolderId === 'none' ? null : moveFolderId;
     try {
       await cmd.bulkMoveClips(Array.from(selectedIds), target);
-      toast.success(target ? 'Clips moved' : 'Clips removed from folders');
+      toast.success(t(target ? 'library.clipsMoved' : 'library.clipsUnfiled'));
       await reload();
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
   const handleDelete = async (ids: string[]) => {
     if (ids.length === 0) return;
     requestConfirm({
-      title: ids.length === 1 ? 'Delete clip' : 'Delete clips',
-      message:
-        ids.length === 1
-          ? 'Delete this clip from local history? Image files attached to this clip will also be removed.'
-          : `Delete ${ids.length} clips from local history? Image files attached to these clips will also be removed.`,
-      confirmText: 'Delete',
+      title: t('library.deleteTitle', { count: ids.length }),
+      message: t('library.deleteMessage', { count: ids.length }),
+      confirmText: t('common.delete'),
       variant: 'danger',
       details:
         ids.length > 1
-          ? [`${ids.length} selected clips`, 'Pinned clips are included in this action.']
+          ? [t('library.selectedClips', { count: ids.length }), t('library.pinnedIncluded')]
           : undefined,
       action: async () => {
         try {
           const count = await cmd.bulkDeleteClips(ids);
           ids.forEach(evictClipImageDataUrl);
-          toast.success(`Deleted ${count} clips`);
+          toast.success(t('folders.deletedClips', { count }));
           await reload();
         } catch (e) {
-          toast.error(`Failed: ${e}`);
+          toast.error(t('folders.actionFailed', { error: String(e) }));
         }
       },
     });
@@ -690,9 +696,9 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
   const handleCopy = async (clip: ClipboardItem) => {
     try {
       await cmd.copyClip(clip.id);
-      toast.success('Copied');
+      toast.success(t('library.copied'));
     } catch (e) {
-      toast.error(`Failed to copy: ${e}`);
+      toast.error(t('library.copyFailed', { error: String(e) }));
     }
   };
 
@@ -704,22 +710,24 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
       );
       await loadStats(true);
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
   const allVisibleSelected = clips.length > 0 && clips.every((clip) => selectedIds.has(clip.id));
   const activeFolderName =
     folderId === '__smart__'
-      ? 'Smart'
+      ? t('controlBar.smart')
       : folderId === '__frequent__'
-        ? 'Frequent'
+        ? t('controlBar.frequent')
         : folderId
-          ? (folderById.get(folderId)?.name ?? 'Folder')
-          : 'All folders';
-  const modeLabel = mode === 'images' ? 'Images' : 'Clips';
+          ? (folderById.get(folderId)?.name ?? t('library.folder'))
+          : t('library.allFolders');
+  const modeLabel = mode === 'images' ? t('subtype.image') : t('backup.clips');
   const loadedLabel =
-    selectedCount > 0 ? `${selectedCount} selected` : `${clips.length} ${modeLabel.toLowerCase()}`;
+    selectedCount > 0
+      ? t('batchBar.selected', { count: selectedCount })
+      : t('library.loadedCount', { count: clips.length, label: modeLabel.toLowerCase() });
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-3">
@@ -735,28 +743,28 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
       <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           Icon={Database}
-          label="Clips"
+          label={t('backup.clips')}
           value={stats?.total.toLocaleString() ?? '-'}
           iconClass="text-indigo-300"
           accentClass="bg-indigo-400"
         />
         <StatTile
           Icon={ImageIcon}
-          label="Images"
+          label={t('subtype.image')}
           value={stats?.images.toLocaleString() ?? '-'}
           iconClass="text-cyan-300"
           accentClass="bg-cyan-400"
         />
         <StatTile
           Icon={Pin}
-          label="Pinned"
+          label={t('folders.pinned')}
           value={stats?.pinned.toLocaleString() ?? '-'}
           iconClass="text-amber-300"
           accentClass="bg-amber-400"
         />
         <StatTile
           Icon={HardDrive}
-          label="Storage"
+          label={t('dashboard.storage')}
           value={stats ? formatBytes(stats.db_size + stats.images_size) : '-'}
           iconClass="text-emerald-300"
           accentClass="bg-emerald-400"
@@ -800,14 +808,14 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search"
-              className="h-9 w-full rounded-md border border-border bg-background/70 pl-8 pr-8 text-sm outline-none transition-colors focus:border-primary/60"
+              placeholder={t('library.search')}
+              className="h-9 w-full rounded-md border border-border bg-background/70 pl-8 pr-8 text-sm outline-none transition-colors focus:border-primary/60 focus:ring-2 focus:ring-ring"
             />
             {query && (
               <button
                 onClick={() => setQuery('')}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title="Clear search"
+                title={t('clipList.clearSearch')}
               >
                 <X size={13} />
               </button>
@@ -822,11 +830,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
               if (nextFolderId === '__smart__') setSortOrder('smart');
               if (nextFolderId === '__frequent__') setSortOrder('most_used');
             }}
-            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+            className="field field-sm h-9"
           >
-            <option value="all">All folders</option>
-            <option value="__smart__">Smart</option>
-            <option value="__frequent__">Frequent</option>
+            <option value="all">{t('library.allFolders')}</option>
+            <option value="__smart__">{t('controlBar.smart')}</option>
+            <option value="__frequent__">{t('controlBar.frequent')}</option>
             {customFolders.map((folder) => (
               <option key={folder.id} value={folder.id}>
                 {folder.name}
@@ -838,11 +846,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
             <select
               value={typeFilter}
               onChange={(event) => setTypeFilter(event.target.value as LibraryTypeFilter)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+              className="field field-sm h-9"
             >
               {TYPE_FILTER_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.labelKey)}
                 </option>
               ))}
             </select>
@@ -851,11 +859,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           <select
             value={pinFilter}
             onChange={(event) => setPinFilter(event.target.value as LibraryPinFilter)}
-            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+            className="field field-sm h-9"
           >
             {PIN_FILTER_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -863,11 +871,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           <select
             value={dateFilter}
             onChange={(event) => setDateFilter(event.target.value as LibraryDateFilter)}
-            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+            className="field field-sm h-9"
           >
             {DATE_FILTER_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -875,11 +883,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           <select
             value={sortOrder}
             onChange={(event) => setSortOrder(event.target.value as LibrarySort)}
-            className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary/60"
+            className="field field-sm h-9"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -893,13 +901,13 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                 setSortOrder('newest');
               }}
               className="icon-button"
-              title="Clear filters"
+              title={t('library.clearFilters')}
             >
               <ListFilter size={15} />
             </button>
           )}
 
-          <button onClick={reload} className="icon-button" title="Refresh">
+          <button onClick={reload} className="icon-button" title={t('diagnostics.refresh')}>
             <RefreshCw size={15} className={loading ? 'animate-spin' : undefined} />
           </button>
         </div>
@@ -918,22 +926,24 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
           )}
           {mode === 'clips' && typeFilter !== 'all' && (
             <span className="rounded-md border border-border bg-background/50 px-2 py-1">
-              {TYPE_FILTER_OPTIONS.find((option) => option.value === typeFilter)?.label}
+              {t(TYPE_FILTER_OPTIONS.find((option) => option.value === typeFilter)?.labelKey ?? '')}
             </span>
           )}
           {pinFilter !== 'all' && (
             <span className="rounded-md border border-border bg-background/50 px-2 py-1">
-              {PIN_FILTER_OPTIONS.find((option) => option.value === pinFilter)?.label}
+              {t(PIN_FILTER_OPTIONS.find((option) => option.value === pinFilter)?.labelKey ?? '')}
             </span>
           )}
           {dateFilter !== 'all' && (
             <span className="rounded-md border border-border bg-background/50 px-2 py-1">
-              {DATE_FILTER_OPTIONS.find((option) => option.value === dateFilter)?.label}
+              {t(DATE_FILTER_OPTIONS.find((option) => option.value === dateFilter)?.labelKey ?? '')}
             </span>
           )}
           {sortOrder !== 'newest' && (
             <span className="rounded-md border border-border bg-background/50 px-2 py-1">
-              Sort: {SORT_OPTIONS.find((option) => option.value === sortOrder)?.label}
+              {t('library.sortLabel', {
+                label: t(SORT_OPTIONS.find((option) => option.value === sortOrder)?.labelKey ?? ''),
+              })}
             </span>
           )}
         </div>
@@ -955,7 +965,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
               )}
             >
               <Check size={13} />
-              {allVisibleSelected ? 'Unselect' : 'Select'}
+              {t(allVisibleSelected ? 'library.unselect' : 'library.select')}
             </button>
             <span className="text-xs text-muted-foreground">{loadedLabel}</span>
           </div>
@@ -967,21 +977,21 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                 className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <Pin size={12} />
-                Pin
+                {t('common.pin')}
               </button>
               <button
                 onClick={() => handleBulkPin(false)}
                 className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <PinOff size={12} />
-                Unpin
+                {t('common.unpin')}
               </button>
               <select
                 value={moveFolderId}
                 onChange={(event) => setMoveFolderId(event.target.value)}
-                className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none"
+                className="field field-sm h-7"
               >
-                <option value="none">No folder</option>
+                <option value="none">{t('library.noFolder')}</option>
                 {customFolders.map((folder) => (
                   <option key={folder.id} value={folder.id}>
                     {folder.name}
@@ -993,14 +1003,14 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                 className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <ArrowRightLeft size={12} />
-                Move
+                {t('common.move')}
               </button>
               <button
                 onClick={() => handleDelete(Array.from(selectedIds))}
                 className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-destructive hover:bg-destructive/10"
               >
                 <Trash2 size={12} />
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           )}
@@ -1041,8 +1051,8 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                         const displayIndex = start + columnIndex + 1;
                         const checked = selectedIds.has(clip.id);
                         const folderName = clip.folder_id
-                          ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
-                          : 'No folder';
+                          ? (folderById.get(clip.folder_id)?.name ?? t('library.folder'))
+                          : t('library.noFolder');
 
                         return (
                           <article
@@ -1062,13 +1072,13 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                                   ? 'border-primary bg-primary text-primary-foreground'
                                   : 'border-white/30 bg-background/80 text-transparent hover:text-foreground'
                               )}
-                              title="Select image"
+                              title={t('library.selectImage')}
                             >
                               <Check size={12} />
                             </button>
                             <span
                               className="absolute left-8 top-2 z-10 rounded bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground shadow-sm"
-                              title={`Clip #${displayIndex}`}
+                              title={t('clipCard.ariaIndex', { index: displayIndex })}
                             >
                               #{displayIndex}
                             </span>
@@ -1084,21 +1094,21 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                                 <button
                                   onClick={() => handleTogglePin(clip)}
                                   className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
-                                  title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                                  title={t(clip.is_pinned ? 'common.unpin' : 'common.pin')}
                                 >
                                   {clip.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
                                 </button>
                                 <button
                                   onClick={() => handleCopy(clip)}
                                   className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
-                                  title="Copy"
+                                  title={t('scratchpad.copy')}
                                 >
                                   <Copy size={12} />
                                 </button>
                                 <button
                                   onClick={() => handleDelete([clip.id])}
                                   className="rounded bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-destructive"
-                                  title="Delete"
+                                  title={t('common.delete')}
                                 >
                                   <Trash2 size={12} />
                                 </button>
@@ -1108,7 +1118,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                             <div className="space-y-1 p-2">
                               <div className="flex min-w-0 items-center gap-1.5">
                                 <span className="truncate text-xs font-medium text-foreground/90">
-                                  {clip.source_app ?? 'Image clip'}
+                                  {clip.source_app ?? t('library.imageClip')}
                                 </span>
                                 {clip.is_pinned && (
                                   <Pin size={10} className="shrink-0 text-amber-400" />
@@ -1118,7 +1128,7 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                                 )}
                               </div>
                               <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                                <span className="truncate">{clipKindLabel(clip)}</span>
+                                <span className="truncate">{clipKindLabel(clip, t)}</span>
                                 <span className="shrink-0 tabular-nums">
                                   {formatRelativeTime(clip.created_at)}
                                 </span>
@@ -1143,10 +1153,10 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                     className="btn btn-secondary h-8 text-xs"
                   >
                     {loading ? <Loader2 size={13} className="mr-1 animate-spin" /> : null}
-                    Load more
+                    {t('library.loadMore')}
                   </button>
                 ) : (
-                  <span className="text-xs text-muted-foreground">End</span>
+                  <span className="text-xs text-muted-foreground">{t('library.end')}</span>
                 )}
               </div>
             </div>
@@ -1156,11 +1166,11 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                 <div className="grid shrink-0 grid-cols-[24px_42px_58px_minmax(220px,1fr)_88px_120px_88px] gap-3 border-b border-border bg-background/30 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
                   <span />
                   <span>#</span>
-                  <span>Type</span>
-                  <span>Content</span>
-                  <span>Details</span>
-                  <span>Folder</span>
-                  <span className="text-right">Actions</span>
+                  <span>{t('library.colType')}</span>
+                  <span>{t('library.colContent')}</span>
+                  <span>{t('library.colDetails')}</span>
+                  <span>{t('library.folder')}</span>
+                  <span className="text-right">{t('library.colActions')}</span>
                 </div>
                 <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
                   <ul
@@ -1172,12 +1182,12 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                       if (!clip) return null;
                       const checked = selectedIds.has(clip.id);
                       const folderName = clip.folder_id
-                        ? (folderById.get(clip.folder_id)?.name ?? 'Folder')
-                        : 'No folder';
+                        ? (folderById.get(clip.folder_id)?.name ?? t('library.folder'))
+                        : t('library.noFolder');
                       const preview =
                         clip.clip_type === 'image'
-                          ? 'Image clip'
-                          : clip.preview?.trim() || '(empty)';
+                          ? t('library.imageClip')
+                          : clip.preview?.trim() || t('library.empty');
 
                       return (
                         <li
@@ -1198,13 +1208,13 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                                 ? 'border-primary bg-primary text-primary-foreground'
                                 : 'border-border text-transparent hover:border-primary/60'
                             )}
-                            title="Select clip"
+                            title={t('folders.selectClip')}
                           >
                             <Check size={11} />
                           </button>
                           <span
                             className="text-xs font-semibold tabular-nums text-muted-foreground/70"
-                            title={`Clip #${virtualRow.index + 1}`}
+                            title={t('clipCard.ariaIndex', { index: virtualRow.index + 1 })}
                           >
                             #{virtualRow.index + 1}
                           </span>
@@ -1227,13 +1237,15 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                               )}
                             </div>
                             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                              <span className="truncate">{clip.source_app ?? 'Unknown app'}</span>
+                              <span className="truncate">
+                                {clip.source_app ?? t('library.unknownApp')}
+                              </span>
                               {clip.note && <span className="truncate italic">{clip.note}</span>}
                             </div>
                           </div>
 
                           <div className="min-w-0 text-xs text-muted-foreground">
-                            <div className="truncate">{clipKindLabel(clip)}</div>
+                            <div className="truncate">{clipKindLabel(clip, t)}</div>
                             <div className="truncate text-[10px]">
                               {formatRelativeTime(clip.created_at)}
                             </div>
@@ -1248,21 +1260,21 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                             <button
                               onClick={() => handleTogglePin(clip)}
                               className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                              title={clip.is_pinned ? 'Unpin' : 'Pin'}
+                              title={t(clip.is_pinned ? 'common.unpin' : 'common.pin')}
                             >
                               {clip.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
                             </button>
                             <button
                               onClick={() => handleCopy(clip)}
                               className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                              title="Copy"
+                              title={t('scratchpad.copy')}
                             >
                               <Copy size={13} />
                             </button>
                             <button
                               onClick={() => handleDelete([clip.id])}
                               className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                              title="Delete"
+                              title={t('common.delete')}
                             >
                               <Trash2 size={13} />
                             </button>
@@ -1280,10 +1292,10 @@ export function LibraryTab({ folders, onDataChanged, requestConfirm }: LibraryTa
                       className="btn btn-secondary h-8 text-xs"
                     >
                       {loading ? <Loader2 size={13} className="mr-1 animate-spin" /> : null}
-                      Load more
+                      {t('library.loadMore')}
                     </button>
                   ) : (
-                    <span className="text-xs text-muted-foreground">End</span>
+                    <span className="text-xs text-muted-foreground">{t('library.end')}</span>
                   )}
                 </div>
               </div>

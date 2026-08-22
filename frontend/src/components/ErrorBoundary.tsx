@@ -21,6 +21,10 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('[ErrorBoundary] Uncaught error:', error, info.componentStack);
   }
 
+  // Deliberately untranslated. This is the last thing standing when a render
+  // throws, and one of the things that can throw is i18n itself (a bad locale
+  // import, a failed changeLanguage). Reaching for `t` here risks the error
+  // screen crashing on the same fault it exists to report, so it stays English.
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;

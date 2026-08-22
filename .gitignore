@@ -36,3 +36,6 @@ src-tauri/gen/
 # Test runner scripts
 scripts/test.ps1
 scripts/test.sh
+
+# Serena tool workspace (not source)
+.serena/

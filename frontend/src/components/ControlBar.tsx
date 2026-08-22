@@ -24,6 +24,7 @@ import {
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const FOLDER_COLORS_LIGHT = [
   {
@@ -175,18 +176,20 @@ const COLOR_KEY_TO_INDEX: Record<string, number> = {
   rose: 14,
 };
 
-/** All clip filters — compact inline row */
-const CLIP_FILTERS: { key: string; label: string; Icon: LucideIcon }[] = [
-  { key: 'text', label: 'Text', Icon: FileText },
-  { key: 'image', label: 'Image', Icon: Image },
-  { key: 'url', label: 'URL', Icon: Link },
-  { key: 'email', label: 'Email', Icon: Mail },
-  { key: 'color', label: 'Color', Icon: Palette },
-  { key: 'path', label: 'Path', Icon: FolderOpen },
-  { key: 'phone', label: 'Phone', Icon: Phone },
-  { key: 'ip', label: 'IP', Icon: Network },
-  { key: 'json', label: 'JSON', Icon: Braces },
-  { key: 'code', label: 'Code', Icon: Code2 },
+/** All clip filters — compact inline row. Labels are keys, not literals:
+ *  this is module-level, so `t` only exists once a component renders. The
+ *  `subtype.*` namespace is shared with the badges on ClipCard. */
+const CLIP_FILTERS: { key: string; labelKey: string; Icon: LucideIcon }[] = [
+  { key: 'text', labelKey: 'subtype.text', Icon: FileText },
+  { key: 'image', labelKey: 'subtype.image', Icon: Image },
+  { key: 'url', labelKey: 'subtype.url', Icon: Link },
+  { key: 'email', labelKey: 'subtype.email', Icon: Mail },
+  { key: 'color', labelKey: 'subtype.color', Icon: Palette },
+  { key: 'path', labelKey: 'subtype.path', Icon: FolderOpen },
+  { key: 'phone', labelKey: 'subtype.phone', Icon: Phone },
+  { key: 'ip', labelKey: 'subtype.ip', Icon: Network },
+  { key: 'json', labelKey: 'subtype.json', Icon: Braces },
+  { key: 'code', labelKey: 'subtype.code', Icon: Code2 },
 ];
 
 interface ControlBarProps {
@@ -253,6 +256,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
   },
   ref
 ) {
+  const { t } = useTranslation();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -389,16 +393,30 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       icon?: string | null;
       isVirtual?: boolean;
     }[] = [
-      { id: null, name: 'All', count: totalClipCount, icon: null },
-      { id: '__frequent__', name: 'Frequent', count: 0, icon: null, color: null, isVirtual: true },
-      { id: '__smart__', name: 'Smart', count: 0, icon: null, color: null, isVirtual: true },
+      { id: null, name: t('common.all'), count: totalClipCount, icon: null },
+      {
+        id: '__frequent__',
+        name: t('controlBar.frequent'),
+        count: 0,
+        icon: null,
+        color: null,
+        isVirtual: true,
+      },
+      {
+        id: '__smart__',
+        name: t('controlBar.smart'),
+        count: 0,
+        icon: null,
+        color: null,
+        isVirtual: true,
+      },
       ...folders.map((f) => ({ ...f, count: f.item_count })),
     ];
     if (!searchQuery.trim()) return raw;
     return raw.filter(
       (cat) => cat.id === null || cat.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [folders, totalClipCount, searchQuery]);
+  }, [folders, totalClipCount, searchQuery, t]);
 
   const handleMouseEnter = (folderId: string | null) => {
     if (isDragging) {
@@ -458,7 +476,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         )}
       >
         {showSearch ? (
-          <div className="animate-in fade-in slide-in-from-left-2 flex w-full items-center gap-2 rounded-full border border-border bg-input px-3 py-1.5 duration-300">
+          <div className="animate-slide-right-in flex w-full items-center gap-2 rounded-full border border-border bg-input px-3 py-1.5">
             <Search size={18} className="text-blue-400" />
             <input
               ref={ref}
@@ -466,7 +484,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search clips..."
+              placeholder={t('controlBar.searchPlaceholder')}
               className="flex-1 border-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
             <button
@@ -491,7 +509,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         <div
           className="no-drag no-scrollbar flex h-8 max-w-[174px] shrink-0 items-center overflow-x-auto rounded-full border border-border/60 bg-card/90 px-1.5"
           role="toolbar"
-          aria-label="Filter clips"
+          aria-label={t('controlBar.filterClips')}
         >
           <div ref={filterListRef} className="relative flex items-center gap-1">
             {/* Sliding highlight behind the active pill */}
@@ -504,13 +522,13 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 opacity: pillHighlight.visible ? 1 : 0,
               }}
             />
-            {CLIP_FILTERS.map(({ key, label, Icon }) => (
+            {CLIP_FILTERS.map(({ key, labelKey, Icon }) => (
               <button
                 key={key}
                 data-pill-key={key}
                 onClick={() => onClipFilterChange?.(clipFilter === key ? null : key)}
-                title={label}
-                aria-label={`Filter by ${label}`}
+                title={t(labelKey)}
+                aria-label={t('controlBar.filterBy', { label: t(labelKey) })}
                 aria-pressed={clipFilter === key}
                 className={clsx(
                   'relative z-10 flex h-6 min-w-6 items-center justify-center rounded-full transition-colors',
@@ -525,7 +543,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
             {activeFilter && (
               <button
                 onClick={() => onClipFilterChange?.(null)}
-                title="Clear type filter"
+                title={t('controlBar.clearTypeFilter')}
                 className="relative z-10 ml-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <X size={13} />
@@ -537,7 +555,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
       {showResultCount && (
         <span className="no-drag shrink-0 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground">
-          {activeFilter?.label ?? 'Results'} · {resultCount}
+          {activeFilter ? t(activeFilter.labelKey) : t('controlBar.results')} · {resultCount}
           {resultHasMore ? '+' : ''}
         </span>
       )}
@@ -546,7 +564,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         <div className="no-drag flex max-w-[180px] items-center gap-1 overflow-hidden">
           <button
             onClick={() => onSearchChange('')}
-            title="Clear search text"
+            title={t('controlBar.clearSearchText')}
             className="flex min-w-0 items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <span className="truncate">"{searchQuery.trim()}"</span>
@@ -559,7 +577,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       <div
         ref={scrollContainerRef}
         role="tablist"
-        aria-label="Clip folders"
+        aria-label={t('controlBar.clipFolders')}
         className="no-drag no-scrollbar mask-gradient-right flex min-w-0 flex-1 items-center gap-2 overflow-x-auto p-1"
         onWheel={(e) => {
           if (scrollContainerRef.current) {
@@ -755,8 +773,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                   ? 'bg-amber-500/15 text-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.16)] ring-1 ring-amber-300/25'
                   : 'text-amber-400/55 hover:bg-amber-500/10 hover:text-amber-300'
             )}
-            title={isScratchpadVisible ? 'Hide scratchpad' : 'Show scratchpad'}
-            aria-label={isScratchpadVisible ? 'Hide scratchpad' : 'Show scratchpad'}
+            title={t(
+              isScratchpadVisible ? 'controlBar.hideScratchpad' : 'controlBar.showScratchpad'
+            )}
+            aria-label={t(
+              isScratchpadVisible ? 'controlBar.hideScratchpad' : 'controlBar.showScratchpad'
+            )}
             aria-pressed={isScratchpadVisible}
           >
             <StickyNote size={18} />
@@ -781,8 +803,10 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                 : 'text-muted-foreground/40 hover:bg-accent hover:text-foreground'
             )}
-            title={isIncognito ? 'Incognito ON — clipboard not recorded' : 'Enable incognito mode'}
-            aria-label={isIncognito ? 'Disable incognito mode' : 'Enable incognito mode'}
+            title={t(isIncognito ? 'controlBar.incognitoOn' : 'controlBar.incognitoEnable')}
+            aria-label={t(
+              isIncognito ? 'controlBar.incognitoDisable' : 'controlBar.incognitoEnable'
+            )}
             aria-pressed={isIncognito}
           >
             <EyeOff size={18} />
@@ -790,14 +814,14 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         )}
         <button
           onClick={onAddClick}
-          aria-label="Create new folder"
+          aria-label={t('controlBar.createFolder')}
           className="rounded-lg p-2 text-emerald-400 transition-colors hover:bg-emerald-500/10"
         >
           <Plus size={20} />
         </button>
         <button
           onClick={onMoreClick}
-          aria-label="Open settings"
+          aria-label={t('controlBar.openSettings')}
           className="rounded-lg p-2 text-amber-400 transition-colors hover:bg-amber-500/10"
         >
           <MoreHorizontal size={20} />

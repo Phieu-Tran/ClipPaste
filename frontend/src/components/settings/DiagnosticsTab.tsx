@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
 import {
   Activity,
@@ -66,6 +67,7 @@ function StatCard({
 }
 
 export function DiagnosticsTab() {
+  const { t } = useTranslation();
   const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics | null>(null);
   const [historySize, setHistorySize] = useState<number | null>(null);
   const [logs, setLogs] = useState<ErrorLogEntry[]>(() => getErrorLogEntries());
@@ -93,11 +95,11 @@ export function DiagnosticsTab() {
       setLogs(getErrorLogEntries());
     } catch (error) {
       console.error('Failed to load diagnostics:', error);
-      toast.error(`Failed to load diagnostics: ${error}`);
+      toast.error(t('diagnostics.loadFailed', { error: String(error) }));
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refresh();
@@ -114,74 +116,84 @@ export function DiagnosticsTab() {
     clearIconCache();
     setImageStats(getImageDataUrlCacheStats());
     setIconStats(getIconCacheStats());
-    toast.success('Frontend caches cleared');
+    toast.success(t('diagnostics.cachesCleared'));
   };
 
   const handleClearLogs = () => {
     clearErrorLog();
     setLogs([]);
-    toast.success('Error log cleared');
+    toast.success(t('diagnostics.logCleared'));
   };
 
   return (
     <section className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Diagnostics</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Runtime, cache, and recent errors.</p>
+          <h2 className="text-lg font-semibold">{t('diagnostics.title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('diagnostics.subtitle')}</p>
         </div>
         <button onClick={refresh} disabled={refreshing} className="btn btn-secondary h-8 text-xs">
           <RefreshCw size={13} className={refreshing ? 'mr-1.5 animate-spin' : 'mr-1.5'} />
-          Refresh
+          {t('diagnostics.refresh')}
         </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           icon={Activity}
-          label="Private RAM"
+          label={t('diagnostics.privateRam')}
           value={formatBytes(diagnostics?.app.private_bytes ?? 0)}
-          detail={`Working set ${formatBytes(diagnostics?.app.working_set_bytes ?? 0)}`}
+          detail={t('diagnostics.workingSet', {
+            size: formatBytes(diagnostics?.app.working_set_bytes ?? 0),
+          })}
         />
         <StatCard
           icon={HardDrive}
-          label="Dev helpers"
+          label={t('diagnostics.devHelpers')}
           value={formatBytes(devHelperBytes)}
-          detail={`${diagnostics?.dev_helpers.length ?? 0} matching processes`}
+          detail={t('diagnostics.matchingProcesses', {
+            count: diagnostics?.dev_helpers.length ?? 0,
+          })}
         />
         <StatCard
           icon={Database}
-          label="History"
+          label={t('diagnostics.history')}
           value={historySize == null ? '-' : historySize.toLocaleString()}
-          detail="Total stored clips"
+          detail={t('diagnostics.totalStoredClips')}
         />
         <StatCard
           icon={ImageIcon}
-          label="Image cache"
+          label={t('diagnostics.imageCache')}
           value={formatBytes(imageStats.estimatedBytes)}
-          detail={`${imageStats.entries} entries, ${imageStats.inflight} loading`}
+          detail={t('diagnostics.cacheEntries', {
+            entries: imageStats.entries,
+            loading: imageStats.inflight,
+          })}
         />
       </div>
 
       <div className="rounded-lg border border-border bg-card/45 p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold">Frontend cache</div>
+            <div className="text-sm font-semibold">{t('diagnostics.frontendCache')}</div>
             <div className="text-xs text-muted-foreground">
-              Icons {iconStats.entries} entries / {formatBytes(iconStats.estimatedBytes)}
+              {t('diagnostics.iconStats', {
+                entries: iconStats.entries,
+                size: formatBytes(iconStats.estimatedBytes),
+              })}
             </div>
           </div>
           <button onClick={handleClearCaches} className="btn btn-secondary h-8 text-xs">
             <Trash2 size={13} className="mr-1.5" />
-            Clear caches
+            {t('diagnostics.clearCaches')}
           </button>
         </div>
         {diagnostics?.dev_helpers.length ? (
           <div className="overflow-hidden rounded-md border border-border">
             <div className="grid grid-cols-[minmax(0,1fr)_72px_96px] gap-2 bg-background/40 px-3 py-2 text-[10px] font-medium uppercase text-muted-foreground">
-              <span>Process</span>
-              <span>PID</span>
-              <span className="text-right">RAM</span>
+              <span>{t('diagnostics.process')}</span>
+              <span>{t('diagnostics.pid')}</span>
+              <span className="text-right">{t('diagnostics.ram')}</span>
             </div>
             {diagnostics.dev_helpers.slice(0, 6).map((process) => (
               <div
@@ -198,7 +210,7 @@ export function DiagnosticsTab() {
           </div>
         ) : (
           <div className="rounded-md border border-border bg-background/30 p-3 text-xs text-muted-foreground">
-            No dev helper process detected.
+            {t('diagnostics.noDevHelpers')}
           </div>
         )}
       </div>
@@ -208,9 +220,11 @@ export function DiagnosticsTab() {
           <div className="flex items-center gap-2">
             <Bug size={15} className="text-rose-300" />
             <div>
-              <div className="text-sm font-semibold">Error log</div>
+              <div className="text-sm font-semibold">{t('diagnostics.errorLog')}</div>
               <div className="text-xs text-muted-foreground">
-                {logs.length ? `${logs.length} captured` : 'No captured errors'}
+                {logs.length
+                  ? t('diagnostics.captured', { count: logs.length })
+                  : t('diagnostics.noCaptured')}
               </div>
             </div>
           </div>
@@ -220,14 +234,14 @@ export function DiagnosticsTab() {
             className="btn btn-secondary h-8 text-xs"
           >
             <Trash2 size={13} className="mr-1.5" />
-            Clear log
+            {t('diagnostics.clearLog')}
           </button>
         </div>
 
         {logs.length === 0 ? (
           <div className="flex items-center gap-2 rounded-md border border-border bg-background/30 p-3 text-xs text-muted-foreground">
             <AlertTriangle size={14} className="text-muted-foreground/60" />
-            No recent frontend errors.
+            {t('diagnostics.noRecentErrors')}
           </div>
         ) : (
           <div className="max-h-72 space-y-2 overflow-y-auto pr-1">

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Database,
   ImageIcon,
@@ -55,10 +56,12 @@ function toDateStr(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
-function getDayLabel(dateStr: string): string {
+/** Short weekday label for the activity chart. Uses Intl rather than a hard-coded
+ *  array — the previous list was Vietnamese abbreviations shipped inside the
+ *  English UI, and Intl already localises this for every language we add. */
+function getDayLabel(dateStr: string, locale: string): string {
   const d = new Date(dateStr + 'T00:00:00');
-  const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-  return days[d.getDay()];
+  return new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(d);
 }
 
 function DashboardImageThumb({ clipId }: { clipId: string }) {
@@ -107,6 +110,7 @@ export function DashboardTab({
   onRefreshStats,
   onCheckDbIntegrity,
 }: DashboardTabProps) {
+  const { t, i18n } = useTranslation();
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
   const runAction = async (key: string, action: () => Promise<void>) => {
@@ -124,13 +128,13 @@ export function DashboardTab({
       <div className="space-y-4">
         {dashStatsError ? (
           <section className="rounded-xl border border-destructive/20 bg-destructive/10 p-6 text-center">
-            <div className="text-sm font-medium text-destructive">Dashboard failed to load</div>
+            <div className="text-sm font-medium text-destructive">{t('dashboard.loadFailed')}</div>
             <div className="mt-1 text-xs text-muted-foreground">{dashStatsError}</div>
             <button
               onClick={() => runAction('refresh', onRefreshStats)}
               className="btn btn-secondary mt-4 text-xs"
             >
-              Retry
+              {t('dashboard.retry')}
             </button>
           </section>
         ) : (
@@ -145,10 +149,8 @@ export function DashboardTab({
             </section>
             <section className="rounded-xl border border-border bg-card/40 p-6 text-center">
               <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-              <div className="text-sm font-medium">Loading dashboard</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Reading local storage and clipboard stats...
-              </div>
+              <div className="text-sm font-medium">{t('dashboard.loading')}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{t('dashboard.loadingHint')}</div>
             </section>
           </>
         )}
@@ -165,22 +167,22 @@ export function DashboardTab({
           <span className="text-xl font-bold text-indigo-400">
             {dashStats.total.toLocaleString()}
           </span>
-          <span className="text-[10px] text-muted-foreground">Total</span>
+          <span className="text-[10px] text-muted-foreground">{t('dashboard.total')}</span>
         </div>
         <div className="flex flex-col items-center rounded-xl border border-border bg-card/50 p-3">
           <CalendarDays size={16} className="mb-1 text-emerald-400" />
           <span className="text-xl font-bold text-emerald-400">{dashStats.today}</span>
-          <span className="text-[10px] text-muted-foreground">Today</span>
+          <span className="text-[10px] text-muted-foreground">{t('dashboard.today')}</span>
         </div>
         <div className="flex flex-col items-center rounded-xl border border-border bg-card/50 p-3">
           <ImageIcon size={16} className="mb-1 text-cyan-400" />
           <span className="text-xl font-bold text-cyan-400">{dashStats.images}</span>
-          <span className="text-[10px] text-muted-foreground">Images</span>
+          <span className="text-[10px] text-muted-foreground">{t('subtype.image')}</span>
         </div>
         <div className="flex flex-col items-center rounded-xl border border-border bg-card/50 p-3">
           <FolderIcon size={16} className="mb-1 text-amber-400" />
           <span className="text-xl font-bold text-amber-400">{dashStats.folders}</span>
-          <span className="text-[10px] text-muted-foreground">Folders</span>
+          <span className="text-[10px] text-muted-foreground">{t('folders.statFolders')}</span>
         </div>
       </section>
 
@@ -190,14 +192,14 @@ export function DashboardTab({
           className="flex min-h-[58px] items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2 text-left text-xs hover:bg-accent/40"
         >
           <Settings size={15} className="text-primary" />
-          Storage Settings
+          {t('dashboard.storageSettings')}
         </button>
         <button
           onClick={onOpenStorageSettings}
           className="flex min-h-[58px] items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2 text-left text-xs hover:bg-accent/40"
         >
           <ImageIcon size={15} className="text-cyan-400" />
-          Preview Images
+          {t('dashboard.previewImages')}
         </button>
         <button
           onClick={() => runAction('export', onExportBackup)}
@@ -209,7 +211,7 @@ export function DashboardTab({
           ) : (
             <Download size={15} className="text-emerald-400" />
           )}
-          {runningAction === 'export' ? 'Exporting...' : 'Export Backup'}
+          {runningAction === 'export' ? t('backup.exportingShort') : t('dashboard.exportBackup')}
         </button>
         <button
           onClick={() => runAction('duplicates', onRemoveDuplicates)}
@@ -221,7 +223,7 @@ export function DashboardTab({
           ) : (
             <Layers2 size={15} className="text-amber-400" />
           )}
-          {runningAction === 'duplicates' ? 'Removing...' : 'Remove Duplicates'}
+          {runningAction === 'duplicates' ? t('backup.removing') : t('backup.dedupeTitle')}
         </button>
         <button
           onClick={() => runAction('integrity', onCheckDbIntegrity)}
@@ -233,22 +235,26 @@ export function DashboardTab({
           ) : (
             <ShieldCheck size={15} className="text-violet-400" />
           )}
-          {runningAction === 'integrity' ? 'Checking...' : 'Verify DB'}
+          {runningAction === 'integrity' ? t('dashboard.checking') : t('dashboard.verifyDb')}
         </button>
       </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-muted-foreground">Storage Management</h3>
+          <h3 className="text-sm font-medium text-muted-foreground">
+            {t('dashboard.storageManagement')}
+          </h3>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
-              {formatBytes(dashStats.db_size + dashStats.images_size)} total
+              {t('dashboard.totalSize', {
+                size: formatBytes(dashStats.db_size + dashStats.images_size),
+              })}
             </span>
             <button
               onClick={() => runAction('refresh', onRefreshStats)}
               disabled={!!runningAction}
               className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-              title="Refresh dashboard"
+              title={t('dashboard.refresh')}
             >
               <RefreshCw
                 size={13}
@@ -262,10 +268,10 @@ export function DashboardTab({
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <HardDrive size={15} className="text-emerald-400" />
-                <span className="text-sm font-medium">Local storage</span>
+                <span className="text-sm font-medium">{t('dashboard.localStorage')}</span>
               </div>
               <span className="text-xs text-muted-foreground">
-                {dashStats.images.toLocaleString()} image clips
+                {t('dashboard.imageClips', { count: dashStats.images.toLocaleString() })}
               </span>
             </div>
             {(() => {
@@ -280,11 +286,11 @@ export function DashboardTab({
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md bg-background/50 p-2">
-                      <div className="text-muted-foreground">Database</div>
+                      <div className="text-muted-foreground">{t('backup.database')}</div>
                       <div className="font-semibold">{formatBytes(dashStats.db_size)}</div>
                     </div>
                     <div className="rounded-md bg-background/50 p-2">
-                      <div className="text-muted-foreground">Image files</div>
+                      <div className="text-muted-foreground">{t('backup.imageFiles')}</div>
                       <div className="font-semibold">{formatBytes(dashStats.images_size)}</div>
                     </div>
                   </div>
@@ -296,18 +302,21 @@ export function DashboardTab({
           <div className="rounded-xl border border-border bg-card/50 p-4">
             <div className="mb-3 flex items-center gap-2">
               <ImageIcon size={15} className="text-cyan-400" />
-              <span className="text-sm font-medium">14-day cleanup</span>
+              <span className="text-sm font-medium">{t('dashboard.cleanup14d')}</span>
             </div>
             <div className="text-2xl font-semibold text-cyan-300">
               {dashStats.old_images_14d.count.toLocaleString()}
             </div>
             <div className="text-xs text-muted-foreground">
-              {formatBytes(dashStats.old_images_14d.bytes)} reclaimable
+              {t('backup.reclaimableShort', {
+                size: formatBytes(dashStats.old_images_14d.bytes),
+              })}
             </div>
             {dashStats.old_images_14d.protected_count > 0 && (
               <div className="mt-2 text-[11px] text-muted-foreground">
-                {dashStats.old_images_14d.protected_count.toLocaleString()} old image clips are
-                protected.
+                {t('dashboard.protectedOldImages', {
+                  count: dashStats.old_images_14d.protected_count.toLocaleString(),
+                })}
               </div>
             )}
           </div>
@@ -315,34 +324,36 @@ export function DashboardTab({
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Content Mix</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">{t('dashboard.contentMix')}</h3>
         <div className="grid grid-cols-4 gap-2">
           <div className="rounded-lg border border-border bg-card/40 p-3">
             <Database size={14} className="mb-1 text-slate-300" />
             <div className="text-sm font-semibold">{dashStats.text.toLocaleString()}</div>
-            <div className="text-[10px] text-muted-foreground">Text</div>
+            <div className="text-[10px] text-muted-foreground">{t('subtype.text')}</div>
           </div>
           <div className="rounded-lg border border-border bg-card/40 p-3">
             <Link size={14} className="mb-1 text-blue-400" />
             <div className="text-sm font-semibold">{dashStats.urls.toLocaleString()}</div>
-            <div className="text-[10px] text-muted-foreground">Links</div>
+            <div className="text-[10px] text-muted-foreground">{t('dashboard.links')}</div>
           </div>
           <div className="rounded-lg border border-border bg-card/40 p-3">
             <Pin size={14} className="mb-1 text-amber-400" />
             <div className="text-sm font-semibold">{dashStats.pinned.toLocaleString()}</div>
-            <div className="text-[10px] text-muted-foreground">Pinned</div>
+            <div className="text-[10px] text-muted-foreground">{t('folders.pinned')}</div>
           </div>
           <div className="rounded-lg border border-border bg-card/40 p-3">
             <ShieldAlert size={14} className="mb-1 text-rose-400" />
             <div className="text-sm font-semibold">{dashStats.sensitive.toLocaleString()}</div>
-            <div className="text-[10px] text-muted-foreground">Sensitive</div>
+            <div className="text-[10px] text-muted-foreground">{t('dashboard.sensitive')}</div>
           </div>
         </div>
       </section>
 
       {/* Date picker + Search */}
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">History Timeline</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">
+          {t('dashboard.historyTimeline')}
+        </h3>
         <div className="flex gap-2">
           <div className="flex items-center gap-1">
             <button
@@ -360,8 +371,7 @@ export function DashboardTab({
               value={dashDate}
               onChange={(e) => setDashDate(e.target.value)}
               max={toDateStr(new Date())}
-              className="rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              style={{ colorScheme: 'dark' }}
+              className="field"
             />
             <button
               onClick={() => {
@@ -384,17 +394,17 @@ export function DashboardTab({
             type="text"
             value={dashSearch}
             onChange={(e) => setDashSearch(e.target.value)}
-            placeholder="Search in this day..."
-            className="flex-1 rounded-lg border border-border bg-input px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder={t('dashboard.searchDay')}
+            className="field flex-1"
           />
           {dashStats && dashStats.top_apps.length > 0 && (
             <select
               value={dashSourceApp || ''}
               onChange={(e) => setDashSourceApp(e.target.value || null)}
-              className="rounded-lg border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              style={{ colorScheme: 'dark', maxWidth: 130 }}
+              className="field field-sm"
+              style={{ maxWidth: 130 }}
             >
-              <option value="">All apps</option>
+              <option value="">{t('dashboard.allApps')}</option>
               {dashStats.top_apps.map((app) => (
                 <option key={app.app} value={app.app}>
                   {app.app}
@@ -409,7 +419,8 @@ export function DashboardTab({
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
-            {dashDate === toDateStr(new Date()) ? 'Today' : dashDate} — {dashClips.length} clips
+            {dashDate === toDateStr(new Date()) ? t('dashboard.today') : dashDate} —{' '}
+            {t('dashboard.clipCount', { count: dashClips.length })}
           </span>
         </div>
         {dashClipsLoading ? (
@@ -418,7 +429,7 @@ export function DashboardTab({
           </div>
         ) : dashClips.length === 0 ? (
           <div className="rounded-lg border border-border/50 bg-card/30 py-6 text-center text-sm text-muted-foreground/50">
-            No clips on this day
+            {t('dashboard.noClipsToday')}
           </div>
         ) : (
           <div className="max-h-[300px] space-y-1 overflow-y-auto rounded-lg border border-border/50 bg-card/30 p-2">
@@ -509,7 +520,7 @@ export function DashboardTab({
 
       {/* Activity Chart */}
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Activity (last 7 days)</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">{t('dashboard.activity')}</h3>
         {dashStats.daily.length > 0 ? (
           <div className="rounded-xl border border-border bg-card/50 p-4">
             {(() => {
@@ -541,7 +552,7 @@ export function DashboardTab({
                           d.day === dashDate ? 'font-bold text-indigo-400' : 'text-muted-foreground'
                         )}
                       >
-                        {getDayLabel(d.day)}
+                        {getDayLabel(d.day, i18n.language)}
                       </span>
                     </div>
                   ))}
@@ -558,7 +569,7 @@ export function DashboardTab({
 
       {/* Top Source Apps */}
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Top source apps</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">{t('dashboard.topApps')}</h3>
         {dashStats.top_apps.length > 0 ? (
           <div className="space-y-2">
             {(() => {
@@ -599,7 +610,7 @@ export function DashboardTab({
       {/* Most Pasted + Storage */}
       <div className="grid grid-cols-2 gap-4">
         <section className="space-y-2">
-          <h3 className="text-xs font-medium text-muted-foreground">Most pasted</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t('dashboard.mostPasted')}</h3>
           {dashStats.most_pasted.length > 0 ? (
             <div className="space-y-1">
               {dashStats.most_pasted.map((clip, i) => (
@@ -617,22 +628,22 @@ export function DashboardTab({
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-              Paste counts will appear after clips are reused
+              {t('dashboard.mostPastedHint')}
             </div>
           )}
         </section>
         <section className="space-y-2">
-          <h3 className="text-xs font-medium text-muted-foreground">Storage</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t('dashboard.storage')}</h3>
           <div className="space-y-2">
             <div className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2">
               <HardDrive size={12} className="text-muted-foreground" />
               <span className="text-xs font-medium">{formatBytes(dashStats.db_size)}</span>
-              <span className="text-[10px] text-muted-foreground">DB</span>
+              <span className="text-[10px] text-muted-foreground">{t('dashboard.db')}</span>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2">
               <ImageIcon size={12} className="text-muted-foreground" />
               <span className="text-xs font-medium">{formatBytes(dashStats.images_size)}</span>
-              <span className="text-[10px] text-muted-foreground">Images</span>
+              <span className="text-[10px] text-muted-foreground">{t('subtype.image')}</span>
             </div>
           </div>
         </section>

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Internal refactor (no behavior change)**: split the remaining oversized frontend files — `FoldersTab` into `FolderSidebarItem`/`FolderClipRow`/`MoveClipPopover`/`FolderVisuals` (1,003 → ~640 lines), `GeneralTab` theme/effect catalogs into `generalTabOptions` and the Privacy Exceptions section into `IgnoredAppsSection` (1,373 → ~830 lines), and `ScratchpadWindow` helpers/hooks/`ScratchpadModal`/`NoteCard` into `windows/scratchpad/` (1,394 → ~820 lines). Backend `save_settings` rewritten table-driven (INT/BOOL/STRING spec tables) — adding a new setting is now a one-line change.
+- **Removed dead code**: `GeneralTab` no longer declares unused `updateProgress`/`handleCheckUpdate`/`appVersion` props.
+- **Dependencies**: date-fns 2 → 4, sqlx 0.7 → 0.8 (no code changes required).
+- **Docs**: `.claude/CLAUDE.md` and `AGENTS.md` resynced with the codebase (macOS dropped, FTS5 hybrid search, CLI mode, new settings tabs/hooks, sync encryption status, full command list).
+
 ## [1.10.23] - 2026-07-09
 
 ### Changed

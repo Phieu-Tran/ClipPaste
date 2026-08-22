@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface NoteModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface NoteModalProps {
 }
 
 export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: NoteModalProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
@@ -64,13 +66,13 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
       }}
     >
       <div className="flex w-[80%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">
-        <p className="text-xs text-muted-foreground">Note · Enter to save · Esc to cancel</p>
+        <p className="text-xs text-muted-foreground">{t('noteModal.hint')}</p>
         <input
           ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Add a note..."
-          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+          placeholder={t('noteModal.placeholder')}
+          className="field w-full"
         />
         <div className="flex justify-end gap-2">
           {initialNote && (
@@ -80,7 +82,7 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
               }}
               className="rounded-md px-3 py-1 text-sm text-red-400 hover:bg-red-500/10"
             >
-              Remove
+              {t('common.remove')}
             </button>
           )}
           <div className="flex-1" />
@@ -88,13 +90,10 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
             onClick={onClose}
             className="rounded-md px-3 py-1 text-sm text-muted-foreground hover:bg-accent"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
-          <button
-            onClick={handleSave}
-            className="rounded-md bg-primary px-3 py-1 text-sm text-primary-foreground hover:opacity-90"
-          >
-            Save
+          <button onClick={handleSave} className="btn btn-primary btn-sm">
+            {t('common.save')}
           </button>
         </div>
       </div>

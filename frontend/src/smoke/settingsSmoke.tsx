@@ -12,6 +12,7 @@ const smokeSettings: Settings = {
   hotkey: 'Ctrl+Alt+V',
   theme: 'system',
   interface_theme: 'default',
+  language: 'en',
   font_family: 'system',
   ui_density: 'comfortable',
   mica_effect: 'clear',

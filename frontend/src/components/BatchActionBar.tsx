@@ -1,6 +1,7 @@
 import { useRef, useState, useMemo, useCallback, useEffect } from 'react';
 import { Clipboard, FolderInput, Inbox, Pin, PinOff, Search, Trash2, X } from 'lucide-react';
 import { FolderItem } from '../types';
+import { useTranslation } from 'react-i18next';
 
 interface BatchActionBarProps {
   selectedClipIds: Set<string>;
@@ -25,6 +26,7 @@ export function BatchActionBar({
   onMove,
   onCancel,
 }: BatchActionBarProps) {
+  const { t } = useTranslation();
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [bulkMoveSearch, setBulkMoveSearch] = useState('');
   const bulkMoveRef = useRef<HTMLDivElement | null>(null);
@@ -61,10 +63,10 @@ export function BatchActionBar({
   const showMoveButton = folders.filter((f) => !f.is_system).length > 0 || selectedFolder;
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 pointer-events-none absolute bottom-5 left-0 right-0 z-40 flex justify-center duration-200">
+    <div className="animate-slide-up-in pointer-events-none absolute bottom-5 left-0 right-0 z-40 flex justify-center">
       <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border/60 bg-background/95 px-3 py-2 shadow-xl backdrop-blur-md">
         <span className="min-w-[82px] text-xs font-semibold text-primary">
-          {selectedClipIds.size} selected
+          {t('batchBar.selected', { count: selectedClipIds.size })}
         </span>
         <div className="h-3.5 w-px bg-border/50" />
         <button
@@ -72,28 +74,28 @@ export function BatchActionBar({
           className="flex items-center gap-1.5 rounded-md bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
         >
           <Clipboard size={13} />
-          Paste
+          {t('common.paste')}
         </button>
         <button
           onClick={onPin}
           className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Pin size={13} />
-          Pin
+          {t('common.pin')}
         </button>
         <button
           onClick={onUnpin}
           className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <PinOff size={13} />
-          Unpin
+          {t('common.unpin')}
         </button>
         <button
           onClick={onDelete}
           className="flex items-center gap-1.5 rounded-md bg-destructive/15 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
         >
           <Trash2 size={13} />
-          Delete
+          {t('common.delete')}
         </button>
         {showMoveButton && (
           <div ref={bulkMoveRef} className="relative">
@@ -102,7 +104,7 @@ export function BatchActionBar({
               className="flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
             >
               <FolderInput size={13} className="text-muted-foreground" />
-              Move
+              {t('common.move')}
             </button>
             {bulkMoveOpen && (
               <div className="absolute bottom-full left-0 z-50 mb-2 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
@@ -112,7 +114,7 @@ export function BatchActionBar({
                     autoFocus
                     value={bulkMoveSearch}
                     onChange={(e) => setBulkMoveSearch(e.target.value)}
-                    placeholder="Search folders..."
+                    placeholder={t('batchBar.searchFolders')}
                     className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                   />
                 </div>
@@ -122,7 +124,7 @@ export function BatchActionBar({
                     className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
                   >
                     <Inbox size={13} className="text-muted-foreground" />
-                    <span className="flex-1">All</span>
+                    <span className="flex-1">{t('common.all')}</span>
                   </button>
                   {filteredFolders.map((folder) => (
                     <button
@@ -139,7 +141,7 @@ export function BatchActionBar({
                   ))}
                   {filteredFolders.length === 0 && (
                     <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
-                      No matching folder
+                      {t('batchBar.noMatchingFolder')}
                     </div>
                   )}
                 </div>
@@ -153,7 +155,7 @@ export function BatchActionBar({
           className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <X size={13} />
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

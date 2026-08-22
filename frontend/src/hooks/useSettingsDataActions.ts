@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
@@ -25,20 +27,37 @@ export interface ConfirmOptions {
   action: () => Promise<void>;
 }
 
-function backupPreviewDetails(preview: ImportBackupPreview): string[] {
+/** Takes `t` as an argument rather than calling a hook: this runs outside a
+ *  component, so there is no React context to read the instance from. */
+function backupPreviewDetails(preview: ImportBackupPreview, t: TFunction): string[] {
   const dateRange =
     preview.oldest_clip_at && preview.newest_clip_at
-      ? `Clip dates: ${preview.oldest_clip_at.slice(0, 10)} to ${preview.newest_clip_at.slice(0, 10)}.`
-      : 'Clip dates: not available.';
+      ? t('backup.clipDates', {
+          from: preview.oldest_clip_at.slice(0, 10),
+          to: preview.newest_clip_at.slice(0, 10),
+        })
+      : t('backup.clipDatesUnavailable');
 
   return [
-    `${preview.clip_count.toLocaleString()} clips (${preview.image_clip_count.toLocaleString()} image clips).`,
-    `${preview.folder_count.toLocaleString()} folders, ${preview.scratchpad_count.toLocaleString()} scratchpad notes.`,
-    `${preview.image_count.toLocaleString()} image files, ${formatBytes(preview.image_bytes)}.`,
-    `Database: ${formatBytes(preview.db_size)}. Total extracted size: ${formatBytes(preview.total_uncompressed_bytes)}.`,
-    `${preview.settings_count.toLocaleString()} settings rows.`,
+    t('backup.clipCounts', {
+      clips: preview.clip_count.toLocaleString(),
+      images: preview.image_clip_count.toLocaleString(),
+    }),
+    t('backup.folderCounts', {
+      folders: preview.folder_count.toLocaleString(),
+      notes: preview.scratchpad_count.toLocaleString(),
+    }),
+    t('backup.imageFiles', {
+      count: preview.image_count.toLocaleString(),
+      size: formatBytes(preview.image_bytes),
+    }),
+    t('backup.dbSize', {
+      db: formatBytes(preview.db_size),
+      total: formatBytes(preview.total_uncompressed_bytes),
+    }),
+    t('backup.settingsRows', { count: preview.settings_count.toLocaleString() }),
     dateRange,
-    `Backup file: ${preview.path}`,
+    t('backup.file', { path: preview.path }),
   ];
 }
 
@@ -66,19 +85,20 @@ export function useSettingsDataActions({
   setDataDirectory,
   setImportRestartRequired,
 }: SettingsDataActionDeps) {
+  const { t } = useTranslation();
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
 
   const handleCheckUpdate = async () => {
-    const loadingToast = toast.loading('Checking for updates...');
+    const loadingToast = toast.loading(t('update.checking'));
     try {
       const update = await check();
       toast.dismiss(loadingToast);
 
       if (update && update.available) {
-        toast.info(`Update v${update.version} available!`, {
+        toast.info(t('update.available', { version: update.version }), {
           duration: 10000,
           action: {
-            label: 'Download & Restart',
+            label: t('update.downloadAndRestart'),
             onClick: async () => {
               try {
                 setUpdateProgress({ percent: 0, downloaded: 0, total: 0 });
@@ -102,43 +122,40 @@ export function useSettingsDataActions({
                 });
 
                 setUpdateProgress(null);
-                toast.success('Update installed. Restarting...');
+                toast.success(t('update.installed'));
                 await relaunch();
               } catch (e) {
                 setUpdateProgress(null);
-                toast.error(`Update failed: ${e}`);
+                toast.error(t('update.failed', { error: String(e) }));
               }
             },
           },
         });
       } else {
-        toast.success('You are on the latest version.');
+        toast.success(t('update.upToDate'));
       }
     } catch (e) {
       toast.dismiss(loadingToast);
-      toast.error(`Check failed: ${e}`);
+      toast.error(t('update.checkFailed', { error: String(e) }));
     }
   };
 
   const handleSelectDataDirectory = async () => {
     if (dataAction) return;
     setDataAction('directory');
-    const loadingToast = toast.loading('Preparing data directory...');
+    const loadingToast = toast.loading(t('backup.preparingDir'));
     try {
       const selectedPath = await cmd.pickFolder();
       if (selectedPath) {
         await cmd.setDataDirectory(selectedPath);
         setDataDirectory(selectedPath);
-        toast.success(
-          'Data directory changed. Please restart the application for changes to take effect.',
-          {
-            duration: 5000,
-          }
-        );
+        toast.success(t('backup.dirChanged'), {
+          duration: 5000,
+        });
       }
     } catch (e) {
       console.error('Failed to select data directory:', e);
-      toast.error(`Failed to select folder: ${e}`);
+      toast.error(t('backup.selectFolderFailed', { error: String(e) }));
     } finally {
       toast.dismiss(loadingToast);
       setDataAction(null);
@@ -147,10 +164,9 @@ export function useSettingsDataActions({
 
   const confirmClearHistory = () => {
     requestConfirm({
-      title: 'Clear History',
-      message:
-        'Are you sure you want to clear your clipboard history? This will only remove items that are not in folders. Items saved in folders will be preserved.',
-      confirmText: 'Clear History',
+      title: t('backup.clearHistoryTitle'),
+      message: t('backup.clearHistoryMessage'),
+      confirmText: t('backup.clearHistoryTitle'),
       variant: 'danger',
       action: async () => {
         if (dataAction) return;
@@ -162,10 +178,10 @@ export function useSettingsDataActions({
           const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
           await refreshDashboardStats(true);
-          toast.success('Clipboard history cleared successfully.');
+          toast.success(t('backup.historyCleared'));
         } catch (error) {
           console.error('Failed to clear history:', error);
-          toast.error(`Failed to clear history: ${error}`);
+          toast.error(t('backup.clearHistoryFailed', { error: String(error) }));
         } finally {
           setDataAction(null);
         }
@@ -175,25 +191,24 @@ export function useSettingsDataActions({
 
   const handleRemoveDuplicates = async () => {
     requestConfirm({
-      title: 'Remove Duplicates',
-      message:
-        'ClipPaste will keep one copy per content hash and remove duplicate unprotected clips.',
-      confirmText: 'Remove Duplicates',
+      title: t('backup.dedupeTitle'),
+      message: t('backup.dedupeMessage'),
+      confirmText: t('backup.dedupeTitle'),
       variant: 'warning',
-      details: ['Pinned clips and clips inside folders are preserved.'],
+      details: [t('backup.dedupeDetail')],
       action: async () => {
         if (dataAction) return;
         setDataAction('duplicates');
         try {
           const count = await cmd.removeDuplicateClips();
           clearImageDataUrlCache();
-          toast.success(`Removed ${count} duplicate clips`);
+          toast.success(t('backup.dedupeDone', { count }));
           const newSize = await cmd.getClipboardHistorySize();
           setHistorySize(newSize);
           await refreshDashboardStats(true);
         } catch (error) {
           console.error(error);
-          toast.error(`Failed to remove duplicates: ${error}`);
+          toast.error(t('backup.dedupeFailed', { error: String(error) }));
         } finally {
           setDataAction(null);
         }
@@ -204,13 +219,13 @@ export function useSettingsDataActions({
   const handleExportBackup = async () => {
     if (dataAction) return;
     setDataAction('export');
-    const loadingToast = toast.loading('Exporting backup...');
+    const loadingToast = toast.loading(t('backup.exporting'));
     try {
       const path = await cmd.exportData();
-      toast.success(`Exported to ${path}`);
+      toast.success(t('backup.exported', { path }));
     } catch (error) {
       if (String(error) !== 'Export cancelled') {
-        toast.error(`Export failed: ${error}`);
+        toast.error(t('backup.exportFailed', { error: String(error) }));
       }
     } finally {
       toast.dismiss(loadingToast);
@@ -219,16 +234,16 @@ export function useSettingsDataActions({
   };
 
   const handleCheckDbIntegrity = async () => {
-    const loadingToast = toast.loading('Checking database integrity...');
+    const loadingToast = toast.loading(t('backup.integrityChecking'));
     try {
       const result = await cmd.checkDbIntegrity();
       if (result === 'ok') {
-        toast.success('Database integrity: OK');
+        toast.success(t('backup.integrityOk'));
       } else {
-        toast.error(`Database integrity issue: ${result}`);
+        toast.error(t('backup.integrityIssue', { result }));
       }
     } catch (error) {
-      toast.error(`Integrity check failed: ${error}`);
+      toast.error(t('backup.integrityFailed', { error: String(error) }));
     } finally {
       toast.dismiss(loadingToast);
     }
@@ -237,7 +252,7 @@ export function useSettingsDataActions({
   const handleImportBackup = async (onResult?: (result: ImportBackupResult) => void) => {
     if (dataAction) return;
     setDataAction('import');
-    const previewToast = toast.loading('Reading backup...');
+    const previewToast = toast.loading(t('backup.reading'));
     let preview: ImportBackupPreview;
     try {
       preview = await cmd.previewImportBackup();
@@ -247,7 +262,7 @@ export function useSettingsDataActions({
         onResult?.({ status: 'cancelled' });
       } else {
         onResult?.({ status: 'error', error: message });
-        toast.error(`Import preview failed: ${message}`);
+        toast.error(t('backup.previewFailed', { error: message }));
       }
       return;
     } finally {
@@ -256,29 +271,28 @@ export function useSettingsDataActions({
     }
 
     requestConfirm({
-      title: 'Import Backup',
-      message:
-        'Importing this backup replaces the current database and image folder for this data directory. Create an export first if you need a rollback point.',
-      confirmText: 'Import Backup',
+      title: t('backup.importTitle'),
+      message: t('backup.importMessage'),
+      confirmText: t('backup.importTitle'),
       variant: 'warning',
-      details: [
-        ...backupPreviewDetails(preview),
-        'Restart ClipPaste after import so every window reads the imported data.',
-      ],
+      details: [...backupPreviewDetails(preview, t), t('backup.importRestartHint')],
       action: async () => {
         if (dataAction) return;
         setDataAction('import');
-        const loadingToast = toast.loading('Importing backup...');
+        const loadingToast = toast.loading(t('backup.importing'));
         try {
           await cmd.importData(preview.path);
           clearImageDataUrlCache();
           setImportRestartRequired(true);
           onResult?.({ status: 'success' });
-          toast.success('Backup imported. Restart to apply.', {
+          toast.success(t('backup.imported'), {
             duration: 10000,
             action: {
-              label: 'Restart',
-              onClick: () => relaunch().catch((error) => toast.error(`Restart failed: ${error}`)),
+              label: t('backup.restart'),
+              onClick: () =>
+                relaunch().catch((error) =>
+                  toast.error(t('backup.restartFailed', { error: String(error) }))
+                ),
             },
           });
         } catch (error) {
@@ -287,7 +301,7 @@ export function useSettingsDataActions({
             onResult?.({ status: 'cancelled' });
           } else {
             onResult?.({ status: 'error', error: message });
-            toast.error(`Import failed: ${message}`);
+            toast.error(t('backup.importFailed', { error: message }));
           }
         } finally {
           toast.dismiss(loadingToast);

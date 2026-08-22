@@ -22,16 +22,22 @@ import {
 import { formatDistanceToNowStrict } from 'date-fns';
 import { loadClipImageDataUrl, readCachedImageDataUrl } from '../imageQueue';
 import { getIcon } from '../iconCache';
+import { useTranslation } from 'react-i18next';
 
 /** Loads images through the backend so custom data directories stay supported. */
 function ImageWithFallback({
   clipId,
   alt,
   className,
+  fallbackLabel,
 }: {
   clipId: string;
   alt: string;
   className: string;
+  /** Passed in rather than translated here. This renders once per image card, and
+   *  each useTranslation() is another store subscription mounted and torn down as
+   *  the virtualized list scrolls. */
+  fallbackLabel: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -97,7 +103,7 @@ function ImageWithFallback({
     return (
       <div ref={rootRef} className="flex flex-col items-center gap-1 text-muted-foreground/50">
         <ImageIcon size={24} />
-        <span className="text-[10px]">Image</span>
+        <span className="text-[10px]">{fallbackLabel}</span>
       </div>
     );
   }
@@ -151,16 +157,17 @@ function extractDomain(url: string): string | null {
   }
 }
 
-/** Subtype badge config */
-const SUBTYPE_CONFIG: Record<string, { icon: typeof Link; label: string; color: string }> = {
-  url: { icon: Link, label: 'URL', color: 'text-blue-400' },
-  email: { icon: Mail, label: 'Email', color: 'text-emerald-400' },
-  color: { icon: Palette, label: 'Color', color: 'text-pink-400' },
-  path: { icon: FolderOpen, label: 'Path', color: 'text-amber-400' },
-  phone: { icon: Phone, label: 'Phone', color: 'text-cyan-400' },
-  ip: { icon: Network, label: 'IP', color: 'text-sky-400' },
-  json: { icon: Braces, label: 'JSON', color: 'text-orange-400' },
-  code: { icon: Code2, label: 'Code', color: 'text-violet-400' },
+/** Subtype badge config. `labelKey` rather than a literal because this is a
+ *  module-level const — there is no `t` in scope until a component renders. */
+const SUBTYPE_CONFIG: Record<string, { icon: typeof Link; labelKey: string; color: string }> = {
+  url: { icon: Link, labelKey: 'subtype.url', color: 'text-blue-400' },
+  email: { icon: Mail, labelKey: 'subtype.email', color: 'text-emerald-400' },
+  color: { icon: Palette, labelKey: 'subtype.color', color: 'text-pink-400' },
+  path: { icon: FolderOpen, labelKey: 'subtype.path', color: 'text-amber-400' },
+  phone: { icon: Phone, labelKey: 'subtype.phone', color: 'text-cyan-400' },
+  ip: { icon: Network, labelKey: 'subtype.ip', color: 'text-sky-400' },
+  json: { icon: Braces, labelKey: 'subtype.json', color: 'text-orange-400' },
+  code: { icon: Code2, labelKey: 'subtype.code', color: 'text-violet-400' },
 };
 
 /** Highlight search matches in text */
@@ -237,6 +244,7 @@ export const ClipCard = memo(function ClipCard({
   searchQuery,
   isCopied,
 }: ClipCardProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -256,13 +264,14 @@ export const ClipCard = memo(function ClipCard({
           {clip.thumbnail || clip.content ? (
             <ImageWithFallback
               clipId={clip.id}
-              alt="Clipboard Image"
+              alt={t('clipCard.imageAlt')}
+              fallbackLabel={t('clipCard.image')}
               className="max-h-full max-w-full rounded object-contain shadow-md"
             />
           ) : (
             <div className="flex flex-col items-center gap-1 text-muted-foreground/50">
               <ImageIcon size={24} />
-              <span className="text-[10px]">Image</span>
+              <span className="text-[10px]">{t('clipCard.image')}</span>
             </div>
           )}
         </div>
@@ -310,7 +319,7 @@ export const ClipCard = memo(function ClipCard({
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-1.5 py-1">
             <Mail size={12} className="flex-shrink-0 text-emerald-400" />
-            <span className="text-[11px] font-semibold text-emerald-400">Email</span>
+            <span className="text-[11px] font-semibold text-emerald-400">{t('subtype.email')}</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
@@ -326,7 +335,7 @@ export const ClipCard = memo(function ClipCard({
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-1.5 py-1">
             <FolderOpen size={12} className="flex-shrink-0 text-amber-400" />
-            <span className="text-[11px] font-semibold text-amber-400">Path</span>
+            <span className="text-[11px] font-semibold text-amber-400">{t('subtype.path')}</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
             <HighlightText text={content} query={searchQuery} />
@@ -341,7 +350,7 @@ export const ClipCard = memo(function ClipCard({
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-cyan-500/10 px-1.5 py-1">
             <Phone size={12} className="flex-shrink-0 text-cyan-400" />
-            <span className="text-[11px] font-semibold text-cyan-400">Phone</span>
+            <span className="text-[11px] font-semibold text-cyan-400">{t('subtype.phone')}</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
@@ -356,7 +365,7 @@ export const ClipCard = memo(function ClipCard({
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-sky-500/10 px-1.5 py-1">
             <Network size={12} className="flex-shrink-0 text-sky-400" />
-            <span className="text-[11px] font-semibold text-sky-400">IP</span>
+            <span className="text-[11px] font-semibold text-sky-400">{t('subtype.ip')}</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
@@ -378,7 +387,7 @@ export const ClipCard = memo(function ClipCard({
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-orange-500/10 px-1.5 py-1">
             <Braces size={12} className="flex-shrink-0 text-orange-400" />
-            <span className="text-[11px] font-semibold text-orange-400">JSON</span>
+            <span className="text-[11px] font-semibold text-orange-400">{t('subtype.json')}</span>
           </div>
           <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
             <HighlightText text={formatted} query={searchQuery} />
@@ -393,7 +402,7 @@ export const ClipCard = memo(function ClipCard({
         <div className="flex h-full w-full flex-col gap-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-violet-500/10 px-1.5 py-1">
             <Code2 size={12} className="flex-shrink-0 text-violet-400" />
-            <span className="text-[11px] font-semibold text-violet-400">Code</span>
+            <span className="text-[11px] font-semibold text-violet-400">{t('subtype.code')}</span>
           </div>
           <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
             <HighlightText
@@ -413,7 +422,7 @@ export const ClipCard = memo(function ClipCard({
         </span>
       </pre>
     );
-  }, [clip.id, clip.clip_type, clip.content, clip.thumbnail, clip.subtype, searchQuery]);
+  }, [clip.id, clip.clip_type, clip.content, clip.thumbnail, clip.subtype, searchQuery, t]);
 
   // Generate distinct color based on source app name
   const getAppGradient = (name: string) => {
@@ -456,20 +465,15 @@ export const ClipCard = memo(function ClipCard({
         )}
       >
         <Icon size={9} />
-        {cfg.label}
+        {t(cfg.labelKey)}
       </span>
     );
-  }, [clip.subtype]);
+  }, [clip.subtype, t]);
 
   const cardRef = useRef<HTMLDivElement>(null);
-
   const handleNativeDragStart = (e: React.DragEvent) => {
     // Set data for external drop targets (other apps)
-    if (clip.clip_type === 'image') {
-      e.dataTransfer.setData('text/plain', clip.content);
-    } else {
-      e.dataTransfer.setData('text/plain', clip.content);
-    }
+    e.dataTransfer.setData('text/plain', clip.content);
     e.dataTransfer.effectAllowed = 'copyMove';
 
     // Use the card itself as the drag ghost, offset to center on cursor
@@ -491,7 +495,16 @@ export const ClipCard = memo(function ClipCard({
       data-clip-id={clip.id}
       role="option"
       aria-selected={isSelected}
-      aria-label={`${displayIndex ? `Clip #${displayIndex}. ` : ''}${title} clip: ${clip.preview?.substring(0, 50) || clip.clip_type}. ${clip.is_sensitive ? 'Sensitive content.' : ''}`}
+      aria-label={[
+        displayIndex ? t('clipCard.ariaIndex', { index: displayIndex }) : '',
+        t('clipCard.ariaClip', {
+          app: title,
+          preview: clip.preview?.substring(0, 50) || clip.clip_type,
+        }),
+        clip.is_sensitive ? t('clipCard.ariaSensitive') : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={{
         width: TOTAL_COLUMN_WIDTH - LAYOUT.CARD_GAP,
         height: `calc(100% - ${LAYOUT.CARD_VERTICAL_PADDING * 2}px)`,
@@ -566,7 +579,7 @@ export const ClipCard = memo(function ClipCard({
                 'rounded-md p-1 transition-opacity duration-150 hover:bg-black/10',
                 clip.is_pinned ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'
               )}
-              title={clip.is_pinned ? 'Unpin' : 'Pin'}
+              title={clip.is_pinned ? t('common.unpin') : t('common.pin')}
             >
               <Pin
                 size={14}
@@ -587,7 +600,7 @@ export const ClipCard = memo(function ClipCard({
               copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
             }}
             className="rounded-md p-1 opacity-0 transition-opacity duration-150 hover:bg-black/10 group-hover:opacity-100"
-            title="Copy to clipboard"
+            title={t('clipCard.copyToClipboard')}
           >
             {showCopied ? (
               <Check size={14} className="animate-copy-pulse text-emerald-500" />
@@ -622,8 +635,8 @@ export const ClipCard = memo(function ClipCard({
           <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/40">
             <span>
               {clip.clip_type === 'image'
-                ? (getImageSizeFromMeta(clip.metadata) ?? 'Image')
-                : `${clip.content.length} chars`}
+                ? (getImageSizeFromMeta(clip.metadata) ?? t('clipCard.image'))
+                : t('clipCard.chars', { count: clip.content.length })}
             </span>
             <span className="text-muted-foreground/25">·</span>
             <span title={clip.created_at}>{relativeTime(clip.created_at)}</span>
@@ -632,14 +645,14 @@ export const ClipCard = memo(function ClipCard({
             {folderName && (
               <span
                 className="flex items-center gap-0.5 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-400"
-                title={`In folder: ${folderName}`}
+                title={t('clipCard.inFolder', { name: folderName })}
               >
                 <Folder size={9} className="flex-shrink-0" />
                 {folderName}
               </span>
             )}
             {clip.paste_count > 0 && (
-              <span className="tabular-nums" title="Times pasted">
+              <span className="tabular-nums" title={t('clipCard.timesPasted')}>
                 ×{clip.paste_count}
               </span>
             )}

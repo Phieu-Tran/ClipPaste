@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
@@ -29,6 +30,7 @@ const INTERVAL_OPTIONS = [
 ];
 
 export function SyncTab() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [settings, setSettings] = useState<SyncSettings>({
     enabled: false,
@@ -73,10 +75,10 @@ export function SyncTab() {
     setConnecting(true);
     try {
       const email = await cmd.gdriveAuthorize();
-      toast.success(`Connected as ${email}`);
+      toast.success(t('sync.connectedAs', { email }));
       await loadStatus();
     } catch (e) {
-      toast.error(`Failed to connect: ${e}`);
+      toast.error(t('sync.connectFailed', { error: String(e) }));
     } finally {
       setConnecting(false);
     }
@@ -85,10 +87,10 @@ export function SyncTab() {
   const handleDisconnect = async () => {
     try {
       await cmd.gdriveDisconnect();
-      toast.success('Google Drive disconnected');
+      toast.success(t('sync.disconnected'));
       await loadStatus();
     } catch (e) {
-      toast.error(`Failed to disconnect: ${e}`);
+      toast.error(t('sync.disconnectFailed', { error: String(e) }));
     }
   };
 
@@ -99,7 +101,7 @@ export function SyncTab() {
       toast.success(msg);
       await loadStatus();
     } catch (e) {
-      toast.error(`Sync failed: ${e}`);
+      toast.error(t('sync.syncFailed', { error: String(e) }));
     } finally {
       setSyncing(false);
     }
@@ -110,10 +112,10 @@ export function SyncTab() {
     setSettings(newSettings);
     try {
       await cmd.saveSyncSettings(newSettings);
-      toast.success(enabled ? 'Auto-sync enabled' : 'Auto-sync disabled');
+      toast.success(t(enabled ? 'sync.autoSyncOn' : 'sync.autoSyncOff'));
       await loadStatus();
     } catch (e) {
-      toast.error(`Failed to save settings: ${e}`);
+      toast.error(t('sync.saveFailed', { error: String(e) }));
       setSettings(settings);
     }
   };
@@ -124,7 +126,7 @@ export function SyncTab() {
     try {
       await cmd.saveSyncSettings(newSettings);
     } catch (e) {
-      toast.error(`Failed to save settings: ${e}`);
+      toast.error(t('sync.saveFailed', { error: String(e) }));
       setSettings(settings);
     }
   };
@@ -134,9 +136,9 @@ export function SyncTab() {
     setSettings(newSettings);
     try {
       await cmd.saveSyncSettings(newSettings);
-      toast.success(sync_images ? 'Image sync enabled' : 'Image sync disabled');
+      toast.success(t(sync_images ? 'sync.imageSyncOn' : 'sync.imageSyncOff'));
     } catch (e) {
-      toast.error(`Failed to save settings: ${e}`);
+      toast.error(t('sync.saveFailed', { error: String(e) }));
       setSettings(settings);
     }
   };
@@ -144,14 +146,14 @@ export function SyncTab() {
   const isConnected = status?.connected_email != null;
 
   const formatLastSync = (ts: string | null) => {
-    if (!ts) return 'Never';
+    if (!ts) return t('sync.never');
     try {
       const date = new Date(ts);
       const now = new Date();
       const diff = now.getTime() - date.getTime();
-      if (diff < 60000) return 'Just now';
-      if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-      if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+      if (diff < 60000) return t('sync.justNow');
+      if (diff < 3600000) return t('sync.minutesAgo', { count: Math.floor(diff / 60000) });
+      if (diff < 86400000) return t('sync.hoursAgo', { count: Math.floor(diff / 3600000) });
       return date.toLocaleDateString();
     } catch {
       return ts;
@@ -159,9 +161,9 @@ export function SyncTab() {
   };
 
   const formatTokenExpiry = (expiresAt: number | null | undefined) => {
-    if (!expiresAt) return 'Unknown';
+    if (!expiresAt) return t('sync.unknown');
     const ms = expiresAt * 1000 - Date.now();
-    if (ms <= 0) return 'Expired';
+    if (ms <= 0) return t('sync.expired');
     if (ms < 3600000) return `${Math.max(1, Math.floor(ms / 60000))}m`;
     if (ms < 86400000) return `${Math.floor(ms / 3600000)}h`;
     return `${Math.floor(ms / 86400000)}d`;
@@ -169,24 +171,24 @@ export function SyncTab() {
 
   const stateLabel =
     status?.state === 'syncing'
-      ? 'Syncing'
+      ? t('sync.stateSyncing')
       : status?.state === 'error'
-        ? 'Needs attention'
+        ? t('sync.stateError')
         : status?.state === 'offline'
-          ? 'Offline'
+          ? t('sync.stateOffline')
           : isConnected
             ? settings.enabled
-              ? 'Healthy'
-              : 'Connected'
-            : 'Disconnected';
+              ? t('sync.stateHealthy')
+              : t('sync.stateConnected')
+            : t('sync.stateDisconnected');
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold">Sync</h3>
+      <h3 className="text-lg font-semibold">{t('sync.title')}</h3>
 
       {/* Google Account Section */}
       <div className="rounded-lg border border-border bg-card p-4">
-        <h4 className="mb-3 text-sm font-medium text-foreground">Google Drive</h4>
+        <h4 className="mb-3 text-sm font-medium text-foreground">{t('sync.googleDrive')}</h4>
         {isConnected ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -257,12 +259,14 @@ export function SyncTab() {
                 <Check size={12} className="text-green-500" />
               )}
               <span>
-                Last sync: {formatLastSync(status?.last_sync_at ?? null)}
-                {status?.state === 'syncing' && ' — syncing...'}
-                {status?.state === 'error' && ` — ${status.error_message || 'error'}`}
+                {t('sync.lastSync', { when: formatLastSync(status?.last_sync_at ?? null) })}
+                {status?.state === 'syncing' && ` — ${t('sync.syncingSuffix')}`}
+                {status?.state === 'error' && ` — ${status.error_message || t('sync.errorSuffix')}`}
               </span>
               {status?.pending_changes ? (
-                <span className="ml-auto text-amber-400">{status.pending_changes} pending</span>
+                <span className="ml-auto text-amber-400">
+                  {t('sync.pending', { count: status.pending_changes })}
+                </span>
               ) : null}
             </div>
 
@@ -275,7 +279,9 @@ export function SyncTab() {
             {status?.last_report && (
               <div className="rounded-md border border-border/60 bg-background/40 p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-medium text-foreground">Last sync report</span>
+                  <span className="text-xs font-medium text-foreground">
+                    {t('sync.lastReport')}
+                  </span>
                   <span className="text-[11px] text-muted-foreground">
                     {formatLastSync(status.last_report.completed_at)}
                   </span>
@@ -284,7 +290,9 @@ export function SyncTab() {
                   <div className="flex items-center gap-1.5 rounded bg-card/60 px-2 py-1.5">
                     <ArrowUpFromLine size={12} className="text-blue-400" />
                     <span>
-                      {status.last_report.pushed_clips + status.last_report.pushed_folders} pushed
+                      {t('sync.pushed', {
+                        count: status.last_report.pushed_clips + status.last_report.pushed_folders,
+                      })}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 rounded bg-card/60 px-2 py-1.5">
@@ -314,7 +322,7 @@ export function SyncTab() {
             )}
           >
             {connecting ? <Loader2 size={16} className="animate-spin" /> : <Cloud size={16} />}
-            {connecting ? 'Connecting...' : 'Connect Google Drive'}
+            {connecting ? t('sync.connecting') : t('sync.connect')}
           </button>
         )}
       </div>
@@ -322,13 +330,13 @@ export function SyncTab() {
       {/* Sync Settings — only show when connected */}
       {isConnected && (
         <div className="rounded-lg border border-border bg-card p-4">
-          <h4 className="mb-3 text-sm font-medium text-foreground">Settings</h4>
+          <h4 className="mb-3 text-sm font-medium text-foreground">{t('common.settings')}</h4>
           <div className="space-y-4">
             {/* Auto-sync toggle */}
             <label className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock size={14} className="text-muted-foreground" />
-                <span className="text-sm">Auto-sync</span>
+                <span className="text-sm">{t('sync.autoSync')}</span>
               </div>
               <button
                 onClick={() => handleToggleEnabled(!settings.enabled)}
@@ -349,11 +357,11 @@ export function SyncTab() {
             {/* Interval */}
             {settings.enabled && (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Sync every</span>
+                <span className="text-sm text-muted-foreground">{t('sync.syncEvery')}</span>
                 <select
                   value={settings.interval_seconds}
                   onChange={(e) => handleChangeInterval(Number(e.target.value))}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+                  className="field field-sm"
                 >
                   {INTERVAL_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -368,7 +376,7 @@ export function SyncTab() {
             <label className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Image size={14} className="text-muted-foreground" />
-                <span className="text-sm">Sync images</span>
+                <span className="text-sm">{t('sync.syncImages')}</span>
               </div>
               <button
                 onClick={() => handleToggleSyncImages(!settings.sync_images)}
@@ -396,7 +404,7 @@ export function SyncTab() {
               )}
             >
               <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-              {syncing ? 'Syncing...' : 'Sync Now'}
+              {syncing ? t('sync.syncingNow') : t('sync.syncNow')}
             </button>
           </div>
         </div>
