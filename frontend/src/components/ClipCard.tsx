@@ -101,7 +101,7 @@ function ImageWithFallback({
 
   if (failed) {
     return (
-      <div ref={rootRef} className="flex flex-col items-center gap-1 text-muted-foreground/50">
+      <div ref={rootRef} className="flex flex-col items-center gap-1 text-muted-foreground/45">
         <ImageIcon size={24} />
         <span className="text-[10px]">{fallbackLabel}</span>
       </div>
@@ -269,7 +269,7 @@ export const ClipCard = memo(function ClipCard({
               className="max-h-full max-w-full rounded object-contain shadow-md"
             />
           ) : (
-            <div className="flex flex-col items-center gap-1 text-muted-foreground/50">
+            <div className="flex flex-col items-center gap-1 text-muted-foreground/45">
               <ImageIcon size={24} />
               <span className="text-[10px]">{t('clipCard.image')}</span>
             </div>
@@ -287,7 +287,7 @@ export const ClipCard = memo(function ClipCard({
             className="h-14 w-14 rounded-xl border-2 border-white/20 shadow-lg"
             style={{ backgroundColor: color }}
           />
-          <span className="font-mono text-[13px] font-semibold text-foreground/80">{color}</span>
+          <span className="font-mono text-[13px] font-semibold text-foreground/85">{color}</span>
         </div>
       );
     }
@@ -300,10 +300,10 @@ export const ClipCard = memo(function ClipCard({
           {domain && (
             <div className="flex items-center gap-1.5 rounded-md bg-blue-500/10 px-1.5 py-1">
               <Link size={12} className="flex-shrink-0 text-blue-400" />
-              <span className="truncate text-[12px] font-semibold text-blue-400">{domain}</span>
+              <span className="truncate text-[13px] font-semibold text-blue-400">{domain}</span>
             </div>
           )}
-          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/70">
+          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/85">
             <HighlightText
               text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)}
               query={searchQuery}
@@ -321,7 +321,7 @@ export const ClipCard = memo(function ClipCard({
             <Mail size={12} className="flex-shrink-0 text-emerald-400" />
             <span className="text-[11px] font-semibold text-emerald-400">{t('subtype.email')}</span>
           </div>
-          <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
+          <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-snug text-foreground/85">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
           </pre>
         </div>
@@ -337,7 +337,7 @@ export const ClipCard = memo(function ClipCard({
             <FolderOpen size={12} className="flex-shrink-0 text-amber-400" />
             <span className="text-[11px] font-semibold text-amber-400">{t('subtype.path')}</span>
           </div>
-          <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
+          <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-snug text-foreground/85">
             <HighlightText text={content} query={searchQuery} />
           </pre>
         </div>
@@ -352,7 +352,7 @@ export const ClipCard = memo(function ClipCard({
             <Phone size={12} className="flex-shrink-0 text-cyan-400" />
             <span className="text-[11px] font-semibold text-cyan-400">{t('subtype.phone')}</span>
           </div>
-          <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
+          <pre className="whitespace-pre-wrap break-all font-mono text-[13px] font-medium leading-snug text-foreground/85">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
           </pre>
         </div>
@@ -367,7 +367,7 @@ export const ClipCard = memo(function ClipCard({
             <Network size={12} className="flex-shrink-0 text-sky-400" />
             <span className="text-[11px] font-semibold text-sky-400">{t('subtype.ip')}</span>
           </div>
-          <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
+          <pre className="whitespace-pre-wrap break-all font-mono text-[13px] font-medium leading-snug text-foreground/85">
             <HighlightText text={clip.content.trim()} query={searchQuery} />
           </pre>
         </div>
@@ -389,7 +389,7 @@ export const ClipCard = memo(function ClipCard({
             <Braces size={12} className="flex-shrink-0 text-orange-400" />
             <span className="text-[11px] font-semibold text-orange-400">{t('subtype.json')}</span>
           </div>
-          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
+          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/85">
             <HighlightText text={formatted} query={searchQuery} />
           </pre>
         </div>
@@ -404,7 +404,7 @@ export const ClipCard = memo(function ClipCard({
             <Code2 size={12} className="flex-shrink-0 text-violet-400" />
             <span className="text-[11px] font-semibold text-violet-400">{t('subtype.code')}</span>
           </div>
-          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
+          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/85">
             <HighlightText
               text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)}
               query={searchQuery}
@@ -460,7 +460,7 @@ export const ClipCard = memo(function ClipCard({
     return (
       <span
         className={clsx(
-          'flex items-center gap-0.5 rounded bg-black/15 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider',
+          'flex items-center gap-0.5 rounded bg-black/15 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider',
           cfg.color
         )}
       >
@@ -564,7 +564,7 @@ export const ClipCard = memo(function ClipCard({
             {title}
           </span>
           {clip.is_sensitive && (
-            <span className="flex items-center gap-0.5 rounded bg-red-500/20 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-400">
+            <span className="flex items-center gap-0.5 rounded bg-red-500/20 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400">
               <ShieldAlert size={9} />
             </span>
           )}
@@ -586,7 +586,7 @@ export const ClipCard = memo(function ClipCard({
                 className={clsx(
                   clip.is_pinned
                     ? 'fill-amber-400 text-amber-400'
-                    : 'text-foreground/70 hover:text-foreground'
+                    : 'text-foreground/85 hover:text-foreground'
                 )}
               />
             </button>
@@ -605,7 +605,7 @@ export const ClipCard = memo(function ClipCard({
             {showCopied ? (
               <Check size={14} className="animate-copy-pulse text-emerald-500" />
             ) : (
-              <Copy size={14} className="text-foreground/70 hover:text-foreground" />
+              <Copy size={14} className="text-foreground/85 hover:text-foreground" />
             )}
           </button>
         </div>
@@ -632,19 +632,19 @@ export const ClipCard = memo(function ClipCard({
 
         {/* Footer */}
         <div className="flex items-center justify-between bg-gradient-to-t from-black/[0.04] to-transparent px-2.5 py-1 dark:from-black/[0.15]">
-          <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/40">
+          <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/45">
             <span>
               {clip.clip_type === 'image'
                 ? (getImageSizeFromMeta(clip.metadata) ?? t('clipCard.image'))
                 : t('clipCard.chars', { count: clip.content.length })}
             </span>
-            <span className="text-muted-foreground/25">·</span>
+            <span className="text-muted-foreground/45">·</span>
             <span title={clip.created_at}>{relativeTime(clip.created_at)}</span>
           </span>
-          <span className="flex items-center gap-2 text-[10px] text-muted-foreground/35">
+          <span className="flex items-center gap-2 text-[10px] text-muted-foreground/45">
             {folderName && (
               <span
-                className="flex items-center gap-0.5 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-400"
+                className="flex items-center gap-0.5 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-400"
                 title={t('clipCard.inFolder', { name: folderName })}
               >
                 <Folder size={9} className="flex-shrink-0" />
