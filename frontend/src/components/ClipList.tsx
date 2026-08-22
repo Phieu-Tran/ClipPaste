@@ -5,6 +5,7 @@ import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 import { LAYOUT, TOTAL_COLUMN_WIDTH } from '../constants';
 import { FolderOpen, SearchX, Settings } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ClipListProps {
   clips: ClipboardItem[];
@@ -58,6 +59,7 @@ export function ClipList({
   onOpenSettings,
   copiedClipId,
 }: ClipListProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [staggerKey, setStaggerKey] = useState(0);
   const [edges, setEdges] = useState({ left: false, right: false });
@@ -215,7 +217,7 @@ export function ClipList({
       <div className="flex h-full w-full items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-          <p className="text-sm text-muted-foreground">Loading clips...</p>
+          <p className="text-sm text-muted-foreground">{t('clipList.loading')}</p>
         </div>
       </div>
     );
@@ -226,10 +228,8 @@ export function ClipList({
       <div className="flex h-full w-full flex-col items-center justify-center p-8 text-center">
         {isSearching ? (
           <>
-            <h3 className="mb-2 text-lg font-semibold text-gray-400">No results</h3>
-            <p className="max-w-xs text-sm text-gray-500">
-              No clips found matching your search. Try different keywords or use fewer words.
-            </p>
+            <h3 className="mb-2 text-lg font-semibold text-gray-400">{t('clipList.noResults')}</h3>
+            <p className="max-w-xs text-sm text-gray-500">{t('clipList.noResultsHint')}</p>
             <div className="mt-4 flex items-center gap-2">
               <button
                 onClick={onClearSearch}
@@ -237,7 +237,7 @@ export function ClipList({
                 disabled={!onClearSearch}
               >
                 <SearchX size={14} className="mr-1.5" />
-                Clear Search
+                {t('clipList.clearSearch')}
               </button>
               {selectedFolder && (
                 <button
@@ -246,39 +246,37 @@ export function ClipList({
                   disabled={!onShowAll}
                 >
                   <FolderOpen size={14} className="mr-1.5" />
-                  Show All
+                  {t('clipList.showAll')}
                 </button>
               )}
             </div>
           </>
         ) : (
           <>
-            <h3 className="mb-2 text-lg font-semibold text-gray-400">No clips yet</h3>
-            <p className="max-w-xs text-sm text-gray-500">
-              Copy something to your clipboard and it will appear here.
-            </p>
+            <h3 className="mb-2 text-lg font-semibold text-gray-400">{t('clipList.empty')}</h3>
+            <p className="max-w-xs text-sm text-gray-500">{t('clipList.emptyHint')}</p>
             {onOpenSettings && (
               <button onClick={onOpenSettings} className="btn btn-secondary mt-4 text-xs">
                 <Settings size={14} className="mr-1.5" />
-                Settings
+                {t('common.settings')}
               </button>
             )}
             <div className="mt-4 flex flex-col gap-1.5 text-xs text-gray-500/70">
               <span>
                 <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd>{' '}
-                to paste ·{' '}
+                {t('clipList.toPaste')} ·{' '}
                 <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">↑↓</kbd>{' '}
-                navigate
+                {t('clipList.navigate')}
               </span>
               <span>
                 <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">E</kbd>{' '}
-                edit ·{' '}
-                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">P</kbd> pin
-                ·{' '}
+                {t('clipList.edit')} ·{' '}
+                <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">P</kbd>{' '}
+                {t('clipList.pin')}·{' '}
                 <kbd className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">
                   Ctrl+Del
                 </kbd>{' '}
-                delete
+                {t('clipList.delete')}
               </span>
             </div>
           </>
@@ -291,7 +289,7 @@ export function ClipList({
     <div
       ref={containerRef}
       role="listbox"
-      aria-label="Clipboard history"
+      aria-label={t('clipList.ariaLabel')}
       aria-orientation="horizontal"
       className={clsx(
         'no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden transition-opacity duration-150',
@@ -355,7 +353,7 @@ export function ClipList({
                     ? clip.folder_id !== selectedFolder
                       ? clip.folder_id
                         ? folderMap[clip.folder_id]
-                        : 'All'
+                        : t('common.all')
                       : null
                     : isSearching && folderMap && !selectedFolder && clip.folder_id
                       ? folderMap[clip.folder_id]

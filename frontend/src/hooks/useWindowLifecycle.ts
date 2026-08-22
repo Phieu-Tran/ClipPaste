@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -62,6 +63,7 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
         setFontFamily(s.font_family);
         setUiDensity(s.ui_density);
         setWindowEffect(s.mica_effect || 'clear');
+        setLanguage(s.language);
       })
       .catch(console.error);
 
@@ -71,6 +73,7 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
       setFontFamily(event.payload.font_family);
       setUiDensity(event.payload.ui_density);
       setWindowEffect(event.payload.mica_effect || 'clear');
+      setLanguage(event.payload.language);
     });
 
     return () => {

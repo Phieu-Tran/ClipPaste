@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Settings } from '../types';
@@ -29,7 +30,13 @@ export function SettingsWindow() {
   }, [appWindow]);
 
   useEffect(() => {
-    cmd.getSettings().then(setSettings).catch(console.error);
+    cmd
+      .getSettings()
+      .then((s) => {
+        setSettings(s);
+        setLanguage(s.language);
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {

@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClipboardItem, FolderItem } from '../../types';
 import {
   ArrowRightLeft,
-  Check,
-  Code,
-  File as FileIcon,
-  FileText,
   Folder as FolderIcon,
   GitMerge,
-  GripVertical,
-  Image as ImageIcon,
   Inbox,
-  Link2,
   Loader2,
   Pencil,
   Pin,
@@ -20,15 +14,15 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Type,
   X,
 } from 'lucide-react';
-import { clsx } from 'clsx';
 import { toast } from 'sonner';
 import { cmd } from '../../commands';
 import { evictClipImageDataUrl } from '../../imageQueue';
-import { COLOR_OPTIONS, FOLDER_ICON_MAP, FOLDER_ICON_OPTIONS } from '../FolderModal';
-import { formatRelativeTime } from '../../utils/format';
+import { FolderColorDot, FolderGlyph } from './FolderVisuals';
+import { FolderSidebarItem } from './FolderSidebarItem';
+import { FolderClipRow } from './FolderClipRow';
+import { MoveClipPopover } from './MoveClipPopover';
 
 interface FoldersTabProps {
   folders: FolderItem[];
@@ -50,45 +44,6 @@ interface FoldersTabProps {
   }) => void;
 }
 
-function ClipTypeIcon({ type, className }: { type: string; className?: string }) {
-  const props = { size: 14, className: className ?? 'text-muted-foreground shrink-0' };
-  switch (type) {
-    case 'image':
-      return <ImageIcon {...props} />;
-    case 'url':
-      return <Link2 {...props} />;
-    case 'html':
-      return <Code {...props} />;
-    case 'rtf':
-      return <Type {...props} />;
-    case 'file':
-      return <FileIcon {...props} />;
-    default:
-      return <FileText {...props} />;
-  }
-}
-
-function FolderGlyph({ folder, size = 16 }: { folder: FolderItem; size?: number }) {
-  if (folder.icon && FOLDER_ICON_MAP[folder.icon]) {
-    const { Icon, color } = FOLDER_ICON_MAP[folder.icon];
-    return <Icon size={size} className={clsx('shrink-0', color || 'text-blue-400')} />;
-  }
-
-  return <FolderIcon size={size} className="shrink-0 text-blue-400" />;
-}
-
-function FolderColorDot({ color }: { color: string | null }) {
-  const option = COLOR_OPTIONS.find((item) => item.key === color);
-  return (
-    <span
-      className={clsx(
-        'h-2.5 w-2.5 shrink-0 rounded-full border border-white/20',
-        option?.bg ?? 'bg-muted'
-      )}
-    />
-  );
-}
-
 export function FoldersTab({
   folders,
   newFolderName,
@@ -100,11 +55,11 @@ export function FoldersTab({
   loadFolders,
   requestConfirm,
 }: FoldersTabProps) {
+  const { t } = useTranslation();
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [clipsByFolder, setClipsByFolder] = useState<Record<string, ClipboardItem[]>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [moveTargetClipId, setMoveTargetClipId] = useState<string | null>(null);
-  const [moveSearch, setMoveSearch] = useState('');
   const [folderSearch, setFolderSearch] = useState('');
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [editingFolderColor, setEditingFolderColor] = useState<string | null>(null);
@@ -112,19 +67,6 @@ export function FoldersTab({
   const [dragFolderId, setDragFolderId] = useState<string | null>(null);
   const [dropFolderId, setDropFolderId] = useState<string | null>(null);
   const [folderTransferTargetId, setFolderTransferTargetId] = useState<string>('none');
-  const movePopoverRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!moveTargetClipId) return;
-    const onDown = (e: MouseEvent) => {
-      if (movePopoverRef.current && !movePopoverRef.current.contains(e.target as Node)) {
-        setMoveTargetClipId(null);
-        setMoveSearch('');
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [moveTargetClipId]);
 
   const customFolders = useMemo(() => folders.filter((f) => !f.is_system), [folders]);
   const totalFiledClips = useMemo(
@@ -147,23 +89,27 @@ export function FoldersTab({
   const selectedFolderClips = selectedFolderId ? clipsByFolder[selectedFolderId] : undefined;
   const isSelectedFolderLoading = selectedFolderId ? loadingId === selectedFolderId : false;
   const selectedClipCount = selectedClipIds.size;
+  const searchActive = Boolean(folderSearch.trim());
 
-  const loadClipsForFolder = useCallback(async (folderId: string) => {
-    setLoadingId(folderId);
-    try {
-      const clips = await cmd.getClips({
-        filterId: folderId,
-        limit: 500,
-        offset: 0,
-        previewOnly: true,
-      });
-      setClipsByFolder((prev) => ({ ...prev, [folderId]: clips }));
-    } catch (e) {
-      toast.error(`Failed to load clips: ${e}`);
-    } finally {
-      setLoadingId((cur) => (cur === folderId ? null : cur));
-    }
-  }, []);
+  const loadClipsForFolder = useCallback(
+    async (folderId: string) => {
+      setLoadingId(folderId);
+      try {
+        const clips = await cmd.getClips({
+          filterId: folderId,
+          limit: 500,
+          offset: 0,
+          previewOnly: true,
+        });
+        setClipsByFolder((prev) => ({ ...prev, [folderId]: clips }));
+      } catch (e) {
+        toast.error(t('folders.loadClipsFailed', { error: String(e) }));
+      } finally {
+        setLoadingId((cur) => (cur === folderId ? null : cur));
+      }
+    },
+    [t]
+  );
 
   useEffect(() => {
     if (customFolders.length === 0) {
@@ -181,7 +127,6 @@ export function FoldersTab({
     }
     setSelectedClipIds(new Set());
     setMoveTargetClipId(null);
-    setMoveSearch('');
     setFolderTransferTargetId('none');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolderId]);
@@ -192,22 +137,24 @@ export function FoldersTab({
       await cmd.createFolder(newFolderName.trim(), null, null);
       setNewFolderName('');
       await loadFolders();
-      toast.success('Folder created');
+      toast.success(t('folders.created'));
     } catch (e) {
-      toast.error(`Failed to create folder: ${e}`);
+      toast.error(t('folders.createFailed', { error: String(e) }));
     }
   };
 
   const handleDeleteFolder = async (id: string) => {
     const folder = customFolders.find((item) => item.id === id);
     requestConfirm({
-      title: 'Delete folder',
-      message: `Delete "${folder?.name ?? 'this folder'}"? Clips inside will be moved to All.`,
-      confirmText: 'Delete',
+      title: t('dialogs.deleteFolderTitle'),
+      message: t('dialogs.deleteFolderMessage', {
+        name: folder?.name ?? t('folders.thisFolder'),
+      }),
+      confirmText: t('common.delete'),
       variant: 'danger',
       details:
         folder && folder.item_count > 0
-          ? [`${folder.item_count.toLocaleString()} clips will leave this folder.`]
+          ? [t('folders.clipsWillLeave', { count: folder.item_count.toLocaleString() })]
           : undefined,
       action: async () => {
         try {
@@ -219,16 +166,16 @@ export function FoldersTab({
             return next;
           });
           await loadFolders();
-          toast.success('Folder deleted');
+          toast.success(t('folders.deleted'));
         } catch (e) {
-          toast.error(`Failed to delete folder: ${e}`);
+          toast.error(t('folders.deleteFailed', { error: String(e) }));
         }
       },
     });
   };
 
   const handleReorderFolders = async (sourceId: string, targetId: string) => {
-    if (sourceId === targetId || folderSearch.trim()) return;
+    if (sourceId === targetId || searchActive) return;
     const ids = customFolders.map((folder) => folder.id);
     const fromIndex = ids.indexOf(sourceId);
     const toIndex = ids.indexOf(targetId);
@@ -241,9 +188,9 @@ export function FoldersTab({
     try {
       await cmd.reorderFolders(reordered);
       await loadFolders();
-      toast.success('Folders reordered');
+      toast.success(t('folders.reordered'));
     } catch (e) {
-      toast.error(`Failed to reorder folders: ${e}`);
+      toast.error(t('folders.reorderFailed', { error: String(e) }));
     } finally {
       setDragFolderId(null);
       setDropFolderId(null);
@@ -265,9 +212,9 @@ export function FoldersTab({
       });
       await loadFolders();
       await loadClipsForFolder(selectedFolder.id);
-      toast.success(`Moved ${moved.toLocaleString()} clips to ${target.name}`);
+      toast.success(t('folders.movedTo', { count: moved.toLocaleString(), name: target.name }));
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -277,13 +224,13 @@ export function FoldersTab({
     if (!target) return;
 
     requestConfirm({
-      title: 'Merge folders',
-      message: `Move all clips from "${selectedFolder.name}" into "${target.name}" and delete the empty source folder?`,
-      confirmText: 'Merge',
+      title: t('folders.mergeTitle'),
+      message: t('folders.mergeMessage', { source: selectedFolder.name, target: target.name }),
+      confirmText: t('folders.merge'),
       variant: 'warning',
       details: [
-        `${selectedFolder.item_count.toLocaleString()} clips will move.`,
-        'The source folder name, icon, and color will be removed.',
+        t('folders.clipsWillMove', { count: selectedFolder.item_count.toLocaleString() }),
+        t('folders.mergeRemovesSource'),
       ],
       action: async () => {
         try {
@@ -298,9 +245,9 @@ export function FoldersTab({
           });
           await loadFolders();
           await loadClipsForFolder(target.id);
-          toast.success(`Merged ${moved.toLocaleString()} clips into ${target.name}`);
+          toast.success(t('folders.merged', { count: moved.toLocaleString(), name: target.name }));
         } catch (e) {
-          toast.error(`Failed: ${e}`);
+          toast.error(t('folders.actionFailed', { error: String(e) }));
         }
       },
     });
@@ -331,9 +278,9 @@ export function FoldersTab({
       );
       cancelRenameFolder();
       await loadFolders();
-      toast.success('Folder updated');
+      toast.success(t('folders.updated'));
     } catch (e) {
-      toast.error(`Failed to update folder: ${e}`);
+      toast.error(t('folders.updateFailed', { error: String(e) }));
     }
   };
 
@@ -350,15 +297,14 @@ export function FoldersTab({
     try {
       await cmd.moveToFolder(clipUuid, toFolderId);
       setMoveTargetClipId(null);
-      setMoveSearch('');
       await loadFolders();
       await loadClipsForFolder(fromFolderId);
       if (toFolderId && clipsByFolder[toFolderId]) {
         await loadClipsForFolder(toFolderId);
       }
-      toast.success(toFolderId ? 'Clip moved' : 'Clip moved to All');
+      toast.success(t(toFolderId ? 'folders.clipMoved' : 'folders.clipMovedToAll'));
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -368,16 +314,15 @@ export function FoldersTab({
     try {
       await cmd.bulkMoveClips(ids, toFolderId);
       setMoveTargetClipId(null);
-      setMoveSearch('');
       setSelectedClipIds(new Set());
       await loadFolders();
       await loadClipsForFolder(selectedFolderId);
       if (toFolderId && clipsByFolder[toFolderId]) {
         await loadClipsForFolder(toFolderId);
       }
-      toast.success(`Moved ${ids.length} clip${ids.length === 1 ? '' : 's'}`);
+      toast.success(t('folders.movedClips', { count: ids.length }));
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -392,9 +337,9 @@ export function FoldersTab({
       });
       await loadFolders();
       await loadClipsForFolder(folderId);
-      toast.success('Clip deleted');
+      toast.success(t('folders.clipDeleted'));
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -406,9 +351,9 @@ export function FoldersTab({
       ids.forEach(evictClipImageDataUrl);
       setSelectedClipIds(new Set());
       await refreshSelectedFolder();
-      toast.success(`Deleted ${count} clip${count === 1 ? '' : 's'}`);
+      toast.success(t('folders.deletedClips', { count }));
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -419,9 +364,9 @@ export function FoldersTab({
       const count = await cmd.bulkSetPin(ids, pinned);
       setSelectedClipIds(new Set());
       await loadClipsForFolder(selectedFolderId);
-      toast.success(`${pinned ? 'Pinned' : 'Unpinned'} ${count} clip${count === 1 ? '' : 's'}`);
+      toast.success(t(pinned ? 'folders.pinnedClips' : 'folders.unpinnedClips', { count }));
     } catch (e) {
-      toast.error(`Failed: ${e}`);
+      toast.error(t('folders.actionFailed', { error: String(e) }));
     }
   };
 
@@ -443,75 +388,16 @@ export function FoldersTab({
     );
   };
 
-  const renderMovePopover = (fromFolderId: string, clipId?: string) => {
-    const lowerSearch = moveSearch.toLowerCase();
-    const matchingFolders = customFolders
-      .filter((folder) => folder.id !== fromFolderId)
-      .filter((folder) => folder.name.toLowerCase().includes(lowerSearch));
-    const isBulk = !clipId;
-
-    return (
-      <div
-        ref={movePopoverRef}
-        className="absolute right-0 top-8 z-30 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
-          <Search size={12} className="text-muted-foreground" />
-          <input
-            autoFocus
-            type="text"
-            value={moveSearch}
-            onChange={(e) => setMoveSearch(e.target.value)}
-            placeholder="Search folders..."
-            className="min-w-0 flex-1 bg-transparent text-xs focus:outline-none"
-          />
-        </div>
-        <div className="max-h-56 overflow-y-auto py-1">
-          {'all'.includes(lowerSearch) && (
-            <button
-              onClick={() =>
-                isBulk ? handleBulkMove(null) : handleMoveClip(clipId, fromFolderId, null)
-              }
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
-            >
-              <Inbox size={13} className="text-muted-foreground" />
-              <span>Move to All</span>
-            </button>
-          )}
-          {matchingFolders.map((folder) => (
-            <button
-              key={folder.id}
-              onClick={() =>
-                isBulk ? handleBulkMove(folder.id) : handleMoveClip(clipId, fromFolderId, folder.id)
-              }
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent"
-            >
-              <FolderIcon size={13} className="text-blue-400" />
-              <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-              <span className="text-[10px] tabular-nums text-muted-foreground">
-                {folder.item_count}
-              </span>
-            </button>
-          ))}
-          {matchingFolders.length === 0 && !'all'.includes(lowerSearch) && (
-            <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
-              No matching folder
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <section className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-medium text-muted-foreground">Manage Folders</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">{t('folders.manageTitle')}</h3>
         {customFolders.length > 0 && (
           <span className="text-xs text-muted-foreground">
-            {customFolders.length} folder{customFolders.length === 1 ? '' : 's'} ·{' '}
-            {totalFiledClips.toLocaleString()} clips
+            {t('folders.summary', {
+              folders: customFolders.length,
+              clips: totalFiledClips.toLocaleString(),
+            })}
           </span>
         )}
       </div>
@@ -522,8 +408,8 @@ export function FoldersTab({
             type="text"
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
-            placeholder="New folder name"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            placeholder={t('folders.newFolderPlaceholder')}
+            className="field min-w-0 flex-1"
             onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
           />
           <button
@@ -532,13 +418,13 @@ export function FoldersTab({
             className="btn btn-secondary px-3"
           >
             <Plus size={16} className="mr-1" />
-            Add
+            {t('folders.add')}
           </button>
         </div>
         <button
           onClick={refreshSelectedFolder}
           className="btn btn-secondary px-3"
-          title="Refresh folders"
+          title={t('folders.refresh')}
         >
           <RefreshCw size={15} />
         </button>
@@ -546,15 +432,21 @@ export function FoldersTab({
 
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Folders</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t('folders.statFolders')}
+          </div>
           <div className="text-lg font-semibold tabular-nums">{customFolders.length}</div>
         </div>
         <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Filed</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t('folders.statFiled')}
+          </div>
           <div className="text-lg font-semibold tabular-nums">{totalFiledClips}</div>
         </div>
         <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Selected</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t('folders.statSelected')}
+          </div>
           <div className="text-lg font-semibold tabular-nums">{selectedClipCount}</div>
         </div>
       </div>
@@ -568,7 +460,7 @@ export function FoldersTab({
                 type="text"
                 value={folderSearch}
                 onChange={(e) => setFolderSearch(e.target.value)}
-                placeholder="Filter folders"
+                placeholder={t('folders.filterPlaceholder')}
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
               {folderSearch && (
@@ -593,173 +485,53 @@ export function FoldersTab({
               </p>
             ) : (
               <div className="space-y-1">
-                {filteredFolders.map((folder) => {
-                  const isSelected = selectedFolderId === folder.id;
-                  const isEditing = editingFolderId === folder.id;
-
-                  return (
-                    <div
-                      key={folder.id}
-                      draggable={!isEditing && !folderSearch.trim()}
-                      onDragStart={(event) => {
-                        if (isEditing || folderSearch.trim()) {
-                          event.preventDefault();
-                          return;
-                        }
-                        setDragFolderId(folder.id);
-                        event.dataTransfer.effectAllowed = 'move';
-                      }}
-                      onDragOver={(event) => {
-                        if (!dragFolderId || dragFolderId === folder.id || folderSearch.trim()) {
-                          return;
-                        }
+                {filteredFolders.map((folder) => (
+                  <FolderSidebarItem
+                    key={folder.id}
+                    folder={folder}
+                    isSelected={selectedFolderId === folder.id}
+                    isEditing={editingFolderId === folder.id}
+                    isDragSource={dragFolderId === folder.id}
+                    isDropTarget={dropFolderId === folder.id}
+                    searchActive={searchActive}
+                    renameValue={renameValue}
+                    setRenameValue={setRenameValue}
+                    editingColor={editingFolderColor}
+                    setEditingColor={setEditingFolderColor}
+                    editingIcon={editingFolderIcon}
+                    setEditingIcon={setEditingFolderIcon}
+                    onSelect={() => setSelectedFolderId(folder.id)}
+                    onSaveRename={saveRenameFolder}
+                    onCancelRename={cancelRenameFolder}
+                    onDragStart={(event) => {
+                      if (editingFolderId === folder.id || searchActive) {
                         event.preventDefault();
-                        setDropFolderId(folder.id);
-                        event.dataTransfer.dropEffect = 'move';
-                      }}
-                      onDragLeave={() => {
-                        if (dropFolderId === folder.id) setDropFolderId(null);
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        if (dragFolderId) handleReorderFolders(dragFolderId, folder.id);
-                      }}
-                      onDragEnd={() => {
-                        setDragFolderId(null);
-                        setDropFolderId(null);
-                      }}
-                      className={clsx(
-                        'rounded-md border transition-colors',
-                        isSelected ? 'border-primary/40 bg-primary/10' : 'border-transparent',
-                        dragFolderId === folder.id && 'opacity-45',
-                        dropFolderId === folder.id && 'border-primary/60 bg-primary/15'
-                      )}
-                    >
-                      {isEditing ? (
-                        <div className="space-y-2 p-2">
-                          <div className="flex items-center gap-1.5">
-                            <FolderGlyph
-                              folder={{
-                                ...folder,
-                                color: editingFolderColor,
-                                icon: editingFolderIcon,
-                              }}
-                              size={15}
-                            />
-                            <input
-                              type="text"
-                              value={renameValue}
-                              onChange={(e) => setRenameValue(e.target.value)}
-                              className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveRenameFolder();
-                                if (e.key === 'Escape') cancelRenameFolder();
-                              }}
-                            />
-                            <button
-                              onClick={saveRenameFolder}
-                              className="rounded p-1.5 text-primary hover:bg-primary/10"
-                              title="Save"
-                            >
-                              <Check size={13} />
-                            </button>
-                            <button
-                              onClick={cancelRenameFolder}
-                              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                              title="Cancel"
-                            >
-                              <X size={13} />
-                            </button>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1">
-                            <button
-                              onClick={() => setEditingFolderIcon(null)}
-                              title="No icon"
-                              className={clsx(
-                                'flex h-6 w-6 items-center justify-center rounded border text-[10px] font-semibold transition-colors',
-                                editingFolderIcon === null
-                                  ? 'border-primary bg-primary/15 text-primary'
-                                  : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
-                              )}
-                            >
-                              Aa
-                            </button>
-                            <div className="flex max-h-[74px] flex-1 flex-wrap gap-1 overflow-y-auto pr-0.5">
-                              {FOLDER_ICON_OPTIONS.map(({ key, Icon, color }) => (
-                                <button
-                                  key={key}
-                                  onClick={() => setEditingFolderIcon(key)}
-                                  title={key}
-                                  className={clsx(
-                                    'flex h-6 w-6 items-center justify-center rounded border transition-colors',
-                                    editingFolderIcon === key
-                                      ? 'border-primary bg-primary/15'
-                                      : 'border-transparent hover:bg-accent',
-                                    editingFolderIcon === key
-                                      ? color
-                                      : 'text-muted-foreground hover:text-foreground'
-                                  )}
-                                >
-                                  <Icon size={13} />
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setEditingFolderColor(null)}
-                              title="Auto color"
-                              className={clsx(
-                                'h-5 w-5 rounded-full border-2 bg-gradient-to-br from-gray-300 to-gray-500 transition-transform',
-                                editingFolderColor === null
-                                  ? 'scale-110 border-white'
-                                  : 'border-transparent'
-                              )}
-                            />
-                            {COLOR_OPTIONS.map(({ key, bg }) => (
-                              <button
-                                key={key}
-                                onClick={() => setEditingFolderColor(key)}
-                                title={key}
-                                className={clsx(
-                                  'h-5 w-5 rounded-full border-2 transition-transform',
-                                  bg,
-                                  editingFolderColor === key
-                                    ? 'scale-110 border-white'
-                                    : 'border-transparent'
-                                )}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setSelectedFolderId(folder.id)}
-                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-accent/40"
-                        >
-                          <GripVertical
-                            size={13}
-                            className={clsx(
-                              'shrink-0 text-muted-foreground/60',
-                              folderSearch.trim() && 'opacity-30'
-                            )}
-                          />
-                          <FolderGlyph folder={folder} />
-                          <FolderColorDot color={folder.color} />
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                            {folder.name}
-                          </span>
-                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                            {folder.item_count}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                        return;
+                      }
+                      setDragFolderId(folder.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(event) => {
+                      if (!dragFolderId || dragFolderId === folder.id || searchActive) {
+                        return;
+                      }
+                      event.preventDefault();
+                      setDropFolderId(folder.id);
+                      event.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDragLeave={() => {
+                      if (dropFolderId === folder.id) setDropFolderId(null);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (dragFolderId) handleReorderFolders(dragFolderId, folder.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragFolderId(null);
+                      setDropFolderId(null);
+                    }}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -778,13 +550,15 @@ export function FoldersTab({
                   <FolderIcon size={16} className="shrink-0 text-blue-400" />
                 )}
                 <h4 className="truncate text-sm font-semibold">
-                  {selectedFolder ? selectedFolder.name : 'No folder selected'}
+                  {selectedFolder ? selectedFolder.name : t('folders.noFolderSelected')}
                 </h4>
               </div>
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {selectedFolder
-                  ? `${selectedFolder.item_count.toLocaleString()} clips in folder`
-                  : 'Select a folder to manage its clips.'}
+                  ? t('folders.clipsInFolder', {
+                      count: selectedFolder.item_count.toLocaleString(),
+                    })
+                  : t('folders.selectFolderHint')}
               </div>
             </div>
 
@@ -793,14 +567,14 @@ export function FoldersTab({
                 <button
                   onClick={() => startRenameFolder(selectedFolder)}
                   className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title="Rename folder"
+                  title={t('folders.renameFolder')}
                 >
                   <Pencil size={14} />
                 </button>
                 <button
                   onClick={() => handleDeleteFolder(selectedFolder.id)}
                   className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  title="Delete folder"
+                  title={t('dialogs.deleteFolderTitle')}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -812,16 +586,16 @@ export function FoldersTab({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-background/30 px-3 py-2">
               <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                 <ArrowRightLeft size={13} />
-                <span className="truncate">Folder transfer</span>
+                <span className="truncate">{t('folders.transfer')}</span>
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <select
                   value={folderTransferTargetId}
                   onChange={(event) => setFolderTransferTargetId(event.target.value)}
                   disabled={folderTransferTargets.length === 0}
-                  className="h-7 min-w-[160px] rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none disabled:opacity-50"
+                  className="field field-sm h-7 min-w-[160px]"
                 >
-                  <option value="none">Target folder</option>
+                  <option value="none">{t('folders.targetFolder')}</option>
                   {folderTransferTargets.map((folder) => (
                     <option key={folder.id} value={folder.id}>
                       {folder.name}
@@ -834,7 +608,7 @@ export function FoldersTab({
                   className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   <ArrowRightLeft size={12} />
-                  Move all
+                  {t('folders.moveAll')}
                 </button>
                 <button
                   onClick={handleMergeFolder}
@@ -842,7 +616,7 @@ export function FoldersTab({
                   className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   <GitMerge size={12} />
-                  Merge
+                  {t('folders.merge')}
                 </button>
               </div>
             </div>
@@ -860,50 +634,56 @@ export function FoldersTab({
                 className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
               >
                 {selectedFolderClips && selectedClipIds.size === selectedFolderClips.length
-                  ? 'Clear selection'
-                  : 'Select all'}
+                  ? t('folders.clearSelection')
+                  : t('folders.selectAll')}
               </button>
 
               {selectedClipCount > 0 ? (
                 <div className="flex items-center gap-1.5">
                   <span className="mr-1 text-xs font-medium text-primary">
-                    {selectedClipCount} selected
+                    {t('batchBar.selected', { count: selectedClipCount })}
                   </span>
                   <button
                     onClick={() => handleBulkSetPin(true)}
                     className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <Pin size={12} />
-                    Pin
+                    {t('common.pin')}
                   </button>
                   <button
                     onClick={() => handleBulkSetPin(false)}
                     className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <PinOff size={12} />
-                    Unpin
+                    {t('common.unpin')}
                   </button>
                   <div className="relative">
                     <button
-                      onClick={() => {
-                        setMoveTargetClipId(moveTargetClipId === '__bulk__' ? null : '__bulk__');
-                        setMoveSearch('');
-                      }}
+                      onClick={() =>
+                        setMoveTargetClipId(moveTargetClipId === '__bulk__' ? null : '__bulk__')
+                      }
                       className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
-                      Move
+                      {t('common.move')}
                     </button>
-                    {moveTargetClipId === '__bulk__' && renderMovePopover(selectedFolder.id)}
+                    {moveTargetClipId === '__bulk__' && (
+                      <MoveClipPopover
+                        folders={customFolders}
+                        excludeFolderId={selectedFolder.id}
+                        onSelect={handleBulkMove}
+                        onClose={() => setMoveTargetClipId(null)}
+                      />
+                    )}
                   </div>
                   <button
                     onClick={handleBulkDelete}
                     className="rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               ) : (
-                <span className="text-xs text-muted-foreground">Select clips for bulk actions</span>
+                <span className="text-xs text-muted-foreground">{t('folders.selectForBulk')}</span>
               )}
             </div>
           )}
@@ -912,87 +692,44 @@ export function FoldersTab({
             {!selectedFolder ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
                 <FolderIcon size={24} className="opacity-50" />
-                <span>No folder selected</span>
+                <span>{t('folders.noFolderSelected')}</span>
               </div>
             ) : isSelectedFolderLoading && !selectedFolderClips ? (
               <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Loader2 size={14} className="animate-spin" />
-                Loading clips...
+                {t('clipList.loading')}
               </div>
             ) : !selectedFolderClips || selectedFolderClips.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground">
                 <Inbox size={20} className="opacity-50" />
-                <span>No clips in this folder</span>
+                <span>{t('folders.noClipsInFolder')}</span>
               </div>
             ) : (
               <ul className="divide-y divide-border/50">
-                {selectedFolderClips.map((clip) => {
-                  const isMoveOpen = moveTargetClipId === clip.id;
-                  const isChecked = selectedClipIds.has(clip.id);
-                  const previewText =
-                    clip.clip_type === 'image' ? 'Image' : clip.preview?.trim() || '(empty)';
-
-                  return (
-                    <li
-                      key={clip.id}
-                      className={`group relative flex items-center gap-2 px-3 py-2 hover:bg-accent/30 ${
-                        isChecked ? 'bg-primary/5' : ''
-                      }`}
-                    >
-                      <button
-                        onClick={() => toggleClipSelection(clip.id)}
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                          isChecked
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border text-transparent hover:border-primary/60'
-                        }`}
-                        title="Select clip"
-                      >
-                        <Check size={11} />
-                      </button>
-                      <ClipTypeIcon type={clip.clip_type} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs text-foreground/90">{previewText}</div>
-                        {clip.note && (
-                          <div className="truncate text-[11px] italic text-muted-foreground">
-                            {clip.note}
-                          </div>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                        {formatRelativeTime(clip.created_at)}
-                      </span>
-                      {clip.is_pinned && (
-                        <Pin size={11} className="shrink-0 text-amber-400" aria-label="Pinned" />
-                      )}
-                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMoveTargetClipId(isMoveOpen ? null : clip.id);
-                            setMoveSearch('');
-                          }}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Move to another folder"
-                        >
-                          <ArrowRightLeft size={12} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteClip(clip.id, selectedFolder.id);
-                          }}
-                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          title="Delete clip"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-
-                      {isMoveOpen && renderMovePopover(selectedFolder.id, clip.id)}
-                    </li>
-                  );
-                })}
+                {selectedFolderClips.map((clip) => (
+                  <FolderClipRow
+                    key={clip.id}
+                    clip={clip}
+                    isChecked={selectedClipIds.has(clip.id)}
+                    onToggleSelect={() => toggleClipSelection(clip.id)}
+                    onToggleMove={() =>
+                      setMoveTargetClipId(moveTargetClipId === clip.id ? null : clip.id)
+                    }
+                    onDelete={() => handleDeleteClip(clip.id, selectedFolder.id)}
+                    movePopover={
+                      moveTargetClipId === clip.id ? (
+                        <MoveClipPopover
+                          folders={customFolders}
+                          excludeFolderId={selectedFolder.id}
+                          onSelect={(toFolderId) =>
+                            handleMoveClip(clip.id, selectedFolder.id, toFolderId)
+                          }
+                          onClose={() => setMoveTargetClipId(null)}
+                        />
+                      ) : undefined
+                    }
+                  />
+                ))}
               </ul>
             )}
           </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback } from 'react';
 import { ClipboardItem as AppClipboardItem } from '../types';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ interface UseBatchActionsOpts {
 }
 
 export function useBatchActions(opts: UseBatchActionsOpts) {
+  const { t } = useTranslation();
   const {
     selectedClipIds,
     setSelectedClipIds,
@@ -34,9 +36,9 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
   const handleBulkDelete = useCallback(async () => {
     if (selectedClipIds.size === 0) return;
     const ids = Array.from(selectedClipIds);
-    toast(`Delete ${ids.length} clips?`, {
+    toast(t('batch.deleteConfirm', { count: ids.length }), {
       action: {
-        label: 'Delete',
+        label: t('common.delete'),
         onClick: async () => {
           try {
             const count = await cmd.bulkDeleteClips(ids);
@@ -45,18 +47,19 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
             setSelectedClipId(null);
             loadFolders();
             refreshTotalCount();
-            toast.success(`Deleted ${count} clips`);
+            toast.success(t('folders.deletedClips', { count }));
           } catch (error) {
             console.error('Bulk delete failed:', error);
-            toast.error('Failed to delete clips');
+            toast.error(t('batch.deleteFailed'));
           }
         },
       },
-      cancel: { label: 'Cancel', onClick: () => {} },
+      cancel: { label: t('common.cancel'), onClick: () => {} },
       duration: TIMING.DELETE_TOAST,
     });
   }, [
     selectedClipIds,
+    t,
     setClips,
     setSelectedClipIds,
     setSelectedClipId,
@@ -81,14 +84,15 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
         setSelectedClipId(null);
         loadFolders();
         refreshTotalCount();
-        toast.success(`Moved ${ids.length} clips`);
+        toast.success(t('folders.movedClips', { count: ids.length }));
       } catch (error) {
         console.error('Bulk move failed:', error);
-        toast.error('Failed to move clips');
+        toast.error(t('batch.moveFailed'));
       }
     },
     [
       selectedClipIds,
+      t,
       selectedFolder,
       setClips,
       setSelectedClipIds,
@@ -108,7 +112,7 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
     const hasImages = selectedClipsInOrder.some((c) => c.clip_type === 'image');
     const hasText = selectedClipsInOrder.some((c) => c.clip_type !== 'image');
     if (hasImages && hasText) {
-      toast.error('Select only text clips or only image clips');
+      toast.error(t('batch.mixedTypes'));
       return;
     }
 
@@ -118,10 +122,11 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
       setSelectedClipId(null);
     } catch (error) {
       console.error('Bulk paste failed:', error);
-      toast.error(error ? String(error) : 'Failed to paste');
+      toast.error(error ? String(error) : t('batch.pasteFailed'));
     }
   }, [
     selectedClipIds,
+    t,
     isPreviewing,
     filteredPreviewClips,
     filteredClips,
@@ -140,13 +145,13 @@ export function useBatchActions(opts: UseBatchActionsOpts) {
         );
         setSelectedClipIds(new Set());
         setSelectedClipId(null);
-        toast.success(`${pinned ? 'Pinned' : 'Unpinned'} ${count} clips`);
+        toast.success(t(pinned ? 'folders.pinnedClips' : 'folders.unpinnedClips', { count }));
       } catch (error) {
         console.error('Bulk pin failed:', error);
-        toast.error(pinned ? 'Failed to pin clips' : 'Failed to unpin clips');
+        toast.error(t(pinned ? 'batch.pinFailed' : 'batch.unpinFailed'));
       }
     },
-    [selectedClipIds, setClips, setSelectedClipIds, setSelectedClipId]
+    [selectedClipIds, t, setClips, setSelectedClipIds, setSelectedClipId]
   );
 
   return {

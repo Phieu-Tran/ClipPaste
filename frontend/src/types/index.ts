@@ -35,6 +35,7 @@ export interface Settings {
   hotkey: string;
   theme: string;
   interface_theme: string;
+  language: string;
   font_family: string;
   ui_density: string;
   mica_effect?: string;

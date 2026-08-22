@@ -25,9 +25,11 @@ import { useSearch } from './hooks/useSearch';
 import { useMultiSelect } from './hooks/useMultiSelect';
 import { useScratchpad } from './hooks/useScratchpad';
 import { Toaster, toast } from 'sonner';
-import { LAYOUT, TIMING } from './constants';
+import { useTranslation } from 'react-i18next';
+import { TIMING } from './constants';
 
 function App() {
+  const { t } = useTranslation();
   const [clips, setClips] = useState<AppClipboardItem[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,11 +75,11 @@ function App() {
     try {
       const newVal = await cmd.toggleIncognito();
       setIsIncognito(newVal);
-      toast.success(newVal ? 'Incognito mode ON — clipboard not recorded' : 'Incognito mode OFF');
+      toast.success(t(newVal ? 'toast.incognitoOn' : 'toast.incognitoOff'));
     } catch (e) {
       console.error('Failed to toggle incognito:', e);
     }
-  }, []);
+  }, [t]);
 
   // --- Folder Actions Hook ---
   const {
@@ -250,7 +252,7 @@ function App() {
 
     const settingsWin = new WebviewWindow('settings', {
       url: 'index.html?window=settings',
-      title: 'Settings',
+      title: t('common.settings'),
       width: 800,
       height: 700,
       minWidth: 760,
@@ -265,7 +267,7 @@ function App() {
     settingsWin.once('tauri://error', function (e) {
       console.error('Error creating settings window', e);
     });
-  }, []);
+  }, [t]);
 
   // --- Keyboard shortcuts ---
   useKeyboard({
@@ -378,17 +380,17 @@ function App() {
   ) => {
     if (folderModalMode === 'create') {
       await handleCreateFolder(name, color, icon);
-      toast.success(`Folder "${name}" created`);
+      toast.success(t('toast.folderCreated', { name }));
       closeFolderModal();
     } else if (folderModalMode === 'rename' && editingFolderId) {
       try {
         await cmd.renameFolder(editingFolderId, name, color, icon);
         await loadFolders();
-        toast.success(`Renamed to "${name}"`);
+        toast.success(t('toast.folderRenamed', { name }));
         closeFolderModal();
       } catch (error) {
         console.error('Failed to rename folder:', error);
-        toast.error('Failed to rename folder');
+        toast.error(t('toast.folderRenameFailed'));
       }
     }
   };
@@ -433,28 +435,28 @@ function App() {
         await cmd.addIgnoredApp(cleanName);
         await loadFolders();
         await refreshTotalCount();
-        toast.success(`Ignoring future clips from ${cleanName}`, {
+        toast.success(t('toast.ignoringApp', { app: cleanName }), {
           action: {
-            label: 'Undo',
+            label: t('common.undo'),
             onClick: async () => {
               try {
                 await cmd.removeIgnoredApp(cleanName);
                 await loadFolders();
                 await refreshTotalCount();
-                toast.success(`Removed ${cleanName} from ignored apps`);
+                toast.success(t('toast.unignoredApp', { app: cleanName }));
               } catch (undoError) {
                 console.error('Failed to undo ignore app:', undoError);
-                toast.error(`Failed to remove ${cleanName}`);
+                toast.error(t('toast.unignoreFailed', { app: cleanName }));
               }
             },
           },
         });
       } catch (error) {
         console.error('Failed to ignore app:', error);
-        toast.error(`Failed to ignore ${cleanName}`);
+        toast.error(t('toast.ignoreFailed', { app: cleanName }));
       }
     },
-    [loadFolders, refreshTotalCount]
+    [loadFolders, refreshTotalCount, t]
   );
 
   // --- Render ---
@@ -474,16 +476,20 @@ function App() {
         }}
       />
 
-      <div className="relative h-full w-full" style={{ padding: `${LAYOUT.WINDOW_PADDING}px` }}>
+      {/* Full-bleed: no padding, radius or border on the shell. It used to be a
+          rounded, outlined panel holding rounded, outlined cards — two nested
+          frames, so the cards read as boxes inside a box. With the outer frame
+          gone the cards are the only objects with an edge. */}
+      <div className="relative h-full w-full">
         <div
           data-app-shell
-          className="relative flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]"
+          className="relative flex h-full w-full flex-col overflow-hidden bg-background/80 text-foreground"
         >
           {/* Incognito mode: ambient red glow so the paused state is always visible */}
           {isIncognito && (
             <div
               aria-hidden
-              className="animate-incognito-glow pointer-events-none absolute inset-0 z-[80] rounded-[12px]"
+              className="animate-incognito-glow pointer-events-none absolute inset-0 z-[80]"
             />
           )}
           {contextMenu &&
@@ -508,7 +514,7 @@ function App() {
                           ...(selectedFolder
                             ? [
                                 {
-                                  label: ctxClip.is_pinned ? 'Unpin' : 'Pin',
+                                  label: t(ctxClip.is_pinned ? 'common.unpin' : 'common.pin'),
                                   onClick: () => handleTogglePin(contextMenu.itemId),
                                 },
                               ]
@@ -516,41 +522,45 @@ function App() {
                           ...(ctxClip.clip_type !== 'image'
                             ? [
                                 {
-                                  label: 'Paste as plain text',
+                                  label: t('contextMenu.pastePlainText'),
                                   onClick: () => handlePastePlainText(contextMenu.itemId),
                                 },
                                 {
-                                  label: 'Edit before paste',
+                                  label: t('contextMenu.editBeforePaste'),
                                   onClick: () => handleEditBeforePaste(contextMenu.itemId),
                                 },
                               ]
                             : []),
                           {
-                            label: ctxClip.note ? 'Edit note' : 'Add note',
+                            label: t(ctxClip.note ? 'contextMenu.editNote' : 'contextMenu.addNote'),
                             onClick: () => handleEditNote(contextMenu.itemId),
                           },
                           {
-                            label: ctxClip.is_sensitive ? 'Mark not sensitive' : 'Mark sensitive',
+                            label: t(
+                              ctxClip.is_sensitive
+                                ? 'contextMenu.markNotSensitive'
+                                : 'contextMenu.markSensitive'
+                            ),
                             onClick: () =>
                               handleSetSensitive(contextMenu.itemId, !ctxClip.is_sensitive),
                           },
                           ...(ctxClip.source_app?.trim()
                             ? [
                                 {
-                                  label: `Ignore ${ctxClip.source_app}`,
+                                  label: t('contextMenu.ignoreApp', { app: ctxClip.source_app }),
                                   onClick: () => handleIgnoreSourceApp(ctxClip.source_app),
                                 },
                               ]
                             : []),
                           {
-                            label: 'Delete',
+                            label: t('common.delete'),
                             danger: true,
                             onClick: () => handleDelete(contextMenu.itemId),
                           },
                         ]
                       : [
                           {
-                            label: 'Edit folder',
+                            label: t('contextMenu.editFolder'),
                             onClick: () => {
                               openRenameModal(
                                 contextMenu.itemId,
@@ -561,7 +571,7 @@ function App() {
                             },
                           },
                           {
-                            label: 'Delete',
+                            label: t('common.delete'),
                             danger: true,
                             onClick: () => {
                               setFolderDeleteConfirm({
@@ -578,9 +588,11 @@ function App() {
 
           <ConfirmDialog
             isOpen={!!folderDeleteConfirm}
-            title="Delete folder"
-            message={`Delete folder "${folderDeleteConfirm?.name ?? 'folder'}"? Clips inside will be moved to All.`}
-            confirmText="Delete"
+            title={t('dialogs.deleteFolderTitle')}
+            message={t('dialogs.deleteFolderMessage', {
+              name: folderDeleteConfirm?.name ?? t('dialogs.folderFallbackName'),
+            })}
+            confirmText={t('common.delete')}
             variant="danger"
             onConfirm={() => {
               const target = folderDeleteConfirm;

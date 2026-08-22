@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Settings, FolderItem, DashClip, DashboardStats } from '../types';
 import {
   X,
@@ -80,6 +81,7 @@ export function SettingsPanel({
   onToggleMaximize,
   onClose,
 }: SettingsPanelProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -193,8 +195,8 @@ export function SettingsPanel({
     isOpen: false,
     title: '',
     message: '',
-    confirmText: 'Confirm',
-    cancelText: 'Cancel',
+    confirmText: t('common.confirm'),
+    cancelText: t('common.cancel'),
     variant: 'danger' as 'danger' | 'warning' | 'info',
     details: [] as string[],
     action: async () => {},
@@ -213,8 +215,8 @@ export function SettingsPanel({
       isOpen: true,
       title: options.title,
       message: options.message,
-      confirmText: options.confirmText ?? 'Confirm',
-      cancelText: options.cancelText ?? 'Cancel',
+      confirmText: options.confirmText ?? t('common.confirm'),
+      cancelText: options.cancelText ?? t('common.cancel'),
       variant: options.variant ?? 'danger',
       details: options.details ?? [],
       action: options.action,
@@ -405,7 +407,7 @@ export function SettingsPanel({
           className="drag-area flex items-center justify-between border-b border-border p-4"
           onDoubleClick={onToggleMaximize}
         >
-          <h2 className="text-lg font-semibold">Settings</h2>
+          <h2 className="text-lg font-semibold">{t('common.settings')}</h2>
           <div
             className="no-drag flex items-center gap-2"
             onDoubleClick={(event) => event.stopPropagation()}
@@ -414,16 +416,16 @@ export function SettingsPanel({
             <button
               onClick={onToggleMaximize}
               className="icon-button"
-              title={isMaximized ? 'Restore' : 'Maximize'}
-              aria-label={isMaximized ? 'Restore settings window' : 'Maximize settings window'}
+              title={t(isMaximized ? 'settings.restore' : 'settings.maximize')}
+              aria-label={t(isMaximized ? 'settings.restoreWindow' : 'settings.maximizeWindow')}
             >
               {isMaximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
             <button
               onClick={onClose}
               className="icon-button"
-              title="Close"
-              aria-label="Close settings"
+              title={t('common.close')}
+              aria-label={t('settings.closeSettings')}
             >
               <X size={18} />
             </button>
@@ -559,9 +561,11 @@ export function SettingsPanel({
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-sm font-semibold text-amber-300">Backup imported</div>
+                      <div className="text-sm font-semibold text-amber-300">
+                        {t('settings.backupImported')}
+                      </div>
                       <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                        Restart ClipPaste so every window and cache reads the imported database.
+                        {t('settings.backupImportedHint')}
                       </div>
                     </div>
                     <button
@@ -638,9 +642,6 @@ export function SettingsPanel({
                     handleExportBackup={handleExportBackup}
                     handleImportBackup={handleImportBackup}
                     dataAction={dataAction}
-                    updateProgress={updateProgress}
-                    handleCheckUpdate={handleCheckUpdate}
-                    appVersion={appVersion}
                   />
                 )}
 
@@ -702,7 +703,7 @@ export function SettingsPanel({
               className="underline hover:text-foreground"
               disabled={!!updateProgress}
             >
-              {updateProgress ? 'Updating...' : 'Check for Updates'}
+              {updateProgress ? t('settings.updating') : t('settings.checkForUpdates')}
             </button>
           </div>
           {updateProgress && (

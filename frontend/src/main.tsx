@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { attachConsole } from '@tauri-apps/plugin-log';
 import { installErrorLogging } from './errorLog';
 import './index.css';
+import './i18n';
 
 // Lazy-load the secondary windows so the main clipboard window doesn't ship the
 // Settings/Scratchpad code (LibraryTab, BackupTab, charts, …) in its chunk.
