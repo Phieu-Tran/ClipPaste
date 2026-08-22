@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.10.24] - 2026-08-22
+## [1.10.25] - 2026-08-22
+
+> 1.10.24 was tagged but never shipped: the version bump missed
+> `src-tauri/tauri.conf.json`, which is the field Tauri actually builds from, so
+> that release produced 1.10.23 artifacts and an updater manifest no client would
+> act on. 1.10.25 is that release, built correctly.
 
 ### Added
 
