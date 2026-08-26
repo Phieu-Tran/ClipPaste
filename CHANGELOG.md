@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.26] - 2026-08-26
+
+### Fixed
+
+- **ClipPaste search shortcut**: `Ctrl+F` is now captured before WebView2 can open its native Find overlay, preventing the overlay from stealing focus and temporarily interfering with the global `Ctrl+Shift+V` shortcut.
+
+---
+
 ## [1.10.25] - 2026-08-22
 
 > 1.10.24 was tagged but never shipped: the version bump missed

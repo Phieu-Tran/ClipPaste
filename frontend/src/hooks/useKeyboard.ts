@@ -69,7 +69,12 @@ export function useKeyboard(options: KeyboardOptions) {
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    // Listen on window during the capture phase so Ctrl+F is handled before
+    // WebView2 (or a child control that stops propagation) can open its native
+    // find UI. That native UI lives outside the document and can also make the
+    // Tauri window report itself as unfocused, which interferes with the global
+    // toggle shortcut until the window is reopened.
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, []); // Subscribe once — options accessed via ref
 }
