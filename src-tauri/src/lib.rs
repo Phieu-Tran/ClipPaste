@@ -682,6 +682,22 @@ pub fn hide_scratchpad_window(app: &tauri::AppHandle) -> bool {
     hide_window_by_label(app, "scratchpad")
 }
 
+/// True only when the user is genuinely sitting in a ClipPaste window.
+///
+/// Windows keeps a hidden window as the foreground window when nothing else
+/// claims focus, so "the foreground process is us" on its own is not enough:
+/// after our last window hides, the global hotkeys would see our own stale
+/// foreground forever and refuse to open anything until the user clicked the
+/// tray. Requiring at least one visible window makes the guard recoverable.
+pub fn is_own_window_on_screen_foreground(app: &tauri::AppHandle) -> bool {
+    if !crate::clipboard::is_foreground_own_process() {
+        return false;
+    }
+    app.webview_windows()
+        .values()
+        .any(|w| w.is_visible().unwrap_or(false))
+}
+
 pub fn animate_window_show(window: &tauri::WebviewWindow) {
     // Atomically check if false and set to true. If already true, return.
     if IS_ANIMATING

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.27] - 2026-09-21
+
+### Fixed
+
+- **Global hotkey no longer wedges**: pressing `Ctrl+Shift+V` (or the scratchpad hotkey) repeatedly did nothing once something inside ClipPaste stole focus — the only way back was clicking the tray icon. The handler treated "our process owns the foreground window" as "the user is already in ClipPaste" and bailed out, but Windows keeps a *hidden* window as foreground when nothing else claims it, so the guard could never clear itself. The hotkey now reclaims focus when the window is on screen but unfocused, and only suppresses itself when a ClipPaste window is genuinely visible.
+- **`Ctrl+F` in Settings and Scratchpad**: 1.10.26 blocked WebView2's native Find overlay only in the main clipboard window. The block now runs for every window before React mounts.
+
+---
+
 ## [1.10.26] - 2026-08-26
 
 ### Fixed

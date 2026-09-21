@@ -619,12 +619,19 @@ pub fn register_app_shortcuts(
     app.global_shortcut()
         .on_shortcut(main_shortcut, move |app_handle, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                let already_open = win_clone.is_visible().unwrap_or(false)
-                    && win_clone.is_focused().unwrap_or(false);
-                if already_open {
-                    crate::animate_window_hide(&win_clone, None);
+                if win_clone.is_visible().unwrap_or(false) {
+                    if win_clone.is_focused().unwrap_or(false) {
+                        crate::animate_window_hide(&win_clone, None);
+                    } else {
+                        // Visible but unfocused means an in-process popup stole focus
+                        // (WebView2's native Ctrl+F find bar is the usual culprit).
+                        // Reclaim focus instead of bailing out — bailing left the
+                        // hotkey dead until the user clicked the tray icon.
+                        log::info!("HOTKEY: Main window visible but unfocused, reclaiming focus");
+                        let _ = win_clone.set_focus();
+                    }
                 } else {
-                    if crate::clipboard::is_foreground_own_process() {
+                    if crate::is_own_window_on_screen_foreground(app_handle) {
                         log::info!("HOTKEY: Main shortcut ignored while ClipPaste is focused");
                         return;
                     }
@@ -647,7 +654,7 @@ pub fn register_app_shortcuts(
     app.global_shortcut()
         .on_shortcut(scratchpad_shortcut, move |_app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                if crate::clipboard::is_foreground_own_process() {
+                if crate::is_own_window_on_screen_foreground(&app_for_sp) {
                     log::info!("HOTKEY: Scratchpad shortcut ignored while ClipPaste is focused");
                     return;
                 }
