@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.28] - 2026-10-03
+
+### Fixed
+
+- **Edge's "Find in page" bar no longer opens on `Ctrl+F`**: 1.10.26 and 1.10.27 tried to block it from JavaScript, but WebView2 handles browser accelerators natively, so the bar still appeared and stole focus from the window. ClipPaste now turns WebView2's browser accelerator keys off for every window (`SetAreBrowserAcceleratorKeysEnabled(false)`). `Ctrl+F` still opens ClipPaste's own search; editing keys (`Ctrl+C/V/X/A/Z`) are unaffected. Side effect: `F5`, `Ctrl+P`, `Ctrl+±` zoom and `F12` DevTools no longer do anything inside ClipPaste windows.
+
+---
+
 ## [1.10.27] - 2026-09-21
 
 ### Fixed

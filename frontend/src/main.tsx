@@ -19,22 +19,6 @@ const ScratchpadWindow = lazy(() =>
 installErrorLogging();
 attachConsole().catch((err) => console.error('[ClipPaste] Failed to attach Tauri console:', err));
 
-// WebView2 treats Ctrl+F as a browser accelerator and opens its native find bar.
-// That bar lives outside the document, so the Tauri window starts reporting
-// itself as unfocused and the global hotkey stops toggling it. App.tsx turns
-// Ctrl+F into the in-app search; Settings and Scratchpad have no use for it.
-// Kill the accelerator here, for every window, before React mounts — without
-// stopPropagation so App's own handler still sees the key.
-window.addEventListener(
-  'keydown',
-  (e) => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) {
-      e.preventDefault();
-    }
-  },
-  true
-);
-
 const urlParams = new URLSearchParams(window.location.search);
 const windowType = urlParams.get('window');
 

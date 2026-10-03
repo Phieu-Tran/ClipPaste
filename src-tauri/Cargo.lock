@@ -853,7 +853,7 @@ dependencies = [
 
 [[package]]
 name = "clippaste"
-version = "1.10.27"
+version = "1.10.28"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -889,9 +889,11 @@ dependencies = [
  "tiny_http",
  "tokio",
  "uuid",
+ "webview2-com",
  "window-vibrancy 0.5.3",
  "window-vibrancy 0.8.0",
  "windows 0.62.2",
+ "windows-core 0.61.2",
  "zip 2.4.2",
 ]
 

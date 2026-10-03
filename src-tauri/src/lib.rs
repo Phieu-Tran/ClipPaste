@@ -63,6 +63,37 @@ fn configured_log_level() -> log::LevelFilter {
     }
 }
 
+/// WebView2 handles browser accelerators (Ctrl+F/F3 find bar, Ctrl+P, F5, …)
+/// natively, so a JS `preventDefault` does not reliably stop Edge's find bar
+/// from opening. That bar lives outside the document, steals focus and breaks
+/// the global toggle hotkey. Turn the accelerators off for every webview — the
+/// key events still reach the page (App.tsx maps Ctrl+F to the in-app search),
+/// and editing keys (Ctrl+C/V/X/A/Z) are unaffected.
+#[cfg(target_os = "windows")]
+fn disable_browser_accelerator_keys<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("no-browser-accelerators")
+        .on_webview_ready(|webview| {
+            let label = webview.label().to_string();
+            let result = webview.with_webview(move |platform| unsafe {
+                use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+                use windows_core::Interface;
+                let applied = platform
+                    .controller()
+                    .CoreWebView2()
+                    .and_then(|core| core.Settings())
+                    .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
+                    .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
+                if let Err(e) = applied {
+                    log::warn!("Failed to disable browser accelerator keys for {label}: {e}");
+                }
+            });
+            if let Err(e) = result {
+                log::warn!("with_webview failed while disabling accelerator keys: {e}");
+            }
+        })
+        .build()
+}
+
 pub fn run_app() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
@@ -70,6 +101,11 @@ pub fn run_app() {
     #[cfg(target_os = "macos")]
     {
         builder = builder.plugin(tauri_plugin_log::Builder::default().build());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.plugin(disable_browser_accelerator_keys());
     }
 
     let data_dir = get_data_dir();

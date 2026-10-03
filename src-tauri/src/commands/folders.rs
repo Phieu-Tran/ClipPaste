@@ -340,6 +340,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_folder_moves_clips_to_all_and_keeps_clip_history() {
+        let _cache_lock = crate::clipboard::SEARCH_CACHE_TEST_LOCK.lock().await;
         let db = setup_test_db().await;
         sqlx::query(
             "INSERT INTO folders (uuid, name, updated_at) VALUES ('folder-delete-test', 'Work', CURRENT_TIMESTAMP)",

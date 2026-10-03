@@ -77,6 +77,12 @@ pub type SearchCacheMap = std::collections::HashMap<String, SearchCacheEntry>;
 pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<SearchCacheMap>> =
     Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
 
+/// Tests run in parallel but share SEARCH_CACHE, and some code paths (e.g.
+/// delete_folder_records → load_search_cache) replace the whole map. Every test
+/// that reads or writes the cache holds this lock so they can't clobber each other.
+#[cfg(test)]
+pub static SEARCH_CACHE_TEST_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(Default::default);
+
 /// In-memory settings cache: avoids DB round-trips for hot-path settings like auto_paste, ignore_ghost_clips.
 pub static SETTINGS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, String>>> =
     Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
