@@ -739,7 +739,7 @@ async fn process_clipboard_change(
                     clip_hash = calculate_hash(&bytes);
 
                     // Save image to disk: {images_dir}/{hash}.png
-                    let filename = format!("{}.png", &clip_hash);
+                    let filename = format!("{}.png", clip_hash);
                     let image_file_path = db.image_path(&filename);
                     if !image_file_path.exists() {
                         if let Err(e) = std::fs::write(&image_file_path, &bytes) {
@@ -750,7 +750,7 @@ async fn process_clipboard_change(
                     }
 
                     // Generate and save thumbnail as {hash}_thumb.jpg
-                    let thumb_filename = format!("{}_thumb.jpg", &clip_hash);
+                    let thumb_filename = format!("{}_thumb.jpg", clip_hash);
                     let thumb_path = db.image_path(&thumb_filename);
                     if !thumb_path.exists() {
                         if let Some(thumb_bytes) = generate_thumbnail(&bytes) {
@@ -1620,11 +1620,8 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
     let _ = DeleteObject(mem_bm.into());
     let _ = ReleaseDC(None, screen_dc);
 
-    for chunk in pixels.chunks_exact_mut(4) {
-        let b = chunk[0];
-        let r = chunk[2];
-        chunk[0] = r;
-        chunk[2] = b;
+    for px in pixels.as_chunks_mut::<4>().0 {
+        px.swap(0, 2); // BGRA -> RGBA
     }
 
     let mut png_data = Vec::new();

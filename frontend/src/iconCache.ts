@@ -13,8 +13,7 @@ function estimateIconBytes(icon: string) {
 function trimIconCache() {
   while (_cache.size > MAX_ICON_CACHE_ENTRIES || cacheBytes > MAX_ICON_CACHE_BYTES) {
     const first = _cache.entries().next().value as
-      | [string, { icon: string; bytes: number }]
-      | undefined;
+      [string, { icon: string; bytes: number }] | undefined;
     if (!first) break;
     _cache.delete(first[0]);
     cacheBytes -= first[1].bytes;

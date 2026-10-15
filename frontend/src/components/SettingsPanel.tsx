@@ -61,14 +61,7 @@ interface SettingsPanelProps {
 }
 
 type Tab =
-  | 'dashboard'
-  | 'library'
-  | 'general'
-  | 'folders'
-  | 'backup'
-  | 'diagnostics'
-  | 'hotkeys'
-  | 'sync';
+  'dashboard' | 'library' | 'general' | 'folders' | 'backup' | 'diagnostics' | 'hotkeys' | 'sync';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 function toDateStr(d: Date): string {

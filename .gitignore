@@ -39,3 +39,6 @@ scripts/test.sh
 
 # Serena tool workspace (not source)
 .serena/
+
+# Tauri updater manifest downloaded during release
+latest.json

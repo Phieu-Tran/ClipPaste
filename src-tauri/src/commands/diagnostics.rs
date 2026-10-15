@@ -122,7 +122,7 @@ fn dev_helper_processes() -> Vec<ProcessMemoryInfo> {
     }
 
     let _ = unsafe { CloseHandle(snapshot) };
-    processes.sort_by(|a, b| b.working_set_bytes.cmp(&a.working_set_bytes));
+    processes.sort_by_key(|p| std::cmp::Reverse(p.working_set_bytes));
     processes.truncate(12);
     processes
 }

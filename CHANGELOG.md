@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.1] - 2026-10-15
+
+### Changed
+
+- **Dependency refresh**: Tauri 2.10 → 2.12 (wry 0.54 → 0.57, tao 0.34 → 0.37) and all Tauri plugins (updater 2.14, log 2.10, opener 2.7, autostart 2.7, global-shortcut 2.4, process 2.4) on both the Rust and JS side; `webview2-com` 0.38 → 0.39 and `windows-core` 0.61 → 0.62 to match the new wry. Patch/minor updates for tokio, rustls, reqwest, i18next, react-i18next, sonner, TanStack Virtual and the lint/format toolchain (ESLint 10.12, Prettier 3.9, typescript-eslint 8.71).
+- **Toolchain**: built with Rust 1.99.0 (CI pin bumped from 1.93.1).
+
+---
+
 ## [1.10.28] - 2026-10-03
 
 ### Fixed

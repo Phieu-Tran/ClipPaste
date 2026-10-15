@@ -86,8 +86,7 @@ function trimImageDataUrlCache() {
     imageDataUrlCache.size > IMAGE_DATA_URL_CACHE_MAX_ENTRIES
   ) {
     const first = imageDataUrlCache.entries().next().value as
-      | [string, { src: string; bytes: number; thumbnail: boolean }]
-      | undefined;
+      [string, { src: string; bytes: number; thumbnail: boolean }] | undefined;
     if (!first) break;
 
     const [key, cached] = first;

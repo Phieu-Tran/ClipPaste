@@ -117,9 +117,7 @@ export interface ClipCleanupPreview {
 }
 
 export type ImportBackupResult =
-  | { status: 'success' }
-  | { status: 'cancelled' }
-  | { status: 'error'; error: string };
+  { status: 'success' } | { status: 'cancelled' } | { status: 'error'; error: string };
 
 export interface ImportBackupPreview {
   path: string;
