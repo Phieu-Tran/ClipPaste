@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.2] - 2026-11-25
+
+### Fixed
+
+- **Google Drive sync skipped same-day edits**: changes were stored with SQLite timestamps (`2026-11-25 10:05:00`) but compared as text against an RFC3339 sync watermark (`2026-11-25T10:00:00…`). Because a space sorts before `T`, every clip, folder or scratchpad change made on the same UTC day as the previous sync looked "already pushed" and only reached other devices at the next compaction. Both sides are now normalised with `datetime()`. The "pending changes" counter had the same bug and is fixed too.
+- **Sync re-uploaded every deletion on every cycle**: all retained tombstones (30 days) were sent in each op file, so after a single delete the app wrote a new op file to Drive every sync interval even with nothing to sync. Deltas now carry only deletions recorded since the last sync.
+- **Window could fail to hide or show** right after a display was unplugged or the PC woke from sleep (no monitor info available) — hiding also skipped auto-paste. It now falls back to the cursor's monitor, and if that fails too, hides/shows without animating.
+- **Wrong window height on mixed-DPI multi-monitor setups**: size and position are now applied in one `SetWindowPos` call, so Windows no longer rescales the window a second time when it moves to a monitor with a different DPI.
+- **Mica/Acrylic/Blur backdrop lost after sleep**: the effect is re-applied each time the window is shown (from the in-memory settings cache; skipped for Clear presets).
+- **Auto-paste did nothing in some terminals** (Windows Terminal, PuTTY, SecureCRT): `Shift+Insert` is now sent with real scan codes and the extended-key flag that Insert requires.
+- **Taskbar button flickered** on every show/hide: the main window no longer creates a taskbar entry.
+- "Clip saved" / "Image saved" toasts were always English; they now follow the interface language.
+
+### Changed
+
+- **Smoother window slide**: show (180 ms, ease-out) and hide (130 ms) animations now follow real elapsed time instead of fixed 10 ms steps, which on Windows' ~15.6 ms timer made the slide uneven and slower than intended. Faster hide also means auto-paste lands sooner.
+- **Smoother clip list**: cards scrolled into view appear immediately (the entrance stagger only plays when the list is first revealed — it used to leave freshly scrolled-in slots empty for up to ~0.5 s); mouse-wheel scrolling eases toward its target instead of jumping 250 px per notch; reloading the list no longer re-renders cards whose data did not change, removing the hitch at the end of the open animation.
+- **Settings → Diagnostics shows the real memory footprint**: the RAM card now totals the app plus its WebView2 processes (where the UI actually runs), instead of only the Rust core.
+
+### Performance
+
+- **Lower RAM while idle**: after the main window has been hidden for 5 minutes, WebView2 is asked to trim its memory and the app releases its own unused pages; both return to normal the moment the window is shown again. Measured on a 27k-clip history: WebView2 renderer working set ~120 MB → ~5 MB, total process-tree working set ~700 MB → ~300 MB.
+- **Scratchpad frees its window when unused**: a hidden scratchpad closes itself after 10 minutes (never while a note edit or paste is in progress) and is recreated on next open, instead of keeping its WebView in memory indefinitely.
+- **Smaller SQLite page cache** (8 MB → 2 MB per connection): reads already go through the 64 MB memory map, so the larger private cache mostly duplicated OS-cached pages.
+- Removed a full-window `backdrop-filter` layer that blurred nothing (the window is transparent) but still cost GPU compositing.
+
+---
+
 ## [2.0.1] - 2026-10-15
 
 ### Changed

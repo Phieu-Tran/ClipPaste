@@ -144,6 +144,8 @@ export interface ProcessMemoryInfo {
 export interface RuntimeDiagnostics {
   generated_at: string;
   app: ProcessMemoryInfo;
+  /** WebView2 child processes (browser, GPU, renderer, utility) — most of the real footprint. */
+  webview_processes: ProcessMemoryInfo[];
   dev_helpers: ProcessMemoryInfo[];
 }
 

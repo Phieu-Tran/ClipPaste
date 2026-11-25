@@ -85,24 +85,33 @@ async fn count_pending_changes(db: &Database, last_sync_at: &Option<String>) -> 
         None => "1970-01-01T00:00:00Z".to_string(),
     };
 
-    let clip_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE updated_at > ?")
-        .bind(&since)
-        .fetch_one(&db.pool)
-        .await
-        .unwrap_or(0);
+    // Stored timestamps use SQLite's "YYYY-MM-DD HH:MM:SS" while the watermark is RFC3339
+    // ("YYYY-MM-DDTHH:MM:SS..."). Compared as raw text, ' ' < 'T' makes every same-day change
+    // look older than the watermark, so normalise both sides through datetime().
+    let clip_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM clips WHERE datetime(COALESCE(updated_at, created_at)) > datetime(?)",
+    )
+    .bind(&since)
+    .fetch_one(&db.pool)
+    .await
+    .unwrap_or(0);
 
-    let folder_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM folders WHERE updated_at > ?")
-        .bind(&since)
-        .fetch_one(&db.pool)
-        .await
-        .unwrap_or(0);
+    let folder_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM folders
+         WHERE uuid IS NOT NULL AND datetime(COALESCE(updated_at, created_at)) > datetime(?)",
+    )
+    .bind(&since)
+    .fetch_one(&db.pool)
+    .await
+    .unwrap_or(0);
 
-    let tombstone_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM sync_tombstones WHERE deleted_at > ?")
-            .bind(&since)
-            .fetch_one(&db.pool)
-            .await
-            .unwrap_or(0);
+    let tombstone_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sync_tombstones WHERE datetime(deleted_at) > datetime(?)",
+    )
+    .bind(&since)
+    .fetch_one(&db.pool)
+    .await
+    .unwrap_or(0);
 
     (clip_count + folder_count + tombstone_count) as u64
 }

@@ -7,6 +7,13 @@ import { LAYOUT, TOTAL_COLUMN_WIDTH } from '../constants';
 import { FolderOpen, SearchX, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+/** How long after a list (re)reveal newly mounted cards still get the entrance stagger. */
+const REVEAL_WINDOW_MS = 450;
+/** Cap the stagger so the last visible card never waits more than ~300 ms. */
+const MAX_STAGGER_STEPS = 10;
+/** Fraction of the remaining distance covered per frame by smooth wheel scrolling. */
+const WHEEL_EASE = 0.22;
+
 interface ClipListProps {
   clips: ClipboardItem[];
   isLoading: boolean;
@@ -62,7 +69,16 @@ export function ClipList({
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [staggerKey, setStaggerKey] = useState(0);
+  // The entrance stagger only plays for the cards present when the list is
+  // (re)revealed. Cards the virtualizer mounts later while scrolling used to get
+  // it too — with a 300–570 ms delay from their high viewIndex — so freshly
+  // scrolled-in slots sat empty and then faded in.
+  const [revealing, setRevealing] = useState(true);
   const [edges, setEdges] = useState({ left: false, right: false });
+  // Smooth mouse-wheel scrolling: target position the rAF loop eases toward.
+  const wheelTargetRef = useRef<number | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const hasClips = clips.length > 0;
   const prevClipsKeyRef = useRef('');
 
   // Track scroll position to fade the edges that still have off-screen clips.
@@ -118,6 +134,18 @@ export function ClipList({
     prevClipsKeyRef.current = clipsKey;
   }, [clipsKey]);
 
+  useEffect(() => {
+    setRevealing(true);
+    const timer = setTimeout(() => setRevealing(false), REVEAL_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [staggerKey]);
+
+  const cancelSmoothScroll = useCallback(() => {
+    if (wheelRafRef.current != null) cancelAnimationFrame(wheelRafRef.current);
+    wheelRafRef.current = null;
+    wheelTargetRef.current = null;
+  }, []);
+
   // Multi-select order: map clip id → display index (0-based) among selected clips
   const multiSelectOrder = useMemo(() => {
     if (!selectedClipIds || selectedClipIds.size <= 1) return new Map<string, number>();
@@ -161,6 +189,7 @@ export function ClipList({
     }
 
     if (targetLeft !== null) {
+      cancelSmoothScroll();
       const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
       container.scrollLeft = Math.max(0, Math.min(targetLeft, maxScroll));
     }
@@ -172,10 +201,11 @@ export function ClipList({
     // RAF ensures DOM has rendered before resetting scroll
     requestAnimationFrame(() => {
       if (containerRef.current) {
+        cancelSmoothScroll();
         containerRef.current.scrollLeft = 0;
       }
     });
-  }, [resetScrollKey, clipsKey]);
+  }, [resetScrollKey, clipsKey, cancelSmoothScroll]);
 
   // Infinite scroll — load more when near the end
   const handleScroll = useCallback(() => {
@@ -198,19 +228,66 @@ export function ClipList({
   }, [updateEdges, clips.length, staggerKey]);
 
   // Convert vertical wheel → horizontal scroll. Trackpad horizontal gestures work natively.
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!containerRef.current) return;
-    // Only intercept vertical scroll (mouse wheel / trackpad vertical swipe)
-    // Let native horizontal trackpad gestures pass through untouched
-    if (e.deltaY !== 0 && e.deltaX === 0) {
+  // Registered natively with { passive: false }: React attaches wheel listeners as
+  // passive, so preventDefault() inside an onWheel prop is ignored.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const step = () => {
+      const target = wheelTargetRef.current;
+      if (target == null) {
+        wheelRafRef.current = null;
+        return;
+      }
+      const diff = target - el.scrollLeft;
+      if (Math.abs(diff) < 1) {
+        el.scrollLeft = target;
+        wheelTargetRef.current = null;
+        wheelRafRef.current = null;
+        return;
+      }
+      // Ease toward the target: fast start, soft landing, frame-rate independent enough
+      // at 60–144 Hz. Always move at least 1px so integer scrollLeft can't stall.
+      const delta = diff * WHEEL_EASE;
+      el.scrollLeft += Math.abs(delta) < 1 ? Math.sign(diff) : delta;
+      wheelRafRef.current = requestAnimationFrame(step);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      // Only intercept vertical scroll; native horizontal trackpad gestures pass through.
+      if (e.deltaY === 0 || e.deltaX !== 0) return;
       e.preventDefault();
-      // Mouse wheel: deltaMode=0 with large steps (~100px), needs higher multiplier
-      // Trackpad: deltaMode=0 with small steps (~1-30px), needs lower multiplier
-      const isLikelyMouse = Math.abs(e.deltaY) >= 50;
-      const multiplier = isLikelyMouse ? 2.5 : 0.5;
-      containerRef.current.scrollLeft += e.deltaY * multiplier;
-    }
-  }, []);
+
+      const deltaPx =
+        e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? e.deltaY * 40
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? e.deltaY * el.clientWidth
+            : e.deltaY;
+
+      // Trackpad: many small deltas already arrive smoothly — apply directly.
+      // Mouse wheel: ~100px notches — animate toward an accumulated target instead
+      // of jumping 250px per notch.
+      const isLikelyMouse = e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL || Math.abs(deltaPx) >= 50;
+      if (!isLikelyMouse) {
+        cancelSmoothScroll();
+        el.scrollLeft += deltaPx * 0.5;
+        return;
+      }
+
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+      const base = wheelTargetRef.current ?? el.scrollLeft;
+      wheelTargetRef.current = Math.max(0, Math.min(maxScroll, base + deltaPx * 2.5));
+      if (wheelRafRef.current == null) wheelRafRef.current = requestAnimationFrame(step);
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      cancelSmoothScroll();
+    };
+  }, [hasClips, cancelSmoothScroll]);
 
   if (isLoading && clips.length === 0) {
     return (
@@ -303,7 +380,6 @@ export function ClipList({
               : undefined
       )}
       onScroll={handleScroll}
-      onWheel={handleWheel}
       style={{
         scrollPaddingLeft: LAYOUT.SIDE_PADDING,
       }}
@@ -319,19 +395,19 @@ export function ClipList({
       >
         {virtualizer.getVirtualItems().map((virtualItem, viewIndex) => {
           const clip = clips[virtualItem.index];
+          const stagger = revealing && !isSearching;
           return (
             <div
               key={clip.id}
-              className={clsx(
-                'absolute flex items-center',
-                isSearching ? undefined : 'animate-stagger-in'
-              )}
+              className={clsx('absolute flex items-center', stagger && 'animate-stagger-in')}
               style={{
                 top: 0,
                 left: virtualItem.start + LAYOUT.SIDE_PADDING,
                 width: virtualItem.size,
                 height: '100%',
-                ...(isSearching ? {} : { animationDelay: `${viewIndex * 30}ms` }),
+                ...(stagger
+                  ? { animationDelay: `${Math.min(viewIndex, MAX_STAGGER_STEPS) * 30}ms` }
+                  : {}),
               }}
               data-stagger-key={staggerKey}
             >

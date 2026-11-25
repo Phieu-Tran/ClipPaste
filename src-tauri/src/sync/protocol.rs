@@ -281,7 +281,7 @@ pub async fn sync_now(
     let changed_clips = get_clips(db, Some(&push_base_at), sync_images).await?;
     let changed_folders = get_folders(db, Some(&push_base_at)).await?;
     let changed_scratchpads = get_scratchpads(db, Some(&push_base_at)).await?;
-    let tombstones = get_tombstones(db).await?;
+    let tombstones = get_tombstones(db, Some(&push_base_at)).await?;
 
     let has_local_changes = !changed_clips.is_empty()
         || !changed_folders.is_empty()
@@ -412,7 +412,7 @@ pub(crate) async fn build_full_state(
     let clips = get_clips(db, None, sync_images).await?;
     let folders = get_folders(db, None).await?;
     let scratchpads = get_scratchpads(db, None).await?;
-    let tombstones = get_tombstones(db).await?;
+    let tombstones = get_tombstones(db, None).await?;
 
     Ok(SyncState {
         clips,
@@ -425,8 +425,14 @@ pub(crate) async fn build_full_state(
 }
 
 /// Fetch clips for sync. `since = None` returns everything (newest first, for
-/// full-state snapshots); `since = Some(ts)` returns only rows changed after `ts`.
-async fn get_clips(
+/// full-state snapshots); `since = Some(ts)` returns only rows changed at or after `ts`.
+///
+/// Row timestamps are SQLite `CURRENT_TIMESTAMP` text ("YYYY-MM-DD HH:MM:SS") but the
+/// watermark is RFC3339 ("YYYY-MM-DDTHH:MM:SS…"). Compared as raw text, ' ' < 'T' hides
+/// every change made on the same UTC day as the last sync, so both sides go through
+/// `datetime()`. `>=` rather than `>`: rows only have second precision, so a change in
+/// the same second as the watermark must still be pushed; re-sending it is harmless (LWW).
+pub(crate) async fn get_clips(
     db: &Database,
     since: Option<&str>,
     sync_images: bool,
@@ -436,7 +442,7 @@ async fn get_clips(
             "SELECT uuid, clip_type, content, text_preview, content_hash, folder_id,
                     source_app, metadata, subtype, note, paste_count, is_pinned, is_sensitive,
                     created_at, COALESCE(updated_at, created_at)
-             FROM clips WHERE COALESCE(updated_at, created_at) > ?"
+             FROM clips WHERE datetime(COALESCE(updated_at, created_at)) >= datetime(?)"
         }
         None => {
             "SELECT uuid, clip_type, content, text_preview, content_hash, folder_id,
@@ -508,7 +514,8 @@ async fn get_folders(db: &Database, since: Option<&str>) -> Result<Vec<SyncFolde
     let sql = match since {
         Some(_) => {
             "SELECT uuid, name, icon, color, position, created_at, COALESCE(updated_at, created_at)
-             FROM folders WHERE uuid IS NOT NULL AND COALESCE(updated_at, created_at) > ?"
+             FROM folders WHERE uuid IS NOT NULL
+               AND datetime(COALESCE(updated_at, created_at)) >= datetime(?)"
         }
         None => {
             "SELECT uuid, name, icon, color, position, created_at, COALESCE(updated_at, created_at)
@@ -547,7 +554,7 @@ async fn get_scratchpads(
     let sql = match since {
         Some(_) => {
             "SELECT uuid, title, content, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
-         FROM scratchpads WHERE COALESCE(updated_at, created_at) > ?"
+         FROM scratchpads WHERE datetime(COALESCE(updated_at, created_at)) >= datetime(?)"
         }
         None => {
             "SELECT uuid, title, content, is_pinned, color, position, created_at, COALESCE(updated_at, created_at)
@@ -579,11 +586,30 @@ async fn get_scratchpads(
         .collect())
 }
 
-async fn get_tombstones(db: &Database) -> Result<Vec<Tombstone>, SyncError> {
-    let rows: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT uuid, entity_type, deleted_at FROM sync_tombstones")
+/// Fetch tombstones for sync. `since = None` returns every retained tombstone
+/// (full-state snapshots); `since = Some(ts)` returns only deletions recorded
+/// at or after `ts`, so a delta does not re-upload the whole 30-day backlog on
+/// every cycle.
+pub(crate) async fn get_tombstones(
+    db: &Database,
+    since: Option<&str>,
+) -> Result<Vec<Tombstone>, SyncError> {
+    let rows: Vec<(String, String, String)> = match since {
+        Some(since) => {
+            sqlx::query_as(
+                "SELECT uuid, entity_type, deleted_at FROM sync_tombstones
+                 WHERE datetime(deleted_at) >= datetime(?)",
+            )
+            .bind(since)
             .fetch_all(&db.pool)
-            .await?;
+            .await?
+        }
+        None => {
+            sqlx::query_as("SELECT uuid, entity_type, deleted_at FROM sync_tombstones")
+                .fetch_all(&db.pool)
+                .await?
+        }
+    };
 
     Ok(rows
         .into_iter()

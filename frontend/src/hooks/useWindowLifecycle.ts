@@ -1,4 +1,4 @@
-import { setLanguage } from '../i18n';
+import i18n, { setLanguage } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -143,7 +143,9 @@ export function useWindowLifecycle(opts: UseWindowLifecycleOptions) {
       refreshCurrentFolderRef.current();
       debouncedFolderRefreshRef.current();
       const type = event.payload?.clip_type || 'text';
-      toast.success(type === 'image' ? 'Image saved' : 'Clip saved', {
+      // i18n.t rather than useTranslation: this listener subscribes once and must
+      // still follow a language switch made after it was registered.
+      toast.success(i18n.t(type === 'image' ? 'toast.imageSaved' : 'toast.clipSaved'), {
         duration: 1500,
         style: { fontSize: '12px', padding: '6px 12px' },
       });

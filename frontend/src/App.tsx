@@ -27,10 +27,20 @@ import { useScratchpad } from './hooks/useScratchpad';
 import { Toaster, toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { TIMING } from './constants';
+import { reconcileClips } from './utils/reconcileClips';
 
 function App() {
   const { t } = useTranslation();
-  const [clips, setClips] = useState<AppClipboardItem[]>([]);
+  const [clips, setRawClips] = useState<AppClipboardItem[]>([]);
+  // Every hook writes clips through this, so unchanged clips keep their object
+  // identity across reloads and ClipCard's memo can skip them.
+  const setClips = useCallback<React.Dispatch<React.SetStateAction<AppClipboardItem[]>>>(
+    (update) =>
+      setRawClips((prev) =>
+        reconcileClips(prev, typeof update === 'function' ? update(prev) : update)
+      ),
+    []
+  );
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -468,14 +478,6 @@ function App() {
       }}
       onDragEnd={handleNativeDragEnd}
     >
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundColor: 'transparent',
-          backdropFilter: 'blur(2px)',
-        }}
-      />
-
       {/* Full-bleed: no padding, radius or border on the shell. It used to be a
           rounded, outlined panel holding rounded, outlined cards — two nested
           frames, so the cards read as boxes inside a box. With the outer frame

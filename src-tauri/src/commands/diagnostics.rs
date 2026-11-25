@@ -12,6 +12,10 @@ pub struct ProcessMemoryInfo {
 pub struct RuntimeDiagnostics {
     pub generated_at: String,
     pub app: ProcessMemoryInfo,
+    /// Child processes spawned on the app's behalf — on Windows the WebView2
+    /// browser, GPU, renderer and utility processes. The UI lives in these, so
+    /// they hold most of the real footprint; `app` alone is only the Rust core.
+    pub webview_processes: Vec<ProcessMemoryInfo>,
     pub dev_helpers: Vec<ProcessMemoryInfo>,
 }
 
@@ -20,8 +24,67 @@ pub fn get_runtime_diagnostics() -> Result<RuntimeDiagnostics, String> {
     Ok(RuntimeDiagnostics {
         generated_at: chrono::Utc::now().to_rfc3339(),
         app: current_process_memory()?,
+        webview_processes: descendant_processes(std::process::id()),
         dev_helpers: dev_helper_processes(),
     })
+}
+
+/// Every process below `root_pid` in the process tree, with its memory counters.
+#[cfg(target_os = "windows")]
+fn descendant_processes(root_pid: u32) -> Vec<ProcessMemoryInfo> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let snapshot = match unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) } {
+        Ok(handle) => handle,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    // (pid, parent_pid, name)
+    let mut all: Vec<(u32, u32, String)> = Vec::new();
+    if unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok() {
+        loop {
+            all.push((
+                entry.th32ProcessID,
+                entry.th32ParentProcessID,
+                wide_process_name(&entry.szExeFile),
+            ));
+            if unsafe { Process32NextW(snapshot, &mut entry) }.is_err() {
+                break;
+            }
+        }
+    }
+    let _ = unsafe { CloseHandle(snapshot) };
+
+    // Breadth-first walk from the root. PIDs can be reused, so a stale parent id
+    // could in theory pull in an unrelated process; the seen-set stops cycles.
+    let mut seen = std::collections::HashSet::from([root_pid]);
+    let mut frontier = vec![root_pid];
+    let mut result = Vec::new();
+    while let Some(parent) = frontier.pop() {
+        for (pid, ppid, name) in &all {
+            if *ppid == parent && seen.insert(*pid) {
+                frontier.push(*pid);
+                if let Ok(info) = process_memory(*pid, name.clone()) {
+                    result.push(info);
+                }
+            }
+        }
+    }
+    result.sort_by_key(|p| std::cmp::Reverse(p.private_bytes));
+    result
+}
+
+#[cfg(not(target_os = "windows"))]
+fn descendant_processes(_root_pid: u32) -> Vec<ProcessMemoryInfo> {
+    Vec::new()
 }
 
 #[cfg(target_os = "windows")]

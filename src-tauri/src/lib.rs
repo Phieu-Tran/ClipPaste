@@ -94,6 +94,97 @@ fn disable_browser_accelerator_keys<R: tauri::Runtime>() -> tauri::plugin::Tauri
         .build()
 }
 
+/// How long the main window must stay hidden before WebView2 is asked to trim memory.
+/// Long enough that quick hotkey toggles always hit a fully warm webview.
+#[cfg(target_os = "windows")]
+const LOW_MEMORY_AFTER_HIDDEN: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+#[cfg(target_os = "windows")]
+static MAIN_WEBVIEW_LOW_MEMORY: AtomicBool = AtomicBool::new(false);
+
+/// Ask WebView2 to drop caches / trim its working set (`low = true`) or return to
+/// normal. This is the API WebView2 provides for apps that sit hidden in the tray;
+/// older runtimes without ICoreWebView2_19 simply keep their current behaviour.
+#[cfg(target_os = "windows")]
+fn set_webview_memory_target(window: &tauri::WebviewWindow, low: bool) {
+    let result = window.with_webview(move |platform| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+        };
+        use windows_core::Interface;
+        let level = if low {
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+        } else {
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+        };
+        let applied = platform
+            .controller()
+            .CoreWebView2()
+            .and_then(|core| core.cast::<ICoreWebView2_19>())
+            .and_then(|core| core.SetMemoryUsageTargetLevel(level));
+        match applied {
+            Ok(()) => log::debug!(
+                "WebView2 memory target set to {}",
+                if low { "low" } else { "normal" }
+            ),
+            Err(e) => log::debug!("WebView2 memory target unavailable: {e}"),
+        }
+    });
+    if let Err(e) = result {
+        log::debug!("with_webview failed while setting memory target: {e}");
+    }
+}
+
+/// Restore the normal memory target before the main window is shown again.
+#[cfg(target_os = "windows")]
+fn ensure_main_webview_warm(window: &tauri::WebviewWindow) {
+    if MAIN_WEBVIEW_LOW_MEMORY.swap(false, Ordering::SeqCst) {
+        set_webview_memory_target(window, false);
+    }
+}
+
+/// Background watcher: once the main window has been hidden for
+/// LOW_MEMORY_AFTER_HIDDEN, drop WebView2 to the low memory target. Polling
+/// `is_visible` covers every hide path (hotkey, blur, Esc from the page, paste).
+#[cfg(target_os = "windows")]
+fn spawn_idle_memory_trim(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut hidden_since: Option<std::time::Instant> = None;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            let Some(win) = app.get_webview_window("main") else {
+                continue;
+            };
+            if win.is_visible().unwrap_or(true) {
+                hidden_since = None;
+                ensure_main_webview_warm(&win);
+                continue;
+            }
+            let since = *hidden_since.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed() >= LOW_MEMORY_AFTER_HIDDEN
+                && !MAIN_WEBVIEW_LOW_MEMORY.swap(true, Ordering::SeqCst)
+            {
+                log::info!("Main window idle: asking WebView2 to trim memory");
+                set_webview_memory_target(&win, true);
+                trim_own_working_set();
+            }
+        }
+    });
+}
+
+/// Release the Rust core's own resident pages (startup scratch, SQLite pages, …)
+/// back to the OS standby list. Nothing is freed or lost: pages the app touches
+/// again — on the next clipboard change or show — fault back in from standby
+/// cheaply. Only runs alongside the WebView2 trim, i.e. after a long idle.
+#[cfg(target_os = "windows")]
+fn trim_own_working_set() {
+    use windows::Win32::System::ProcessStatus::EmptyWorkingSet;
+    use windows::Win32::System::Threading::GetCurrentProcess;
+    if let Err(e) = unsafe { EmptyWorkingSet(GetCurrentProcess()) } {
+        log::debug!("EmptyWorkingSet failed: {e}");
+    }
+}
+
 pub fn run_app() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
@@ -181,6 +272,9 @@ pub fn run_app() {
 
             // Start background auto-sync task
             sync::start_auto_sync(db_arc.clone());
+
+            #[cfg(target_os = "windows")]
+            spawn_idle_memory_trim(handle.clone());
 
             Ok(())
         })
@@ -697,7 +791,34 @@ fn spawn_wal_checkpoint(db: Arc<Database>) {
 }
 
 pub fn position_window_at_bottom(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    {
+        ensure_main_webview_warm(window);
+        reapply_window_effect_from_cache(window);
+    }
     animate_window_show(window);
+}
+
+/// DWM can drop a window's backdrop (Mica/Acrylic/Blur) across sleep/resume or a
+/// display change, leaving the hidden window transparent the next time it shows.
+/// Re-apply on every show from the in-memory settings cache — no DB round-trip on
+/// the hotkey path. Before the cache loads (or when the user never picked an effect)
+/// this is a no-op; startup already applied the effect.
+#[cfg(target_os = "windows")]
+fn reapply_window_effect_from_cache(window: &tauri::WebviewWindow) {
+    let Some(effect) = clipboard::get_cached_setting("mica_effect") else {
+        return;
+    };
+    // "Clear" presets have no DWM backdrop that could be lost — nothing to restore.
+    if effect.starts_with("clear") {
+        return;
+    }
+    let theme = match clipboard::get_cached_setting("theme").as_deref() {
+        Some("light") => tauri::Theme::Light,
+        Some("dark") => tauri::Theme::Dark,
+        _ => window.theme().unwrap_or(tauri::Theme::Dark),
+    };
+    apply_window_effect(window, &effect, &theme);
 }
 
 fn hide_window_by_label(app: &tauri::AppHandle, label: &str) -> bool {
@@ -765,10 +886,8 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
                 scale_factor
             );
 
-            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: work_area.size.width - (window_margin_px as u32 * 2),
-                height: window_height_px,
-            }));
+            let target_x = work_area.position.x + window_margin_px;
+            let target_width = work_area.size.width - (window_margin_px as u32 * 2);
 
             let target_y = work_area.position.y + (work_area.size.height as i32)
                 - (window_height_px as i32)
@@ -789,37 +908,25 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
 
             if skip_animation {
                 // Position directly at target — no slide animation
-                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                    x: work_area.position.x + window_margin_px,
-                    y: target_y,
-                }));
+                place_window(&window, target_x, target_y, target_width, window_height_px);
                 let _ = window.show();
                 let _ = window.set_focus();
             } else {
                 // Normal slide-up animation from bottom edge
                 let start_y = work_area.position.y + (work_area.size.height as i32);
 
-                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                    x: work_area.position.x + window_margin_px,
-                    y: start_y,
-                }));
+                place_window(&window, target_x, start_y, target_width, window_height_px);
 
                 let _ = window.show();
                 let _ = window.set_focus();
 
-                let steps = 15;
-                let duration = std::time::Duration::from_millis(10);
-                let dy = (target_y - start_y) as f64 / steps as f64;
-
-                for i in 1..=steps {
-                    let current_y = start_y as f64 + dy * i as f64;
+                slide_window(SHOW_SLIDE_MS, start_y, target_y, ease_out_cubic, |y| {
                     let _ =
                         window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                            x: work_area.position.x + window_margin_px,
-                            y: current_y as i32,
+                            x: target_x,
+                            y,
                         }));
-                    std::thread::sleep(duration);
-                }
+                });
 
                 // Ensure final position is exact
                 let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
@@ -827,9 +934,83 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
                     y: target_y,
                 }));
             }
+        } else {
+            // No monitor info (display just changed / resume from sleep): still honour the
+            // hotkey instead of silently doing nothing.
+            log::warn!("Show: no monitor info available, showing without animation");
+            let _ = window.show();
+            let _ = window.set_focus();
         }
         // IS_ANIMATING is reset by _guard on drop
     });
+}
+
+/// Slide durations. Hide is shorter because auto-paste waits for it to finish.
+const SHOW_SLIDE_MS: u64 = 180;
+const HIDE_SLIDE_MS: u64 = 130;
+/// Target frame interval while sliding (~120 Hz requests; the OS may coalesce).
+const SLIDE_FRAME_MS: u64 = 8;
+
+fn ease_out_cubic(t: f64) -> f64 {
+    1.0 - (1.0 - t).powi(3)
+}
+
+fn ease_in_quad(t: f64) -> f64 {
+    t * t
+}
+
+/// Time-based slide. Each frame's position comes from real elapsed time, so an
+/// uneven `thread::sleep` (Windows' default timer tick is ~15.6 ms, not 10 ms)
+/// only changes how many frames get drawn — not the speed or the total duration.
+/// The old fixed-step loop moved the same distance per step no matter how long a
+/// step actually took, which is what made the slide stutter and run long.
+fn slide_window(
+    duration_ms: u64,
+    start_y: i32,
+    target_y: i32,
+    ease: fn(f64) -> f64,
+    mut set_y: impl FnMut(i32),
+) {
+    let total = std::time::Duration::from_millis(duration_ms.max(1));
+    let started = std::time::Instant::now();
+    let distance = (target_y - start_y) as f64;
+    loop {
+        let t = (started.elapsed().as_secs_f64() / total.as_secs_f64()).min(1.0);
+        set_y(start_y + (distance * ease(t)).round() as i32);
+        if t >= 1.0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(SLIDE_FRAME_MS));
+    }
+}
+
+/// Set position and size in one call. Two separate calls (set_size, then
+/// set_position) let Windows rescale the window a second time when the move
+/// crosses onto a monitor with a different DPI, leaving it the wrong height.
+fn place_window(window: &tauri::WebviewWindow, x: i32, y: i32, width: u32, height: u32) {
+    #[cfg(target_os = "windows")]
+    if let Ok(handle) = window.hwnd() {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        let hwnd = HWND(handle.0 as _);
+        let placed = unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                x,
+                y,
+                width as i32,
+                height as i32,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        };
+        if placed.is_ok() {
+            return;
+        }
+    }
+
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
 }
 
 pub fn animate_window_hide(
@@ -847,7 +1028,16 @@ pub fn animate_window_hide(
     let window = window.clone();
     std::thread::spawn(move || {
         let _guard = AnimatingGuard; // resets IS_ANIMATING on drop (even on panic)
-        if let Some(monitor) = window.current_monitor().ok().flatten() {
+
+        // current_monitor() can return None right after a display is unplugged or the
+        // machine resumes from sleep. Fall back to the cursor's monitor, and if that also
+        // fails, still hide (and still run the paste callback) without animating.
+        let monitor = window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| get_monitor_at_cursor(&window));
+        if let Some(monitor) = monitor {
             let scale_factor = monitor.scale_factor();
             let work_area = monitor.work_area();
 
@@ -915,65 +1105,61 @@ pub fn animate_window_hide(
                         }
                     }
 
-                    let steps = 15;
-                    let duration = std::time::Duration::from_millis(10);
-                    let dy = (target_y - start_y) as f64 / steps as f64;
-
                     let mut z_order_switched = false;
 
-                    for i in 1..=steps {
-                        let current_y = start_y as f64 + dy * i as f64;
-                        let _ = window.set_position(tauri::Position::Physical(
-                            tauri::PhysicalPosition {
-                                x: work_area.position.x + window_margin_px,
-                                y: current_y as i32,
-                            },
-                        ));
+                    slide_window(
+                        HIDE_SLIDE_MS,
+                        start_y,
+                        target_y,
+                        ease_in_quad,
+                        |current_y| {
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition {
+                                    x: work_area.position.x + window_margin_px,
+                                    y: current_y,
+                                },
+                            ));
 
-                        // Dynamic Z-Order Switch: When we hit the taskbar, drop BEHIND it
-                        if !z_order_switched
-                            && taskbar_top_y > 0
-                            && current_y as i32 >= taskbar_top_y
-                        {
-                            if let Ok(handle) = window.hwnd() {
-                                let hwnd = HWND(handle.0 as _);
-                                if !taskbar_hwnd.0.is_null() {
-                                    unsafe {
-                                        let _ = SetWindowPos(
-                                            hwnd,
-                                            Some(taskbar_hwnd),
-                                            0,
-                                            0,
-                                            0,
-                                            0,
-                                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                                        );
+                            // Dynamic Z-Order Switch: When we hit the taskbar, drop BEHIND it
+                            if !z_order_switched && taskbar_top_y > 0 && current_y >= taskbar_top_y
+                            {
+                                if let Ok(handle) = window.hwnd() {
+                                    let hwnd = HWND(handle.0 as _);
+                                    if !taskbar_hwnd.0.is_null() {
+                                        unsafe {
+                                            let _ = SetWindowPos(
+                                                hwnd,
+                                                Some(taskbar_hwnd),
+                                                0,
+                                                0,
+                                                0,
+                                                0,
+                                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                                            );
+                                        }
+                                        z_order_switched = true;
                                     }
-                                    z_order_switched = true;
                                 }
                             }
-                        }
-                        std::thread::sleep(duration);
-                    }
+                        },
+                    );
                 }
 
                 #[cfg(not(target_os = "windows"))]
-                {
-                    let steps = 15;
-                    let duration = std::time::Duration::from_millis(10);
-                    let dy = (target_y - start_y) as f64 / steps as f64;
-
-                    for i in 1..=steps {
-                        let current_y = start_y as f64 + dy * i as f64;
+                slide_window(
+                    HIDE_SLIDE_MS,
+                    start_y,
+                    target_y,
+                    ease_in_quad,
+                    |current_y| {
                         let _ = window.set_position(tauri::Position::Physical(
                             tauri::PhysicalPosition {
                                 x: work_area.position.x + window_margin_px,
-                                y: current_y as i32,
+                                y: current_y,
                             },
                         ));
-                        std::thread::sleep(duration);
-                    }
-                }
+                    },
+                );
             }
 
             let _ = window.hide();
@@ -1001,6 +1187,12 @@ pub fn animate_window_hide(
                 }
             }
 
+            if let Some(callback) = on_done {
+                callback();
+            }
+        } else {
+            log::warn!("Hide: no monitor info available, hiding without animation");
+            let _ = window.hide();
             if let Some(callback) = on_done {
                 callback();
             }
@@ -1223,27 +1415,27 @@ pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &
             "best" | "best_glow" => {
                 let _ = clear_all_effects(window);
                 let applied = apply_best_effect(window, dark);
-                log::info!("THEME:Applied best effect {:?} (Theme: {})", applied, theme);
+                log::debug!("THEME:Applied best effect {:?} (Theme: {})", applied, theme);
             }
             "clear" | "clear_focus" | "clear_neon" => {
                 let _ = clear_all_effects(window);
-                log::info!("THEME:All effects cleared");
+                log::debug!("THEME:All effects cleared");
             }
             "mica" | "mica_soft" => {
                 let _ = switch_effect(window, Effect::Mica, dark, None);
-                log::info!("THEME:Applied Mica effect (Theme: {})", theme);
+                log::debug!("THEME:Applied Mica effect (Theme: {})", theme);
             }
             "acrylic" | "acrylic_frost" | "acrylic_tint" => {
                 let _ = switch_effect(window, Effect::Acrylic, dark, None);
-                log::info!("THEME:Applied Acrylic effect (Theme: {})", theme);
+                log::debug!("THEME:Applied Acrylic effect (Theme: {})", theme);
             }
             "blur" | "blur_vivid" => {
                 let _ = switch_effect(window, Effect::Blur, dark, None);
-                log::info!("THEME:Applied Blur effect (Theme: {})", theme);
+                log::debug!("THEME:Applied Blur effect (Theme: {})", theme);
             }
             "mica_alt" | "mica_alt_luxe" => {
                 let _ = switch_effect(window, Effect::Tabbed, dark, None);
-                log::info!("THEME:Applied Tabbed/Mica Alt effect (Theme: {})", theme);
+                log::debug!("THEME:Applied Tabbed/Mica Alt effect (Theme: {})", theme);
             }
             _ => {
                 let _ = switch_effect(window, Effect::Tabbed, dark, None);

@@ -34,7 +34,8 @@ use windows::Win32::System::ProcessStatus::{GetModuleBaseNameW, GetModuleFileNam
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_INSERT, VK_SHIFT,
+    MapVirtualKeyW, SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, VK_INSERT, VK_LSHIFT,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Shell::{
@@ -1677,16 +1678,6 @@ pub fn send_paste_input() {
                 },
             },
         };
-        let keydown = |vk| INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: vk,
-                    ..Default::default()
-                },
-            },
-        };
-
         // Only inject KEYUP for modifiers that are actually held. A stray KEYUP for
         // Alt or Win without a preceding KEYDOWN is treated by apps as a press-and-
         // release tap: Alt activates the menu bar (Notepad File/Edit/…), and Win
@@ -1718,13 +1709,41 @@ pub fn send_paste_input() {
             SendInput(&release_mods, std::mem::size_of::<INPUT>() as i32);
         }
 
+        // Insert is an "extended" key (it lives on the navigation cluster). Without
+        // KEYEVENTF_EXTENDEDKEY and a real scan code, apps that read scan codes —
+        // Windows Terminal/ConPTY, PuTTY, SecureCRT, some games — see Numpad0 or
+        // nothing at all, so Shift+Insert never pastes there.
+        let shift_scan = MapVirtualKeyW(VK_LSHIFT.0 as u32, MAPVK_VK_TO_VSC) as u16;
+        let insert_scan = MapVirtualKeyW(VK_INSERT.0 as u32, MAPVK_VK_TO_VSC) as u16;
+        let key = |vk, scan: u16, flags: KEYBD_EVENT_FLAGS| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: scan,
+                    dwFlags: flags,
+                    ..Default::default()
+                },
+            },
+        };
         let inputs = vec![
-            keydown(VK_SHIFT),
-            keydown(VK_INSERT),
-            keyup(VK_INSERT),
-            keyup(VK_SHIFT),
+            key(VK_LSHIFT, shift_scan, KEYBD_EVENT_FLAGS(0)),
+            key(VK_INSERT, insert_scan, KEYEVENTF_EXTENDEDKEY),
+            key(
+                VK_INSERT,
+                insert_scan,
+                KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,
+            ),
+            key(VK_LSHIFT, shift_scan, KEYEVENTF_KEYUP),
         ];
-        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+        let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+        if sent as usize != inputs.len() {
+            log::warn!(
+                "PASTE: SendInput injected {}/{} events (blocked by UIPI?)",
+                sent,
+                inputs.len()
+            );
+        }
     }
 }
 

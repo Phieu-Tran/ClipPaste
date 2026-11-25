@@ -70,7 +70,11 @@ impl Database {
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     // Per-connection PRAGMAs — applied to every connection in the pool
-                    if let Err(e) = sqlx::query("PRAGMA cache_size = -8000")
+                    // 2 MB per connection (×4 pool connections). Reads are served
+                    // through the 64 MB mmap below, i.e. the OS file cache, so a
+                    // large private page cache mostly duplicated those pages — at
+                    // 8 MB each it could pin up to 32 MB of the app's RAM.
+                    if let Err(e) = sqlx::query("PRAGMA cache_size = -2000")
                         .execute(&mut *conn)
                         .await
                     {

@@ -81,6 +81,23 @@ export function DiagnosticsTab() {
     [diagnostics]
   );
 
+  // The Rust process alone is a small slice; the UI runs in WebView2 child
+  // processes, so the headline figure is the whole tree.
+  const ram = useMemo(() => {
+    const webview = diagnostics?.webview_processes ?? [];
+    const sum = (key: 'private_bytes' | 'working_set_bytes') =>
+      webview.reduce((total, process) => total + process[key], 0);
+    const appPrivate = diagnostics?.app.private_bytes ?? 0;
+    const appWorking = diagnostics?.app.working_set_bytes ?? 0;
+    return {
+      totalPrivate: appPrivate + sum('private_bytes'),
+      totalWorking: appWorking + sum('working_set_bytes'),
+      appPrivate,
+      webviewPrivate: sum('private_bytes'),
+      webviewCount: webview.length,
+    };
+  }, [diagnostics]);
+
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -142,9 +159,12 @@ export function DiagnosticsTab() {
         <StatCard
           icon={Activity}
           label={t('diagnostics.privateRam')}
-          value={formatBytes(diagnostics?.app.private_bytes ?? 0)}
-          detail={t('diagnostics.workingSet', {
-            size: formatBytes(diagnostics?.app.working_set_bytes ?? 0),
+          value={formatBytes(ram.totalPrivate)}
+          detail={t('diagnostics.ramBreakdown', {
+            app: formatBytes(ram.appPrivate),
+            webview: formatBytes(ram.webviewPrivate),
+            count: ram.webviewCount,
+            working: formatBytes(ram.totalWorking),
           })}
         />
         <StatCard

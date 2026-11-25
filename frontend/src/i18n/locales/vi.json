@@ -118,6 +118,8 @@
     "folderFallbackName": "thư mục"
   },
   "toast": {
+    "clipSaved": "Đã lưu clip",
+    "imageSaved": "Đã lưu ảnh",
     "addIgnoredAppFailed": "Không thêm được ứng dụng bỏ qua: {{error}}",
     "folderCreated": "Đã tạo thư mục \"{{name}}\"",
     "folderRenameFailed": "Đổi tên thư mục thất bại",
@@ -372,14 +374,14 @@
     "noDevHelpers": "Không thấy tiến trình phụ trợ nào.",
     "noRecentErrors": "Không có lỗi giao diện gần đây.",
     "pid": "PID",
-    "privateRam": "RAM riêng",
+    "privateRam": "RAM riêng (tổng)",
+    "ramBreakdown": "App {{app}} + WebView2 {{webview}} ({{count}} tiến trình) · làm việc {{working}}",
     "process": "Tiến trình",
     "ram": "RAM",
     "refresh": "Làm mới",
     "subtitle": "Thông tin chạy, bộ đệm và lỗi gần đây.",
     "title": "Chẩn đoán",
-    "totalStoredClips": "Tổng clip đã lưu",
-    "workingSet": "Bộ nhớ làm việc {{size}}"
+    "totalStoredClips": "Tổng clip đã lưu"
   },
   "sync": {
     "autoSync": "Tự đồng bộ",

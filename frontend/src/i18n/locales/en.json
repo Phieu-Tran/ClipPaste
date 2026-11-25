@@ -121,6 +121,8 @@
     "folderFallbackName": "folder"
   },
   "toast": {
+    "clipSaved": "Clip saved",
+    "imageSaved": "Image saved",
     "addIgnoredAppFailed": "Failed to add ignored app: {{error}}",
     "folderCreated": "Folder \"{{name}}\" created",
     "folderRenameFailed": "Failed to rename folder",
@@ -376,14 +378,14 @@
     "noDevHelpers": "No dev helper process detected.",
     "noRecentErrors": "No recent frontend errors.",
     "pid": "PID",
-    "privateRam": "Private RAM",
+    "privateRam": "Private RAM (total)",
+    "ramBreakdown": "App {{app}} + WebView2 {{webview}} ({{count}} proc) · working set {{working}}",
     "process": "Process",
     "ram": "RAM",
     "refresh": "Refresh",
     "subtitle": "Runtime, cache, and recent errors.",
     "title": "Diagnostics",
-    "totalStoredClips": "Total stored clips",
-    "workingSet": "Working set {{size}}"
+    "totalStoredClips": "Total stored clips"
   },
   "sync": {
     "autoSync": "Auto-sync",

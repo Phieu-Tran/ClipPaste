@@ -25,6 +25,9 @@ import { useScratchpadDrag } from './scratchpad/useScratchpadDrag';
 import { ScratchpadModal } from './scratchpad/ScratchpadModal';
 import { NoteCard } from './scratchpad/NoteCard';
 
+/** Close (destroy) the hidden scratchpad after this long so its WebView memory is freed. */
+const SCRATCHPAD_IDLE_CLOSE_MS = 10 * 60 * 1000;
+
 export function ScratchpadWindow() {
   const { t } = useTranslation();
   const [scratchpads, setScratchpads] = useState<ScratchpadItem[]>([]);
@@ -78,6 +81,29 @@ export function ScratchpadWindow() {
   useEffect(() => {
     if (initialMode === 'list') hideMainWindow();
   }, [hideMainWindow, initialMode]);
+
+  // Free this window's WebView (tens of MB) once it has sat hidden for a while.
+  // Both open paths — the toolbar toggle and the global hotkey — recreate the
+  // window when it no longer exists. Never close while an edit or paste is in
+  // progress: edits are only saved on Save, so closing would drop the draft.
+  const hasPendingWorkRef = useRef(false);
+  hasPendingWorkRef.current = editingId !== null || pastingId !== null || isPasting;
+  useEffect(() => {
+    let hiddenSince: number | null = null;
+    const timer = window.setInterval(async () => {
+      const visible = await appWindow.isVisible().catch(() => true);
+      if (visible || hasPendingWorkRef.current) {
+        hiddenSince = null;
+        return;
+      }
+      hiddenSince ??= Date.now();
+      if (Date.now() - hiddenSince >= SCRATCHPAD_IDLE_CLOSE_MS) {
+        window.clearInterval(timer);
+        appWindow.close().catch(() => {});
+      }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [appWindow]);
 
   // Disable right-click
   useEffect(() => {
